@@ -7,9 +7,9 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: tierone/nestjs-api-starter
-  EB_APPLICATION: nextjs-api-starter
-  EB_ENVIRONMENT: nextjs-api-starter
+  ECR_REPOSITORY: tierone/ampliri
+  EB_APPLICATION: Ampliri
+  EB_ENVIRONMENT: ampliri-prod
 
 jobs:
   test:
