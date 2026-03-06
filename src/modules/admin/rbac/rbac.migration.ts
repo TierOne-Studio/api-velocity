@@ -24,6 +24,10 @@ export class RbacMigrationService implements OnModuleInit {
         name: 'rbac_004_add_manager_org_create_permission',
         up: () => this.addManagerOrganizationCreatePermission(),
       },
+      {
+        name: 'rbac_005_backfill_role_permissions',
+        up: () => this.backfillRolePermissions(),
+      },
     ];
 
     let pendingCount = 0;
@@ -276,6 +280,95 @@ export class RbacMigrationService implements OnModuleInit {
     }
 
     console.log('✅ RBAC default data seeded');
+  }
+
+  /**
+   * Backfill role_permissions for all roles.
+   * rbac_003 seeded permissions and roles but role_permissions inserts failed
+   * silently on first run, leaving the junction table empty.
+   */
+  async backfillRolePermissions(): Promise<void> {
+    // Admin: all permissions
+    const adminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'admin'`,
+    );
+    if (adminRole) {
+      const allPermissions = await this.db.query<{ id: string }>(
+        `SELECT id FROM permissions`,
+      );
+      for (const perm of allPermissions) {
+        await this.db.query(
+          `INSERT INTO role_permissions (role_id, permission_id)
+           VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [adminRole.id, perm.id],
+        );
+      }
+      console.log(`  ↳ Assigned ${allPermissions.length} permissions to admin role`);
+    }
+
+    // Manager: org-level management permissions
+    const managerRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'manager'`,
+    );
+    if (managerRole) {
+      const managerPermissions = [
+        { resource: 'user', action: 'read' },
+        { resource: 'user', action: 'update' },
+        { resource: 'user', action: 'ban' },
+        { resource: 'session', action: 'read' },
+        { resource: 'session', action: 'revoke' },
+        { resource: 'organization', action: 'create' },
+        { resource: 'organization', action: 'read' },
+        { resource: 'organization', action: 'update' },
+        { resource: 'organization', action: 'invite' },
+        { resource: 'role', action: 'read' },
+      ];
+      for (const perm of managerPermissions) {
+        const permission = await this.db.queryOne<{ id: string }>(
+          `SELECT id FROM permissions WHERE resource = $1 AND action = $2`,
+          [perm.resource, perm.action],
+        );
+        if (permission) {
+          await this.db.query(
+            `INSERT INTO role_permissions (role_id, permission_id)
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING`,
+            [managerRole.id, permission.id],
+          );
+        }
+      }
+      console.log(`  ↳ Assigned ${managerPermissions.length} permissions to manager role`);
+    }
+
+    // Member: basic read access
+    const memberRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'member'`,
+    );
+    if (memberRole) {
+      const memberPermissions = [
+        { resource: 'user', action: 'read' },
+        { resource: 'organization', action: 'read' },
+        { resource: 'role', action: 'read' },
+      ];
+      for (const perm of memberPermissions) {
+        const permission = await this.db.queryOne<{ id: string }>(
+          `SELECT id FROM permissions WHERE resource = $1 AND action = $2`,
+          [perm.resource, perm.action],
+        );
+        if (permission) {
+          await this.db.query(
+            `INSERT INTO role_permissions (role_id, permission_id)
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING`,
+            [memberRole.id, permission.id],
+          );
+        }
+      }
+      console.log(`  ↳ Assigned ${memberPermissions.length} permissions to member role`);
+    }
+
+    console.log('✅ role_permissions backfill complete');
   }
 
   /**

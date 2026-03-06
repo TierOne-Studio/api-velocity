@@ -39,7 +39,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true)   // rbac_001 already run
         .mockResolvedValueOnce(true)   // rbac_002 already run
         .mockResolvedValueOnce(true)   // rbac_003 already run
-        .mockResolvedValueOnce(true);  // rbac_004 already run
+        .mockResolvedValueOnce(true)   // rbac_004 already run
+        .mockResolvedValueOnce(true);  // rbac_005 already run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -56,7 +57,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true)    // rbac_001 already run
         .mockResolvedValueOnce(false)   // rbac_002 NOT run
         .mockResolvedValueOnce(false)   // rbac_003 NOT run
-        .mockResolvedValueOnce(false);  // rbac_004 NOT run
+        .mockResolvedValueOnce(false)   // rbac_004 NOT run
+        .mockResolvedValueOnce(true);   // rbac_005 already run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
