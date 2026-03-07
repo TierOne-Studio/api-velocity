@@ -4,10 +4,12 @@ import {
   Param,
   Body,
   Req,
+  UseGuards,
   ForbiddenException,
 } from '@nestjs/common';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
+import { RolesGuard, Roles, PermissionsGuard, RequirePermissions } from '../../../../../shared';
 import { OrgImpersonationService } from '../../application/services';
 import { ImpersonateUserDto } from '../../api/dto';
 
@@ -21,10 +23,13 @@ export class OrgImpersonationController {
 
   /**
    * Impersonate a user within an organization.
-   * Only org managers (admin/manager) can impersonate.
+   * Requires user:impersonate permission.
    * Target user must be a member of the same organization.
    */
   @Post(':organizationId/impersonate')
+  @UseGuards(RolesGuard, PermissionsGuard)
+  @Roles('admin', 'manager')
+  @RequirePermissions('user:impersonate')
   async impersonate(
     @Param('organizationId') organizationId: string,
     @Body() dto: ImpersonateUserDto,

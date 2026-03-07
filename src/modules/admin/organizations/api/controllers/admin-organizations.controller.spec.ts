@@ -349,40 +349,86 @@ describe('AdminOrganizationsController', () => {
   });
 
   describe('update', () => {
+    const adminSession = {
+      user: { role: 'admin' }, session: { activeOrganizationId: null },
+    } as unknown as UserSession;
+
+    const managerSession = {
+      user: { role: 'manager' }, session: { activeOrganizationId: 'org-1' },
+    } as unknown as UserSession;
+
     it('returns updated org when found', async () => {
       orgService.update.mockResolvedValue({ id: 'org-1', name: 'Updated' } as never);
 
-      const result = await controller.update('org-1', { name: 'Updated' });
+      const result = await controller.update(adminSession, 'org-1', { name: 'Updated' });
 
       expect((result as any).data.name).toBe('Updated');
+    });
+
+    it('allows manager to update their own organization', async () => {
+      orgService.update.mockResolvedValue({ id: 'org-1', name: 'Updated By Manager' } as never);
+
+      const result = await controller.update(managerSession, 'org-1', { name: 'Updated By Manager' });
+
+      expect((result as any).data.name).toBe('Updated By Manager');
+      expect(orgService.update).toHaveBeenCalledWith('org-1', { name: 'Updated By Manager' });
+    });
+
+    it('blocks manager from updating a different organization', async () => {
+      await expect(
+        controller.update(managerSession, 'org-2', { name: 'Nope' }),
+      ).rejects.toThrow('You can only access your own organization');
     });
 
     it('throws 404 when org not found — covers !org branch', async () => {
       orgService.update.mockResolvedValue(null as never);
 
-      await expect(controller.update('missing', { name: 'X' })).rejects.toThrow('Organization not found');
+      await expect(controller.update(adminSession, 'missing', { name: 'X' })).rejects.toThrow('Organization not found');
     });
   });
 
   describe('delete', () => {
+    const adminSession = {
+      user: { role: 'admin' }, session: { activeOrganizationId: null },
+    } as unknown as UserSession;
+
+    const managerSession = {
+      user: { role: 'manager' }, session: { activeOrganizationId: 'org-1' },
+    } as unknown as UserSession;
+
     it('returns success when org deleted', async () => {
       orgService.delete.mockResolvedValue(undefined as never);
 
-      const result = await controller.delete('org-1');
+      const result = await controller.delete(adminSession, 'org-1');
 
       expect((result as any).success).toBe(true);
+    });
+
+    it('allows manager to delete their own organization', async () => {
+      orgService.delete.mockResolvedValue(undefined as never);
+
+      const result = await controller.delete(managerSession, 'org-1');
+
+      expect((result as any).success).toBe(true);
+      expect(orgService.delete).toHaveBeenCalledWith('org-1');
+    });
+
+    it('blocks manager from deleting a different organization', async () => {
+      await expect(controller.delete(managerSession, 'org-2')).rejects.toThrow(
+        'You can only access your own organization',
+      );
     });
 
     it('throws 404 when service throws "Organization not found" — covers known error branch', async () => {
       orgService.delete.mockRejectedValue(new Error('Organization not found') as never);
 
-      await expect(controller.delete('missing')).rejects.toThrow('Organization not found');
+      await expect(controller.delete(adminSession, 'missing')).rejects.toThrow('Organization not found');
     });
 
     it('rethrows unknown errors — covers else branch', async () => {
       orgService.delete.mockRejectedValue(new Error('DB connection failed') as never);
 
-      await expect(controller.delete('org-1')).rejects.toThrow('DB connection failed');
+      await expect(controller.delete(adminSession, 'org-1')).rejects.toThrow('DB connection failed');
     });
   });
 

@@ -105,10 +105,9 @@ export class RbacController {
   }
 
   /**
-   * Create a new role (admin only)
+   * Create a new role
    */
   @Post('roles')
-  @Roles('admin')
   @RequirePermissions('role:create')
   async createRole(@Body() dto: CreateRoleDto) {
     this.validateCreateRolePayload(dto);
@@ -124,10 +123,9 @@ export class RbacController {
   }
 
   /**
-   * Update a role (admin only)
+   * Update a role
    */
   @Put('roles/:id')
-  @Roles('admin')
   @RequirePermissions('role:update')
   async updateRole(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
     this.validateUpdateRolePayload(dto);
@@ -140,10 +138,9 @@ export class RbacController {
   }
 
   /**
-   * Delete a role (admin only)
+   * Delete a role
    */
   @Delete('roles/:id')
-  @Roles('admin')
   @RequirePermissions('role:delete')
   async deleteRole(@Param('id') id: string) {
     try {
@@ -163,10 +160,9 @@ export class RbacController {
   }
 
   /**
-   * Assign permissions to a role (admin only)
+   * Assign permissions to a role
    */
   @Put('roles/:id/permissions')
-  @Roles('admin')
   @RequirePermissions('role:assign')
   async assignPermissions(
     @Param('id') id: string,

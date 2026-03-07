@@ -132,7 +132,6 @@ export class RbacMigrationService implements OnModuleInit {
       // Session permissions
       { resource: 'session', action: 'read', description: 'View sessions' },
       { resource: 'session', action: 'revoke', description: 'Revoke sessions' },
-      { resource: 'session', action: 'delete', description: 'Delete sessions' },
       // Organization permissions
       { resource: 'organization', action: 'create', description: 'Create organizations' },
       { resource: 'organization', action: 'read', description: 'View organizations' },
