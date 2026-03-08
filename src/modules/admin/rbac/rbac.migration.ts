@@ -28,6 +28,10 @@ export class RbacMigrationService implements OnModuleInit {
         name: 'rbac_005_backfill_role_permissions',
         up: () => this.backfillRolePermissions(),
       },
+      {
+        name: 'rbac_006_assign_all_permissions_to_admin',
+        up: () => this.assignAllPermissionsToAdmin(),
+      },
     ];
 
     let pendingCount = 0;
@@ -132,7 +136,6 @@ export class RbacMigrationService implements OnModuleInit {
       // Session permissions
       { resource: 'session', action: 'read', description: 'View sessions' },
       { resource: 'session', action: 'revoke', description: 'Revoke sessions' },
-      { resource: 'session', action: 'delete', description: 'Delete sessions' },
       // Organization permissions
       { resource: 'organization', action: 'create', description: 'Create organizations' },
       { resource: 'organization', action: 'read', description: 'View organizations' },
@@ -398,6 +401,29 @@ export class RbacMigrationService implements OnModuleInit {
          VALUES ($1, $2)
          ON CONFLICT DO NOTHING`,
         [managerRole.id, orgCreatePermission.id],
+      );
+    }
+  }
+
+  async assignAllPermissionsToAdmin(): Promise<void> {
+    const adminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'admin'`,
+    );
+
+    if (!adminRole) {
+      return;
+    }
+
+    const allPermissions = await this.db.query<{ id: string }>(
+      `SELECT id FROM permissions`,
+    );
+
+    for (const perm of allPermissions) {
+      await this.db.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         VALUES ($1, $2)
+         ON CONFLICT DO NOTHING`,
+        [adminRole.id, perm.id],
       );
     }
   }

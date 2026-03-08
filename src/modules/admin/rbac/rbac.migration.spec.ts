@@ -40,7 +40,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true)   // rbac_002 already run
         .mockResolvedValueOnce(true)   // rbac_003 already run
         .mockResolvedValueOnce(true)   // rbac_004 already run
-        .mockResolvedValueOnce(true);  // rbac_005 already run
+        .mockResolvedValueOnce(true)   // rbac_005 already run
+        .mockResolvedValueOnce(true);  // rbac_006 already run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -58,7 +59,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false)   // rbac_002 NOT run
         .mockResolvedValueOnce(false)   // rbac_003 NOT run
         .mockResolvedValueOnce(false)   // rbac_004 NOT run
-        .mockResolvedValueOnce(true);   // rbac_005 already run
+        .mockResolvedValueOnce(true)    // rbac_005 already run
+        .mockResolvedValueOnce(false);  // rbac_006 NOT run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -68,8 +70,11 @@ describe('RbacMigrationService', () => {
       expect(dbService.recordMigration).toHaveBeenCalledWith(
         'rbac_004_add_manager_org_create_permission',
       );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_006_assign_all_permissions_to_admin',
+      );
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('3 new'),
+        expect.stringContaining('4 new'),
       );
       consoleSpy.mockRestore();
     });
@@ -85,6 +90,12 @@ describe('RbacMigrationService', () => {
       expect(dbService.hasMigrationRun).toHaveBeenCalledWith('rbac_003_seed_default_data');
       expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
         'rbac_004_add_manager_org_create_permission',
+      );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_005_backfill_role_permissions',
+      );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_006_assign_all_permissions_to_admin',
       );
     });
   });
@@ -238,6 +249,38 @@ describe('RbacMigrationService', () => {
 
       await service.addManagerOrganizationCreatePermission();
 
+      expect(dbService.query).not.toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO role_permissions'),
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('assignAllPermissionsToAdmin', () => {
+    it('should assign all permissions to admin when admin role exists', async () => {
+      dbService.queryOne.mockResolvedValueOnce({ id: 'admin-id' });
+      dbService.query.mockResolvedValueOnce([{ id: 'perm-1' }, { id: 'perm-2' }]);
+
+      await service.assignAllPermissionsToAdmin();
+
+      expect(dbService.queryOne).toHaveBeenCalledWith(`SELECT id FROM roles WHERE name = 'admin'`);
+      expect(dbService.query).toHaveBeenCalledWith(`SELECT id FROM permissions`);
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO role_permissions'),
+        ['admin-id', 'perm-1'],
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO role_permissions'),
+        ['admin-id', 'perm-2'],
+      );
+    });
+
+    it('should skip inserts when admin role does not exist', async () => {
+      dbService.queryOne.mockResolvedValueOnce(null);
+
+      await service.assignAllPermissionsToAdmin();
+
+      expect(dbService.query).not.toHaveBeenCalledWith(`SELECT id FROM permissions`);
       expect(dbService.query).not.toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO role_permissions'),
         expect.anything(),

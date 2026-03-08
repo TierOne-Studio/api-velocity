@@ -114,13 +114,13 @@ describe('RbacController metadata', () => {
     });
   });
 
-  it('requires admin role on RBAC write operations', () => {
+  it('does not apply method-level role restrictions on RBAC write operations', () => {
     const methods = ['createRole', 'updateRole', 'deleteRole', 'assignPermissions'] as const;
 
     methods.forEach((methodName) => {
       const handler = (controller as unknown as Record<string, unknown>)[methodName] as object;
       const roles = Reflect.getMetadata(ROLES_KEY, handler) as string[];
-      expect(roles).toEqual(['admin']);
+      expect(roles).toBeUndefined();
     });
   });
 

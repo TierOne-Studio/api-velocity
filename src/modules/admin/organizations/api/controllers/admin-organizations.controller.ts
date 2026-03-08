@@ -346,12 +346,15 @@ export class AdminOrganizationsController {
   }
 
   /**
-   * Update an organization (admin only)
+   * Update an organization
    */
   @Put(':id')
-  @Roles('admin')
   @RequirePermissions('organization:update')
-  async update(@Param('id') id: string, @Body() dto: UpdateOrganizationDto) {
+  async update(@Session() session: UserSession, @Param('id') id: string, @Body() dto: UpdateOrganizationDto) {
+    const { role, activeOrgId } = this.getSessionInfo(session);
+    this.requireActiveOrgForManager(role, activeOrgId);
+    this.assertManagerCanAccessOrg(role, activeOrgId, id);
+
     const org = await this.orgService.update(id, dto);
     if (!org) {
       throw new HttpException('Organization not found', HttpStatus.NOT_FOUND);
@@ -360,12 +363,14 @@ export class AdminOrganizationsController {
   }
 
   /**
-   * Delete an organization (admin only)
+   * Delete an organization
    */
   @Delete(':id')
-  @Roles('admin')
   @RequirePermissions('organization:delete')
-  async delete(@Param('id') id: string) {
+  async delete(@Session() session: UserSession, @Param('id') id: string) {
+    const { role, activeOrgId } = this.getSessionInfo(session);
+    this.requireActiveOrgForManager(role, activeOrgId);
+    this.assertManagerCanAccessOrg(role, activeOrgId, id);
     try {
       await this.orgService.delete(id);
       return { success: true };

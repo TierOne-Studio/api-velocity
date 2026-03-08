@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import { ForbiddenException } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 
 jest.mock('@thallesp/nestjs-better-auth', () => ({
   Session: () => () => {},
@@ -9,6 +10,7 @@ jest.mock('@thallesp/nestjs-better-auth', () => ({
 
 import { OrgImpersonationController } from './org-impersonation.controller';
 import { OrgImpersonationService } from '../../application/services';
+import { PERMISSIONS_KEY, PermissionsGuard, ROLES_KEY, RolesGuard } from '../../../../../shared';
 
 describe('OrgImpersonationController', () => {
   let controller: OrgImpersonationController;
@@ -28,6 +30,24 @@ describe('OrgImpersonationController', () => {
     } as unknown as jest.Mocked<OrgImpersonationService>;
 
     controller = new OrgImpersonationController(impersonationService);
+  });
+
+  it('applies permission-led guards on impersonate only', () => {
+    const impersonateHandler = (controller as unknown as Record<string, unknown>).impersonate as object;
+    const stopHandler = (controller as unknown as Record<string, unknown>).stopImpersonating as object;
+
+    const guards = Reflect.getMetadata(GUARDS_METADATA, impersonateHandler) as unknown[];
+    const roles = Reflect.getMetadata(ROLES_KEY, impersonateHandler) as string[];
+    const permissions = Reflect.getMetadata(PERMISSIONS_KEY, impersonateHandler) as string[];
+
+    expect(guards).toContain(RolesGuard);
+    expect(guards).toContain(PermissionsGuard);
+    expect(roles).toEqual(['admin', 'manager']);
+    expect(permissions).toContain('user:impersonate');
+
+    expect(Reflect.getMetadata(GUARDS_METADATA, stopHandler)).toBeUndefined();
+    expect(Reflect.getMetadata(ROLES_KEY, stopHandler)).toBeUndefined();
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, stopHandler)).toBeUndefined();
   });
 
   describe('impersonate', () => {
