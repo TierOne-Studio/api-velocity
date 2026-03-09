@@ -22,6 +22,7 @@ describe('AdminOrganizationsController', () => {
       findAll: jest.fn(),
       findById: jest.fn(),
       getMembers: jest.fn(),
+      listMemberCandidates: jest.fn(),
       getInvitations: jest.fn(),
       createInvitation: jest.fn(),
       deleteInvitation: jest.fn(),
@@ -124,6 +125,66 @@ describe('AdminOrganizationsController', () => {
           email: 'admin@example.com',
           name: 'Admin',
         },
+      );
+    });
+
+    it('returns member candidates for admins', async () => {
+      (orgService as any).listMemberCandidates = jest.fn<any>().mockResolvedValue([
+        {
+          id: 'user-2',
+          name: 'Candidate User',
+          email: 'candidate@example.com',
+          role: 'member',
+          image: null,
+        },
+      ]);
+
+      const adminSession = {
+        user: { role: 'admin' },
+        session: { activeOrganizationId: null },
+      } as unknown as UserSession;
+
+      const result = await (controller as any).listMemberCandidates(adminSession, 'org-1', 'candidate', '25');
+
+      expect((result as any).data).toEqual([
+        {
+          id: 'user-2',
+          name: 'Candidate User',
+          email: 'candidate@example.com',
+          role: 'member',
+          image: null,
+        },
+      ]);
+      expect((orgService as any).listMemberCandidates).toHaveBeenCalledWith('org-1', {
+        search: 'candidate',
+        limit: 25,
+      });
+    });
+
+    it('allows manager to list candidates for active organization only', async () => {
+      (orgService as any).listMemberCandidates = jest.fn<any>().mockResolvedValue([]);
+
+      const managerSession = {
+        user: { role: 'manager' },
+        session: { activeOrganizationId: 'org-1' },
+      } as unknown as UserSession;
+
+      await (controller as any).listMemberCandidates(managerSession, 'org-1', undefined, undefined);
+
+      expect((orgService as any).listMemberCandidates).toHaveBeenCalledWith('org-1', {
+        search: undefined,
+        limit: 25,
+      });
+    });
+
+    it('blocks manager from listing candidates for a different organization', async () => {
+      const managerSession = {
+        user: { role: 'manager' },
+        session: { activeOrganizationId: 'org-1' },
+      } as unknown as UserSession;
+
+      await expect((controller as any).listMemberCandidates(managerSession, 'org-2', undefined, undefined)).rejects.toThrow(
+        'You can only access your own organization',
       );
     });
   });

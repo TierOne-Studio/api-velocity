@@ -43,6 +43,7 @@ describe('AdminOrganizationsService', () => {
       updateOrg: jest.fn(),
       deleteOrg: jest.fn(),
       getMembers: jest.fn(),
+      listMemberCandidates: jest.fn(),
       findMemberById: jest.fn(),
       findMemberByUserId: jest.fn(),
       findMemberByEmail: jest.fn(),
@@ -466,6 +467,48 @@ describe('AdminOrganizationsService', () => {
       const result = await service.findById('non-existent');
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('listMemberCandidates', () => {
+    it('should throw NotFoundException when organization does not exist', async () => {
+      orgRepo.findById.mockResolvedValueOnce(null);
+
+      await expect((service as any).listMemberCandidates('ghost-org')).rejects.toThrow('Organization not found');
+      expect((orgRepo as any).listMemberCandidates).not.toHaveBeenCalled();
+    });
+
+    it('should return candidate users who are not already members', async () => {
+      orgRepo.findById.mockResolvedValueOnce(mockOrganization);
+      (orgRepo as any).listMemberCandidates = jest.fn<any>().mockResolvedValueOnce([
+        {
+          id: 'user-2',
+          name: 'Candidate User',
+          email: 'candidate@example.com',
+          role: 'member',
+          image: null,
+        },
+      ]);
+
+      const result = await (service as any).listMemberCandidates('org-1', { limit: 25, search: 'candidate' });
+
+      expect(result).toEqual([
+        {
+          id: 'user-2',
+          name: 'Candidate User',
+          email: 'candidate@example.com',
+          role: 'member',
+          image: null,
+        },
+      ]);
+      expect((orgRepo as any).listMemberCandidates).toHaveBeenCalledWith('org-1', { limit: 25, search: 'candidate' });
+    });
+
+    it('should return an empty array when no eligible candidates exist', async () => {
+      orgRepo.findById.mockResolvedValueOnce(mockOrganization);
+      (orgRepo as any).listMemberCandidates = jest.fn<any>().mockResolvedValueOnce([]);
+
+      await expect((service as any).listMemberCandidates('org-1')).resolves.toEqual([]);
     });
   });
 

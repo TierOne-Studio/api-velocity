@@ -260,6 +260,31 @@ describe('AdminOrgDatabaseRepository', () => {
     });
   });
 
+  describe('listMemberCandidates', () => {
+    it('queries users not already in the target organization', async () => {
+      mockQuery.mockResolvedValue([{ id: 'u-2', email: 'candidate@example.com' }]);
+
+      const result = await (repo as any).listMemberCandidates('org-1', { limit: 25 });
+
+      expect(result).toEqual([{ id: 'u-2', email: 'candidate@example.com' }]);
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('FROM "user" u');
+      expect(sql).toContain('NOT EXISTS');
+      expect(sql).toContain('member m');
+      expect(params).toEqual(['org-1', 25]);
+    });
+
+    it('adds search filtering when provided', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await (repo as any).listMemberCandidates('org-1', { search: 'alice', limit: 10 });
+
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('ILIKE');
+      expect(params).toEqual(['org-1', '%alice%', 10]);
+    });
+  });
+
   describe('findPendingInvitation', () => {
     it('returns id row for matching pending invitation', async () => {
       mockQueryOne.mockResolvedValue({ id: 'inv-1' });
