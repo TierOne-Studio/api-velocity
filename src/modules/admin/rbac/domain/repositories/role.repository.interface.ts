@@ -5,10 +5,11 @@ import { UpdateRoleDto } from '../../api/dto/update-role.dto';
 export const ROLE_REPOSITORY = Symbol('ROLE_REPOSITORY');
 
 export interface IRoleRepository {
-  findAll(): Promise<Role[]>;
+  findAll(activeOrganizationId: string): Promise<Role[]>;
   findById(id: string): Promise<Role | null>;
   findByName(name: string): Promise<Role | null>;
-  create(dto: CreateRoleDto): Promise<Role>;
+  findByNameInOrganization(name: string, activeOrganizationId: string): Promise<Role | null>;
+  create(dto: CreateRoleDto, activeOrganizationId: string): Promise<Role>;
   update(id: string, dto: UpdateRoleDto): Promise<Role | null>;
   remove(id: string): Promise<void>;
   getPermissions(roleId: string): Promise<Permission[]>;

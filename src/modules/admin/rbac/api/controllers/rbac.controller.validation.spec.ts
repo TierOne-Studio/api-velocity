@@ -20,6 +20,7 @@ describe('RbacController validation', () => {
       findAll: jest.fn(),
       findById: jest.fn(),
       findByName: jest.fn(),
+      findByNameInOrganization: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -37,9 +38,14 @@ describe('RbacController validation', () => {
     controller = new RbacController(roleService, permissionService);
   });
 
+  const session = {
+    user: { role: 'manager' },
+    session: { activeOrganizationId: 'org-1' },
+  } as any;
+
   it('rejects createRole when name is missing', async () => {
     await expect(
-      controller.createRole({ displayName: 'Editor' } as any),
+      controller.createRole(session, { displayName: 'Editor' } as any),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
@@ -47,7 +53,7 @@ describe('RbacController validation', () => {
 
   it('rejects createRole when displayName is missing', async () => {
     await expect(
-      controller.createRole({ name: 'editor' } as any),
+      controller.createRole(session, { name: 'editor' } as any),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
@@ -55,7 +61,7 @@ describe('RbacController validation', () => {
 
   it('rejects createRole when name is the reserved legacy user role', async () => {
     await expect(
-      controller.createRole({ name: 'user', displayName: 'User' } as any),
+      controller.createRole(session, { name: 'user', displayName: 'User' } as any),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
@@ -90,10 +96,13 @@ describe('RbacController validation', () => {
   });
 
   it('creates role when payload is valid', async () => {
-    roleService.findByName.mockResolvedValue(null);
+    roleService.findByNameInOrganization.mockResolvedValue(null);
     roleService.create.mockResolvedValue({ id: 'role-1', name: 'editor' } as any);
 
-    const result = await controller.createRole({ name: 'editor', displayName: 'Editor' } as any);
+    const result = await controller.createRole(
+      session,
+      { name: 'editor', displayName: 'Editor' } as any,
+    );
 
     expect(result).toEqual({ data: { id: 'role-1', name: 'editor' } });
     expect(roleService.create).toHaveBeenCalledTimes(1);

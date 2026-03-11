@@ -33,6 +33,7 @@ describe('RoleService', () => {
       findAll: jest.fn(),
       findById: jest.fn(),
       findByName: jest.fn(),
+      findByNameInOrganization: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       remove: jest.fn(),
@@ -56,15 +57,15 @@ describe('RoleService', () => {
   });
 
   describe('findAll', () => {
-    it('should return all roles', async () => {
+    it('should return visible roles for the active organization', async () => {
       mockRoleRepo.findAll.mockResolvedValue([makeDomainRole()]);
 
-      const result = await service.findAll();
+      const result = await service.findAll('org-1');
 
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe('admin');
       expect(result[0].displayName).toBe('Admin');
-      expect(mockRoleRepo.findAll).toHaveBeenCalled();
+      expect(mockRoleRepo.findAll).toHaveBeenCalledWith('org-1');
     });
   });
 
@@ -89,15 +90,15 @@ describe('RoleService', () => {
   });
 
   describe('create', () => {
-    it('should create a new role', async () => {
+    it('should create a new role for the active organization', async () => {
       const createDto = { name: 'editor', displayName: 'Editor', description: 'Can edit content', color: 'blue' };
       mockRoleRepo.create.mockResolvedValue(makeDomainRole({ id: '2', name: 'editor', displayName: 'Editor', isSystem: false }));
 
-      const result = await service.create(createDto);
+      const result = await service.create(createDto, 'org-1');
 
       expect(result.name).toBe('editor');
       expect(result.isSystem).toBe(false);
-      expect(mockRoleRepo.create).toHaveBeenCalledWith(createDto);
+      expect(mockRoleRepo.create).toHaveBeenCalledWith(createDto, 'org-1');
     });
   });
 

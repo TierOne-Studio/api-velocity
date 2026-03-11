@@ -14,7 +14,7 @@ export class RoleTypeOrmEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true, length: 50 })
+  @Column({ length: 50 })
   name: string;
 
   @Column({ name: 'display_name', length: 100 })
@@ -28,6 +28,9 @@ export class RoleTypeOrmEntity {
 
   @Column({ name: 'is_system', default: false })
   isSystem: boolean;
+
+  @Column({ name: 'organization_id', type: 'text', nullable: true })
+  organizationId: string | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
