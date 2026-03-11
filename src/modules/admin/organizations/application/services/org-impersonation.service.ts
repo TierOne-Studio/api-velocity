@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DatabaseService } from '../../../../../shared/infrastructure/database/database.module';
 import { OrgMember } from '../../api/dto';
 import { randomUUID } from 'crypto';
@@ -15,6 +15,123 @@ const MANAGER_ROLES = ['admin', 'manager'];
 @Injectable()
 export class OrgImpersonationService {
   constructor(private readonly db: DatabaseService) {}
+
+  private async createImpersonationSession(
+    impersonatorUserId: string,
+    targetUserId: string,
+    organizationId: string,
+  ): Promise<{ sessionToken: string }> {
+    const sessionToken = randomUUID();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await this.db.query(
+      `INSERT INTO session (id, "userId", token, "expiresAt", "impersonatedBy", "activeOrganizationId", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+      [
+        randomUUID(),
+        targetUserId,
+        sessionToken,
+        expiresAt,
+        impersonatorUserId,
+        organizationId,
+      ],
+    );
+
+    return { sessionToken };
+  }
+
+  async startImpersonation(params: {
+    actorUserId: string;
+    targetUserId: string;
+    platformRole: 'admin' | 'manager';
+    activeOrganizationId: string | null;
+    organizationId?: string;
+  }): Promise<{ sessionToken: string }> {
+    const {
+      actorUserId,
+      targetUserId,
+      platformRole,
+      activeOrganizationId,
+      organizationId,
+    } = params;
+
+    if (actorUserId === targetUserId) {
+      throw new ForbiddenException('You cannot impersonate yourself');
+    }
+
+    const target = await this.db.queryOne<{ role: string }>(
+      `SELECT role FROM "user" WHERE id = $1`,
+      [targetUserId],
+    );
+
+    if (!target) {
+      throw new NotFoundException('Target user not found');
+    }
+
+    if (platformRole === 'admin') {
+      if (target.role === 'admin') {
+        throw new ForbiddenException('You cannot impersonate another admin');
+      }
+
+      let resolvedOrganizationId = organizationId;
+
+      if (resolvedOrganizationId) {
+        const targetMembership = await this.db.queryOne<{ id: string }>(
+          `SELECT id FROM member WHERE "userId" = $1 AND "organizationId" = $2`,
+          [targetUserId, resolvedOrganizationId],
+        );
+
+        if (!targetMembership) {
+          throw new ForbiddenException('Target user is not a member of the selected organization');
+        }
+      } else {
+        const memberships = await this.db.query<{ organizationId: string }>(
+          `SELECT DISTINCT "organizationId" as "organizationId"
+           FROM member
+           WHERE "userId" = $1
+           ORDER BY "organizationId" ASC`,
+          [targetUserId],
+        );
+        const distinctOrganizationIds = [...new Set(memberships.map((membership) => membership.organizationId))];
+
+        if (distinctOrganizationIds.length === 0) {
+          throw new BadRequestException('Target user must belong to an organization');
+        }
+
+        if (distinctOrganizationIds.length > 1) {
+          throw new BadRequestException('organizationId is required when target belongs to multiple organizations');
+        }
+
+        resolvedOrganizationId = distinctOrganizationIds[0];
+      }
+
+      return this.createImpersonationSession(actorUserId, targetUserId, resolvedOrganizationId);
+    }
+
+    const managerOrganizationId = organizationId ?? activeOrganizationId;
+    if (!managerOrganizationId) {
+      throw new ForbiddenException('Active organization required');
+    }
+
+    if (activeOrganizationId && managerOrganizationId !== activeOrganizationId) {
+      throw new ForbiddenException('You can only impersonate users in your active organization');
+    }
+
+    if (target.role !== 'member') {
+      throw new ForbiddenException('Managers can only impersonate members');
+    }
+
+    const targetMembership = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM member WHERE "userId" = $1 AND "organizationId" = $2`,
+      [targetUserId, managerOrganizationId],
+    );
+
+    if (!targetMembership) {
+      throw new ForbiddenException('Target user is not a member of your active organization');
+    }
+
+    return this.createImpersonationSession(actorUserId, targetUserId, managerOrganizationId);
+  }
 
   /**
    * Get a user's membership in an organization
@@ -80,23 +197,7 @@ export class OrgImpersonationService {
       throw new ForbiddenException('You cannot impersonate yourself');
     }
 
-    const sessionToken = randomUUID();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    await this.db.query(
-      `INSERT INTO session (id, "userId", token, "expiresAt", "impersonatedBy", "activeOrganizationId", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-      [
-        randomUUID(),
-        targetUserId,
-        sessionToken,
-        expiresAt,
-        impersonatorUserId,
-        organizationId,
-      ],
-    );
-
-    return { sessionToken };
+    return this.createImpersonationSession(impersonatorUserId, targetUserId, organizationId);
   }
 
   /**

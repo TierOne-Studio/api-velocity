@@ -151,6 +151,150 @@ describe('OrgImpersonationService', () => {
     });
   });
 
+  describe('startImpersonation', () => {
+    it('should allow admin to impersonate a non-admin target when explicit organizationId is valid', async () => {
+      dbService.queryOne
+        .mockResolvedValueOnce({ role: 'member' })
+        .mockResolvedValueOnce({ id: 'member-1' });
+      dbService.query.mockResolvedValue([]);
+
+      const result = await (service as any).startImpersonation({
+        actorUserId: 'admin-1',
+        targetUserId: 'user-1',
+        platformRole: 'admin',
+        activeOrganizationId: null,
+        organizationId: 'org-1',
+      });
+
+      expect(result.sessionToken).toBeDefined();
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO session'),
+        expect.arrayContaining(['user-1', 'admin-1', 'org-1']),
+      );
+    });
+
+    it('should deny admin self-impersonation', async () => {
+      await expect(
+        (service as any).startImpersonation({
+          actorUserId: 'admin-1',
+          targetUserId: 'admin-1',
+          platformRole: 'admin',
+          activeOrganizationId: null,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(dbService.queryOne).not.toHaveBeenCalled();
+    });
+
+    it('should deny admin impersonation of another admin', async () => {
+      dbService.queryOne.mockResolvedValueOnce({ role: 'admin' });
+
+      await expect(
+        (service as any).startImpersonation({
+          actorUserId: 'admin-1',
+          targetUserId: 'admin-2',
+          platformRole: 'admin',
+          activeOrganizationId: null,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should allow manager to impersonate member in active org', async () => {
+      dbService.queryOne
+        .mockResolvedValueOnce({ role: 'member' })
+        .mockResolvedValueOnce({ id: 'member-1' });
+      dbService.query.mockResolvedValue([]);
+
+      const result = await (service as any).startImpersonation({
+        actorUserId: 'manager-1',
+        targetUserId: 'user-1',
+        platformRole: 'manager',
+        activeOrganizationId: 'org-1',
+      });
+
+      expect(result.sessionToken).toBeDefined();
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO session'),
+        expect.arrayContaining(['user-1', 'manager-1', 'org-1']),
+      );
+    });
+
+    it('should deny manager impersonation when target is outside active org', async () => {
+      dbService.queryOne
+        .mockResolvedValueOnce({ role: 'member' })
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        (service as any).startImpersonation({
+          actorUserId: 'manager-1',
+          targetUserId: 'user-2',
+          platformRole: 'manager',
+          activeOrganizationId: 'org-1',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should fail clearly when admin omits organizationId for multi-org target', async () => {
+      dbService.queryOne.mockResolvedValueOnce({ role: 'member' });
+      dbService.query.mockResolvedValueOnce([
+        { organizationId: 'org-1' },
+        { organizationId: 'org-2' },
+      ]);
+
+      await expect(
+        (service as any).startImpersonation({
+          actorUserId: 'admin-1',
+          targetUserId: 'user-1',
+          platformRole: 'admin',
+          activeOrganizationId: null,
+        }),
+      ).rejects.toThrow('organizationId is required');
+    });
+
+    it('should derive organizationId automatically for admin when target belongs to exactly one org', async () => {
+      dbService.queryOne.mockResolvedValueOnce({ role: 'member' });
+      dbService.query
+        .mockResolvedValueOnce([{ organizationId: 'org-1' }])
+        .mockResolvedValueOnce([]);
+
+      const result = await (service as any).startImpersonation({
+        actorUserId: 'admin-1',
+        targetUserId: 'user-1',
+        platformRole: 'admin',
+        activeOrganizationId: null,
+      });
+
+      expect(result.sessionToken).toBeDefined();
+      expect(dbService.query).toHaveBeenLastCalledWith(
+        expect.stringContaining('INSERT INTO session'),
+        expect.arrayContaining(['user-1', 'admin-1', 'org-1']),
+      );
+    });
+
+    it('should derive organizationId automatically for admin when duplicate membership rows belong to the same org', async () => {
+      dbService.queryOne.mockResolvedValueOnce({ role: 'member' });
+      dbService.query
+        .mockResolvedValueOnce([
+          { organizationId: 'org-1' },
+          { organizationId: 'org-1' },
+        ])
+        .mockResolvedValueOnce([]);
+
+      const result = await (service as any).startImpersonation({
+        actorUserId: 'admin-1',
+        targetUserId: 'user-1',
+        platformRole: 'admin',
+        activeOrganizationId: null,
+      });
+
+      expect(result.sessionToken).toBeDefined();
+      expect(dbService.query).toHaveBeenLastCalledWith(
+        expect.stringContaining('INSERT INTO session'),
+        expect.arrayContaining(['user-1', 'admin-1', 'org-1']),
+      );
+    });
+  });
+
   describe('stopImpersonation', () => {
     it('should delete impersonation session', async () => {
       dbService.queryOne.mockResolvedValue({ id: 'session-1', impersonatedBy: 'manager-1' });

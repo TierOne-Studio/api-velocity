@@ -27,12 +27,14 @@ jest.mock('jose', () => ({
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminService } from '../../application/services';
+import { OrgImpersonationService } from '../../../organizations/application/services';
 import { ROLES_KEY } from '../../../../../shared';
 import { RolesGuard, PermissionsGuard } from '../../../../../shared';
 
 describe('AdminUsersController', () => {
   let controller: AdminUsersController;
   let adminService: jest.Mocked<AdminService>;
+  let impersonationService: jest.Mocked<OrgImpersonationService>;
 
   const baseSession = {
     user: { id: 'actor-admin', role: 'admin' },
@@ -58,7 +60,15 @@ describe('AdminUsersController', () => {
       revokeAllSessions: jest.fn(),
     } as unknown as jest.Mocked<AdminService>;
 
-    controller = new AdminUsersController(adminService);
+    impersonationService = {
+      impersonateUser: jest.fn(),
+      startImpersonation: jest.fn(),
+      stopImpersonation: jest.fn(),
+      getMembership: jest.fn(),
+      canImpersonate: jest.fn(),
+    } as unknown as jest.Mocked<OrgImpersonationService>;
+
+    controller = new AdminUsersController(adminService, impersonationService);
   });
 
   it('applies class-level admin/manager role restrictions', () => {
@@ -372,6 +382,41 @@ describe('AdminUsersController', () => {
   describe('validateBulkRemovePayload — branch coverage', () => {
     it('throws when userIds is not an array', async () => {
       await expect(controller.bulkRemove(baseSession, { userIds: 'not-array' as any })).rejects.toThrow('userIds must be an array');
+    });
+  });
+
+  describe('impersonate', () => {
+    it('passes actor context and optional organizationId to shared impersonation service', async () => {
+      impersonationService.startImpersonation.mockResolvedValue({ sessionToken: 'imp-token-1' });
+
+      const result = await (controller as any).impersonate(baseSession, 'target-1', { organizationId: 'org-1' });
+
+      expect(impersonationService.startImpersonation).toHaveBeenCalledWith({
+        actorUserId: 'actor-admin',
+        targetUserId: 'target-1',
+        platformRole: 'admin',
+        activeOrganizationId: null,
+        organizationId: 'org-1',
+      });
+      expect(result).toEqual({ success: true, sessionToken: 'imp-token-1' });
+    });
+
+    it('uses manager active organization when organizationId is omitted', async () => {
+      impersonationService.startImpersonation.mockResolvedValue({ sessionToken: 'imp-token-2' });
+      const managerSession = {
+        user: { id: 'actor-mgr', role: 'manager' },
+        session: { activeOrganizationId: 'org-77' },
+      } as any;
+
+      await (controller as any).impersonate(managerSession, 'target-2', {});
+
+      expect(impersonationService.startImpersonation).toHaveBeenCalledWith({
+        actorUserId: 'actor-mgr',
+        targetUserId: 'target-2',
+        platformRole: 'manager',
+        activeOrganizationId: 'org-77',
+        organizationId: undefined,
+      });
     });
   });
 
