@@ -23,6 +23,7 @@ describe('AdminOrganizationsController validation', () => {
       findAll: jest.fn(),
       findById: jest.fn(),
       getMembers: jest.fn(),
+      listMemberCandidates: jest.fn(),
       getInvitations: jest.fn(),
       createInvitation: jest.fn(),
       deleteInvitation: jest.fn(),
@@ -97,6 +98,12 @@ describe('AdminOrganizationsController validation', () => {
         slug: 'Invalid Slug',
       }),
     ).rejects.toMatchObject({
+      status: HttpStatus.BAD_REQUEST,
+    });
+  });
+
+  it('rejects listMemberCandidates when limit is invalid', async () => {
+    await expect((controller as any).listMemberCandidates(adminSession, 'org-1', undefined, '0')).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
   });

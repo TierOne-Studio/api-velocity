@@ -69,6 +69,19 @@ export class AdminOrganizationsController {
     }
   }
 
+  private parseMemberCandidatesLimit(limit?: string): number {
+    if (limit === undefined) {
+      return 25;
+    }
+
+    const parsedLimit = parseInt(limit, 10);
+    if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
+      throw new HttpException('limit must be a positive integer', HttpStatus.BAD_REQUEST);
+    }
+
+    return parsedLimit;
+  }
+
   private validateCreateInvitationPayload(body: { email: string; role: string }): void {
     if (!body?.email?.trim()) {
       throw new HttpException('email is required', HttpStatus.BAD_REQUEST);
@@ -205,6 +218,26 @@ export class AdminOrganizationsController {
     }
     const members = await this.orgService.getMembers(id);
     return { data: members };
+  }
+
+  @Get(':id/member-candidates')
+  @RequirePermissions('organization:invite')
+  async listMemberCandidates(
+    @Session() session: UserSession,
+    @Param('id') id: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const { role, activeOrgId } = this.getSessionInfo(session);
+    this.requireActiveOrgForManager(role, activeOrgId);
+    this.assertManagerCanAccessOrg(role, activeOrgId, id);
+
+    const candidates = await this.orgService.listMemberCandidates(id, {
+      search,
+      limit: this.parseMemberCandidatesLimit(limit),
+    });
+
+    return { data: candidates };
   }
 
   /**
