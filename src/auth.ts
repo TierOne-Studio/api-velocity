@@ -57,6 +57,7 @@ export const auth = betterAuth({
         admin({
             ac,
             roles,
+            defaultRole: 'member',
         }),
     ],
     

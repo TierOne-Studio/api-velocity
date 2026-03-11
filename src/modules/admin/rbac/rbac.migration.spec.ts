@@ -112,14 +112,16 @@ describe('RbacMigrationService', () => {
   });
 
   describe('migrateOldRoleNames', () => {
-    it('should execute UPDATE queries for role renames and user table updates', async () => {
+    it('should execute role, user, member, and default-role normalization queries', async () => {
       await service.migrateOldRoleNames();
 
-      expect(dbService.query).toHaveBeenCalledTimes(4);
       expect(dbService.query).toHaveBeenCalledWith(expect.stringContaining("name = 'moderator'"));
       expect(dbService.query).toHaveBeenCalledWith(expect.stringContaining("name = 'user'"));
       expect(dbService.query).toHaveBeenCalledWith(expect.stringContaining("role = 'moderator'"));
       expect(dbService.query).toHaveBeenCalledWith(expect.stringContaining("role = 'user'"));
+      expect(dbService.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE member SET role = \'manager\''));
+      expect(dbService.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE member SET role = \'member\''));
+      expect(dbService.query).toHaveBeenCalledWith(expect.stringContaining('ALTER COLUMN role SET DEFAULT \'member\''));
     });
   });
 

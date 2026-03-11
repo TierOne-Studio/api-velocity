@@ -29,8 +29,13 @@ export class RbacController {
   ) {}
 
   private validateCreateRolePayload(dto: CreateRoleDto): void {
-    if (!dto?.name?.trim()) {
+    const normalizedName = dto?.name?.trim().toLowerCase();
+
+    if (!normalizedName) {
       throw new HttpException('Role name is required', HttpStatus.BAD_REQUEST);
+    }
+    if (normalizedName === 'user') {
+      throw new HttpException('Role name user is reserved', HttpStatus.BAD_REQUEST);
     }
     if (!dto?.displayName?.trim()) {
       throw new HttpException('Role displayName is required', HttpStatus.BAD_REQUEST);
@@ -111,6 +116,7 @@ export class RbacController {
   @RequirePermissions('role:create')
   async createRole(@Body() dto: CreateRoleDto) {
     this.validateCreateRolePayload(dto);
+    dto.name = dto.name.trim().toLowerCase();
 
     // Check if role name already exists
     const existing = await this.roleService.findByName(dto.name);

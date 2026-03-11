@@ -53,6 +53,14 @@ describe('RbacController validation', () => {
     });
   });
 
+  it('rejects createRole when name is the reserved legacy user role', async () => {
+    await expect(
+      controller.createRole({ name: 'user', displayName: 'User' } as any),
+    ).rejects.toMatchObject({
+      status: HttpStatus.BAD_REQUEST,
+    });
+  });
+
   it('rejects updateRole when no updatable fields are provided', async () => {
     await expect(
       controller.updateRole('role-1', {}),
