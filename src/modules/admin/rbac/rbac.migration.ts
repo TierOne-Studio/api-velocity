@@ -32,6 +32,10 @@ export class RbacMigrationService implements OnModuleInit {
         name: 'rbac_006_assign_all_permissions_to_admin',
         up: () => this.assignAllPermissionsToAdmin(),
       },
+      {
+        name: 'rbac_007_add_role_organization_scope',
+        up: () => this.addRoleOrganizationScope(),
+      },
     ];
 
     let pendingCount = 0;
@@ -60,14 +64,25 @@ export class RbacMigrationService implements OnModuleInit {
     await this.db.query(`
       CREATE TABLE IF NOT EXISTS roles (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        name VARCHAR(50) UNIQUE NOT NULL,
+        name VARCHAR(50) NOT NULL,
         display_name VARCHAR(100) NOT NULL,
         description TEXT,
         color VARCHAR(20) DEFAULT 'gray',
         is_system BOOLEAN DEFAULT false,
+        organization_id TEXT REFERENCES organization(id) ON DELETE CASCADE,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
+    `);
+    await this.db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS roles_system_name_unique_idx
+      ON roles (name)
+      WHERE organization_id IS NULL
+    `);
+    await this.db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS roles_org_name_unique_idx
+      ON roles (organization_id, name)
+      WHERE organization_id IS NOT NULL
     `);
 
     // Create permissions table
@@ -198,9 +213,9 @@ export class RbacMigrationService implements OnModuleInit {
 
     for (const role of roles) {
       await this.db.query(
-        `INSERT INTO roles (name, display_name, description, color, is_system)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (name) DO UPDATE SET
+        `INSERT INTO roles (name, display_name, description, color, is_system, organization_id)
+         VALUES ($1, $2, $3, $4, $5, NULL)
+         ON CONFLICT (name) WHERE organization_id IS NULL DO UPDATE SET
            display_name = EXCLUDED.display_name,
            description = EXCLUDED.description,
            color = EXCLUDED.color,
@@ -435,5 +450,26 @@ export class RbacMigrationService implements OnModuleInit {
         [adminRole.id, perm.id],
       );
     }
+  }
+
+  async addRoleOrganizationScope(): Promise<void> {
+    await this.db.query(`
+      ALTER TABLE roles
+      ADD COLUMN IF NOT EXISTS organization_id TEXT REFERENCES organization(id) ON DELETE CASCADE
+    `);
+    await this.db.query(`
+      ALTER TABLE roles
+      DROP CONSTRAINT IF EXISTS roles_name_key
+    `);
+    await this.db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS roles_system_name_unique_idx
+      ON roles (name)
+      WHERE organization_id IS NULL
+    `);
+    await this.db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS roles_org_name_unique_idx
+      ON roles (organization_id, name)
+      WHERE organization_id IS NOT NULL
+    `);
   }
 }

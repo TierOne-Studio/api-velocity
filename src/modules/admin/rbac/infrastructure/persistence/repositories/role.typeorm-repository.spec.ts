@@ -79,12 +79,12 @@ describe('TypeOrmRoleRepository', () => {
   describe('findAll', () => {
     it('returns mapped role array', async () => {
       mockRoleFind.mockResolvedValue([roleEntity]);
-      expect(await repo.findAll()).toEqual([roleMapped]);
+      expect(await repo.findAll('org-1')).toEqual([roleMapped]);
     });
 
     it('returns empty array when no roles', async () => {
       mockRoleFind.mockResolvedValue([]);
-      expect(await repo.findAll()).toEqual([]);
+      expect(await repo.findAll('org-1')).toEqual([]);
     });
   });
 
@@ -122,16 +122,16 @@ describe('TypeOrmRoleRepository', () => {
     it('saves and returns mapped role', async () => {
       mockRoleCreate.mockReturnValue(roleEntity);
       mockRoleSave.mockResolvedValue(roleEntity);
-      const result = await repo.create({ name: 'admin', displayName: 'Admin' });
+      const result = await repo.create({ name: 'admin', displayName: 'Admin' }, 'org-1');
       expect(result).toEqual(roleMapped);
     });
 
     it('defaults color to gray and description to null', async () => {
       mockRoleCreate.mockReturnValue(roleEntity);
       mockRoleSave.mockResolvedValue(roleEntity);
-      await repo.create({ name: 'custom', displayName: 'Custom' });
+      await repo.create({ name: 'custom', displayName: 'Custom' }, 'org-1');
       expect(mockRoleCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ color: 'gray', description: null }),
+        expect.objectContaining({ color: 'gray', description: null, organizationId: 'org-1' }),
       );
     });
   });

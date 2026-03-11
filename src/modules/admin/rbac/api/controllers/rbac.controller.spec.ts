@@ -19,6 +19,7 @@ describe('RbacController metadata', () => {
     findAll: ReturnType<typeof jest.fn>;
     findById: ReturnType<typeof jest.fn>;
     findByName: ReturnType<typeof jest.fn>;
+    findByNameInOrganization: ReturnType<typeof jest.fn>;
     create: ReturnType<typeof jest.fn>;
     update: ReturnType<typeof jest.fn>;
     delete: ReturnType<typeof jest.fn>;
@@ -37,6 +38,7 @@ describe('RbacController metadata', () => {
       findAll: jest.fn(),
       findById: jest.fn(),
       findByName: jest.fn(),
+      findByNameInOrganization: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -146,6 +148,7 @@ describe('RbacController handler bodies', () => {
     findAll: ReturnType<typeof jest.fn>;
     findById: ReturnType<typeof jest.fn>;
     findByName: ReturnType<typeof jest.fn>;
+    findByNameInOrganization: ReturnType<typeof jest.fn>;
     create: ReturnType<typeof jest.fn>;
     update: ReturnType<typeof jest.fn>;
     delete: ReturnType<typeof jest.fn>;
@@ -164,6 +167,7 @@ describe('RbacController handler bodies', () => {
       findAll: jest.fn(),
       findById: jest.fn(),
       findByName: jest.fn(),
+      findByNameInOrganization: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -189,14 +193,17 @@ describe('RbacController handler bodies', () => {
   // ============ getRoles ============
 
   describe('getRoles', () => {
-    it('returns all roles wrapped in data', async () => {
+    it('returns active-org-scoped roles wrapped in data for managers', async () => {
       const roles = [{ id: '1', name: 'admin' }, { id: '2', name: 'member' }];
       roleService.findAll.mockResolvedValue(roles);
 
-      const result = await controller.getRoles();
+      const result = await controller.getRoles({
+        user: { role: 'manager' },
+        session: { activeOrganizationId: 'org-1' },
+      } as any);
 
       expect(result).toEqual({ data: roles });
-      expect(roleService.findAll).toHaveBeenCalled();
+      expect(roleService.findAll).toHaveBeenCalledWith('org-1');
     });
   });
 
@@ -226,31 +233,73 @@ describe('RbacController handler bodies', () => {
   // ============ createRole ============
 
   describe('createRole', () => {
-    it('creates role and returns it', async () => {
+    it('creates role in the active organization and returns it', async () => {
       const dto = { name: 'editor', displayName: 'Editor', description: 'Edit', color: 'blue' };
       const created = { id: '3', ...dto, isSystem: false };
-      roleService.findByName.mockResolvedValue(null);
+      roleService.findByNameInOrganization.mockResolvedValue(null);
       roleService.create.mockResolvedValue(created);
 
-      const result = await controller.createRole(dto);
+      const result = await controller.createRole(
+        {
+          user: { role: 'manager' },
+          session: { activeOrganizationId: 'org-1' },
+        } as any,
+        dto,
+      );
 
       expect(result).toEqual({ data: created });
-      expect(roleService.create).toHaveBeenCalledWith(dto);
+      expect(roleService.create).toHaveBeenCalledWith(dto, 'org-1');
     });
 
     it('throws 409 when role name already exists', async () => {
-      const dto = { name: 'admin', displayName: 'Admin' };
-      roleService.findByName.mockResolvedValue({ id: '1', name: 'admin' });
+      const dto = { name: 'editor', displayName: 'Editor' };
+      roleService.findByNameInOrganization.mockResolvedValue({ id: '1', name: 'editor' });
 
-      await expect(controller.createRole(dto)).rejects.toThrow('Role name already exists');
+      await expect(
+        controller.createRole(
+          {
+            user: { role: 'manager' },
+            session: { activeOrganizationId: 'org-1' },
+          } as any,
+          dto,
+        ),
+      ).rejects.toThrow('Role name already exists');
     });
 
     it('throws 400 when name is empty', async () => {
-      await expect(controller.createRole({ name: '', displayName: 'X' } as any)).rejects.toThrow('Role name is required');
+      await expect(
+        controller.createRole(
+          {
+            user: { role: 'manager' },
+            session: { activeOrganizationId: 'org-1' },
+          } as any,
+          { name: '', displayName: 'X' } as any,
+        ),
+      ).rejects.toThrow('Role name is required');
     });
 
     it('throws 400 when displayName is empty', async () => {
-      await expect(controller.createRole({ name: 'x', displayName: '' } as any)).rejects.toThrow('Role displayName is required');
+      await expect(
+        controller.createRole(
+          {
+            user: { role: 'manager' },
+            session: { activeOrganizationId: 'org-1' },
+          } as any,
+          { name: 'x', displayName: '' } as any,
+        ),
+      ).rejects.toThrow('Role displayName is required');
+    });
+
+    it('throws when creating a role without an active organization', async () => {
+      await expect(
+        controller.createRole(
+          {
+            user: { role: 'admin' },
+            session: {},
+          } as any,
+          { name: 'editor', displayName: 'Editor' },
+        ),
+      ).rejects.toThrow('Active organization required');
     });
   });
 

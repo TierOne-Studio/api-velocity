@@ -8,6 +8,7 @@ export interface Role {
   description: string | null;
   color: string;
   isSystem: boolean;
+  organizationId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,6 +48,7 @@ export interface RoleRow {
   description: string | null;
   color: string;
   is_system: boolean;
+  organization_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -69,6 +71,7 @@ export function rowToRole(row: RoleRow): Role {
     description: row.description,
     color: row.color,
     isSystem: row.is_system,
+    organizationId: row.organization_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

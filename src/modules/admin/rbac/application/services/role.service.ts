@@ -16,8 +16,8 @@ export class RoleService {
   /**
    * Get all roles
    */
-  async findAll(): Promise<Role[]> {
-    return this.roleRepo.findAll();
+  async findAll(activeOrganizationId: string): Promise<Role[]> {
+    return this.roleRepo.findAll(activeOrganizationId);
   }
 
   /**
@@ -34,11 +34,15 @@ export class RoleService {
     return this.roleRepo.findByName(name);
   }
 
+  async findByNameInOrganization(name: string, activeOrganizationId: string): Promise<Role | null> {
+    return this.roleRepo.findByNameInOrganization(name, activeOrganizationId);
+  }
+
   /**
    * Create a new role
    */
-  async create(dto: CreateRoleDto): Promise<Role> {
-    return this.roleRepo.create(dto);
+  async create(dto: CreateRoleDto, activeOrganizationId: string): Promise<Role> {
+    return this.roleRepo.create(dto, activeOrganizationId);
   }
 
   /**

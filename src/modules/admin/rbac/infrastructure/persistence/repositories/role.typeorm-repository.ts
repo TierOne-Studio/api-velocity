@@ -16,6 +16,7 @@ function mapRole(e: RoleTypeOrmEntity): Role {
     description: e.description,
     color: e.color,
     isSystem: e.isSystem,
+    organizationId: e.organizationId,
     createdAt: e.createdAt,
     updatedAt: e.updatedAt,
   };
@@ -40,8 +41,9 @@ export class TypeOrmRoleRepository implements IRoleRepository {
     private readonly dataSource: DataSource,
   ) {}
 
-  async findAll(): Promise<Role[]> {
+  async findAll(activeOrganizationId: string): Promise<Role[]> {
     const entities = await this.roleRepo.find({
+      where: [{ isSystem: true }, { organizationId: activeOrganizationId }],
       order: { isSystem: 'DESC', name: 'ASC' },
     });
     return entities.map(mapRole);
@@ -57,13 +59,21 @@ export class TypeOrmRoleRepository implements IRoleRepository {
     return entity ? mapRole(entity) : null;
   }
 
-  async create(dto: CreateRoleDto): Promise<Role> {
+  async findByNameInOrganization(name: string, activeOrganizationId: string): Promise<Role | null> {
+    const entity = await this.roleRepo.findOne({
+      where: { name, organizationId: activeOrganizationId },
+    });
+    return entity ? mapRole(entity) : null;
+  }
+
+  async create(dto: CreateRoleDto, activeOrganizationId: string): Promise<Role> {
     const entity = this.roleRepo.create({
       name: dto.name,
       displayName: dto.displayName,
       description: dto.description ?? null,
       color: dto.color ?? 'gray',
       isSystem: false,
+      organizationId: activeOrganizationId,
     });
     const saved = await this.roleRepo.save(entity);
     return mapRole(saved);

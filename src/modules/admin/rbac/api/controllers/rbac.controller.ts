@@ -15,6 +15,7 @@ import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { RolesGuard, Roles, PermissionsGuard, RequirePermissions } from '../../../../../shared';
 import { RoleService, PermissionService } from '../../application/services';
 import { CreateRoleDto, UpdateRoleDto, AssignPermissionsDto } from '../dto';
+import { getActiveOrganizationId } from '../../../utils/admin.utils';
 
 /**
  * Controller for RBAC management endpoints
@@ -30,12 +31,13 @@ export class RbacController {
 
   private validateCreateRolePayload(dto: CreateRoleDto): void {
     const normalizedName = dto?.name?.trim().toLowerCase();
+    const reservedNames = new Set(['admin', 'manager', 'member', 'user']);
 
     if (!normalizedName) {
       throw new HttpException('Role name is required', HttpStatus.BAD_REQUEST);
     }
-    if (normalizedName === 'user') {
-      throw new HttpException('Role name user is reserved', HttpStatus.BAD_REQUEST);
+    if (reservedNames.has(normalizedName)) {
+      throw new HttpException(`Role name ${normalizedName} is reserved`, HttpStatus.BAD_REQUEST);
     }
     if (!dto?.displayName?.trim()) {
       throw new HttpException('Role displayName is required', HttpStatus.BAD_REQUEST);
@@ -90,8 +92,13 @@ export class RbacController {
    */
   @Get('roles')
   @RequirePermissions('role:read')
-  async getRoles() {
-    const roles = await this.roleService.findAll();
+  async getRoles(@Session() session: UserSession) {
+    const activeOrganizationId = getActiveOrganizationId(session);
+    if (!activeOrganizationId) {
+      throw new HttpException('Active organization required', HttpStatus.FORBIDDEN);
+    }
+
+    const roles = await this.roleService.findAll(activeOrganizationId);
     return { data: roles };
   }
 
@@ -114,17 +121,21 @@ export class RbacController {
    */
   @Post('roles')
   @RequirePermissions('role:create')
-  async createRole(@Body() dto: CreateRoleDto) {
+  async createRole(@Session() session: UserSession, @Body() dto: CreateRoleDto) {
     this.validateCreateRolePayload(dto);
     dto.name = dto.name.trim().toLowerCase();
+    const activeOrganizationId = getActiveOrganizationId(session);
+    if (!activeOrganizationId) {
+      throw new HttpException('Active organization required', HttpStatus.FORBIDDEN);
+    }
 
     // Check if role name already exists
-    const existing = await this.roleService.findByName(dto.name);
+    const existing = await this.roleService.findByNameInOrganization(dto.name, activeOrganizationId);
     if (existing) {
       throw new HttpException('Role name already exists', HttpStatus.CONFLICT);
     }
 
-    const role = await this.roleService.create(dto);
+    const role = await this.roleService.create(dto, activeOrganizationId);
     return { data: role };
   }
 

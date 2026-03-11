@@ -41,7 +41,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true)   // rbac_003 already run
         .mockResolvedValueOnce(true)   // rbac_004 already run
         .mockResolvedValueOnce(true)   // rbac_005 already run
-        .mockResolvedValueOnce(true);  // rbac_006 already run
+        .mockResolvedValueOnce(true)   // rbac_006 already run
+        .mockResolvedValueOnce(true);  // rbac_007 already run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -60,7 +61,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false)   // rbac_003 NOT run
         .mockResolvedValueOnce(false)   // rbac_004 NOT run
         .mockResolvedValueOnce(true)    // rbac_005 already run
-        .mockResolvedValueOnce(false);  // rbac_006 NOT run
+        .mockResolvedValueOnce(true)    // rbac_006 already run
+        .mockResolvedValueOnce(false);  // rbac_007 NOT run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -71,7 +73,7 @@ describe('RbacMigrationService', () => {
         'rbac_004_add_manager_org_create_permission',
       );
       expect(dbService.recordMigration).toHaveBeenCalledWith(
-        'rbac_006_assign_all_permissions_to_admin',
+        'rbac_007_add_role_organization_scope',
       );
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('4 new'),
@@ -79,7 +81,7 @@ describe('RbacMigrationService', () => {
       consoleSpy.mockRestore();
     });
 
-    it('should check all four RBAC migrations', async () => {
+    it('should check all tracked RBAC migrations', async () => {
       dbService.hasMigrationRun.mockResolvedValue(true);
 
       jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -97,6 +99,9 @@ describe('RbacMigrationService', () => {
       expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
         'rbac_006_assign_all_permissions_to_admin',
       );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_007_add_role_organization_scope',
+      );
     });
   });
 
@@ -104,10 +109,19 @@ describe('RbacMigrationService', () => {
     it('should execute CREATE TABLE queries for roles, permissions, and role_permissions', async () => {
       await service.createRbacTables();
 
-      expect(dbService.query).toHaveBeenCalledTimes(3);
+      expect(dbService.query).toHaveBeenCalledTimes(5);
       expect(dbService.query).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS roles'));
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE UNIQUE INDEX IF NOT EXISTS roles_system_name_unique_idx'),
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE UNIQUE INDEX IF NOT EXISTS roles_org_name_unique_idx'),
+      );
       expect(dbService.query).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS permissions'));
       expect(dbService.query).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS role_permissions'));
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('organization_id TEXT REFERENCES organization(id) ON DELETE CASCADE'),
+      );
     });
   });
 
