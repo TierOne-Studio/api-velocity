@@ -116,6 +116,15 @@ export class RbacMigrationService implements OnModuleInit {
     
     // Update user table: rename 'user' role to 'member'
     await this.db.query(`UPDATE "user" SET role = 'member' WHERE role = 'user'`);
+
+    // Update organization member table: rename 'moderator' role to 'manager'
+    await this.db.query(`UPDATE member SET role = 'manager' WHERE role = 'moderator'`);
+
+    // Update organization member table: rename 'user' role to 'member'
+    await this.db.query(`UPDATE member SET role = 'member' WHERE role = 'user'`);
+
+    // Ensure fresh Better Auth signups default to the canonical built-in member role
+    await this.db.query(`ALTER TABLE "user" ALTER COLUMN role SET DEFAULT 'member'`);
   }
 
   /**
