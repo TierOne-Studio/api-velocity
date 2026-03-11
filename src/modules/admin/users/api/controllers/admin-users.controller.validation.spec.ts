@@ -27,10 +27,12 @@ jest.mock('jose', () => ({
 import { HttpStatus } from '@nestjs/common';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminService } from '../../application/services';
+import { OrgImpersonationService } from '../../../organizations/application/services';
 
 describe('AdminUsersController validation', () => {
   let controller: AdminUsersController;
   let adminService: jest.Mocked<AdminService>;
+  let impersonationService: jest.Mocked<OrgImpersonationService>;
 
   const baseSession = {
     user: { id: 'actor-admin', role: 'admin' },
@@ -55,7 +57,15 @@ describe('AdminUsersController validation', () => {
       revokeAllSessions: jest.fn(),
     } as unknown as jest.Mocked<AdminService>;
 
-    controller = new AdminUsersController(adminService);
+    impersonationService = {
+      impersonateUser: jest.fn(),
+      startImpersonation: jest.fn(),
+      stopImpersonation: jest.fn(),
+      getMembership: jest.fn(),
+      canImpersonate: jest.fn(),
+    } as unknown as jest.Mocked<OrgImpersonationService>;
+
+    controller = new AdminUsersController(adminService, impersonationService);
   });
 
   it('rejects list when limit is not a number', async () => {

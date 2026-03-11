@@ -14,6 +14,7 @@ import {
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { AdminService } from '../../application/services';
+import { OrgImpersonationService } from '../../../organizations/application/services';
 import {
   requireAdminOrManager,
   requireActiveOrganizationIdForManager,
@@ -25,7 +26,10 @@ import { PASSWORD_POLICY } from '../../../../../shared/utils/password-policy';
 @UseGuards(RolesGuard, PermissionsGuard)
 @Roles('admin', 'manager')
 export class AdminUsersController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly impersonationService: OrgImpersonationService,
+  ) {}
 
   private validatePagination(limit: string, offset: string): { parsedLimit: number; parsedOffset: number } {
     const parsedLimit = parseInt(String(limit), 10);
@@ -280,6 +284,29 @@ export class AdminUsersController {
       activeOrgId,
       session.user.id,
     );
+  }
+
+  @Post(':userId/impersonate')
+  @RequirePermissions('user:impersonate')
+  async impersonate(
+    @Session() session: UserSession,
+    @Param('userId') userId: string,
+    @Body() body: { organizationId?: string },
+  ) {
+    const platformRole = requireAdminOrManager(session);
+    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const result = await this.impersonationService.startImpersonation({
+      actorUserId: session.user.id,
+      targetUserId: userId,
+      platformRole,
+      activeOrganizationId: activeOrgId,
+      organizationId: body?.organizationId,
+    });
+
+    return {
+      success: true,
+      sessionToken: result.sessionToken,
+    };
   }
 
   @Delete(':userId')
