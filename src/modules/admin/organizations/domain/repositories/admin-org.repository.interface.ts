@@ -27,6 +27,14 @@ export interface MemberWithUserRow {
   user_image: string | null;
 }
 
+export interface MemberCandidateRow {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  image: string | null;
+}
+
 export interface MemberRow {
   id: string;
   organizationId: string;
@@ -93,6 +101,10 @@ export interface IAdminOrgRepository {
 
   // Members
   getMembers(organizationId: string): Promise<MemberWithUserRow[]>;
+  listMemberCandidates(
+    organizationId: string,
+    params?: { search?: string; limit?: number },
+  ): Promise<MemberCandidateRow[]>;
   findMemberById(memberId: string, organizationId: string): Promise<MemberBasicRow | null>;
   findMemberByUserId(userId: string, organizationId: string): Promise<{ id: string } | null>;
   findMemberByEmail(organizationId: string, email: string): Promise<{ id: string } | null>;

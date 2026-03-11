@@ -261,6 +261,22 @@ export class AdminOrganizationsService {
     }));
   }
 
+  async listMemberCandidates(
+    organizationId: string,
+    params: { search?: string; limit?: number } = {},
+  ): Promise<Array<{
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    image: string | null;
+  }>> {
+    const org = await this.findById(organizationId);
+    if (!org) throw new NotFoundException('Organization not found');
+
+    return this.orgRepo.listMemberCandidates(organizationId, params);
+  }
+
   /**
    * Create an invitation for an organization member.
    */

@@ -6,6 +6,7 @@ import type {
   OrgRawRow,
   OrgBasicRow,
   MemberWithUserRow,
+  MemberCandidateRow,
   MemberRow,
   MemberBasicRow,
   InvitationRow,
@@ -149,6 +150,43 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
        WHERE m."organizationId" = $1
        ORDER BY m."createdAt" ASC`,
       [organizationId],
+    );
+  }
+
+  async listMemberCandidates(
+    organizationId: string,
+    params: { search?: string; limit?: number } = {},
+  ): Promise<MemberCandidateRow[]> {
+    const limit = Math.min(100, Math.max(1, params.limit ?? 25));
+    const queryParams: unknown[] = [organizationId];
+    let searchClause = '';
+
+    if (params.search?.trim()) {
+      queryParams.push(`%${params.search.trim()}%`);
+      const searchParam = queryParams.length;
+      searchClause = `
+       AND (
+         u.name ILIKE $${searchParam}
+         OR u.email ILIKE $${searchParam}
+       )`;
+    }
+
+    queryParams.push(limit);
+    const limitParam = queryParams.length;
+
+    return this.db.query<MemberCandidateRow>(
+      `SELECT u.id, u.name, u.email, u.role, u.image
+       FROM "user" u
+       WHERE NOT EXISTS (
+         SELECT 1
+         FROM member m
+         WHERE m."organizationId" = $1
+           AND m."userId" = u.id
+       )
+       ${searchClause}
+       ORDER BY u.name ASC, u.email ASC
+       LIMIT $${limitParam}`,
+      queryParams,
     );
   }
 
