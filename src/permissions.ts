@@ -24,9 +24,17 @@ export const ac = createAccessControl(statement);
  * Each role defines what permissions it has for each resource.
  */
 
-// Admin role - full access to all resources
-export const adminRole = ac.newRole({
+// Superadmin role - full access to all resources
+export const superadminRole = ac.newRole({
   ...adminAc.statements,
+});
+
+// Admin role - full access within an organization
+export const adminRole = ac.newRole({
+  user: ["create", "list", "get", "update", "delete", "ban", "impersonate", "set-role", "set-password"],
+  session: ["list", "revoke"],
+  organization: ["create", "list", "get", "update", "invite"],
+  role: ["list", "get"],
 });
 
 // Manager role - can manage users/sessions within their organization
@@ -46,6 +54,7 @@ export const memberRole = ac.newRole({
  * All available roles
  */
 export const roles = {
+  superadmin: superadminRole,
   admin: adminRole,
   manager: managerRole,
   member: memberRole,
@@ -55,9 +64,14 @@ export const roles = {
  * Role metadata for UI display
  */
 export const roleMetadata = {
+  superadmin: {
+    name: "Superadmin",
+    description: "Unrestricted global access across the entire platform",
+    color: "red",
+  },
   admin: {
     name: "Admin",
-    description: "Full access to all resources and actions",
+    description: "Full access within an organization",
     color: "red",
   },
   manager: {

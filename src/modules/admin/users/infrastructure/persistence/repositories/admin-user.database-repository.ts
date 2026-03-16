@@ -146,7 +146,7 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
       where.push(`(u.name ILIKE $${values.length} OR u.email ILIKE $${values.length})`);
     }
 
-    if (platformRole === 'manager') {
+    if (platformRole !== 'superadmin') {
       values.push(activeOrganizationId);
       where.push(`EXISTS (SELECT 1 FROM member m WHERE m."userId" = u.id AND m."organizationId" = $${values.length})`);
     }

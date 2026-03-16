@@ -98,8 +98,13 @@ export class RoleService {
   /**
    * Get user's effective permissions based on their role
    */
-  async getUserPermissions(roleName: string): Promise<Permission[]> {
-    const role = await this.roleRepo.findByName(roleName);
+  async getUserPermissions(
+    roleName: string,
+    activeOrganizationId: string | null,
+  ): Promise<Permission[]> {
+    const role = activeOrganizationId
+      ? await this.roleRepo.findByNameInOrganization(roleName, activeOrganizationId)
+      : await this.roleRepo.findByName(roleName);
     if (!role) {
       return [];
     }

@@ -2,6 +2,7 @@ import { Injectable, ForbiddenException, NotFoundException, BadRequestException 
 import { DatabaseService } from '../../../../../shared/infrastructure/database/database.module';
 import { OrgMember } from '../../api/dto';
 import { randomUUID } from 'crypto';
+import type { PlatformRole } from '../../../utils/admin.utils';
 
 // Unified Role Model - roles that can impersonate within an organization
 // - 'admin': Global platform administrator (can impersonate anyone)
@@ -43,7 +44,7 @@ export class OrgImpersonationService {
   async startImpersonation(params: {
     actorUserId: string;
     targetUserId: string;
-    platformRole: 'admin' | 'manager';
+    platformRole: PlatformRole;
     activeOrganizationId: string | null;
     organizationId?: string;
   }): Promise<{ sessionToken: string }> {
@@ -68,7 +69,7 @@ export class OrgImpersonationService {
       throw new NotFoundException('Target user not found');
     }
 
-    if (platformRole === 'admin') {
+    if (platformRole === 'superadmin' || platformRole === 'admin') {
       if (target.role === 'admin') {
         throw new ForbiddenException('You cannot impersonate another admin');
       }
@@ -118,7 +119,7 @@ export class OrgImpersonationService {
     }
 
     if (target.role !== 'member') {
-      throw new ForbiddenException('Managers can only impersonate members');
+      throw new ForbiddenException('Organization-scoped actors can only impersonate members');
     }
 
     const targetMembership = await this.db.queryOne<{ id: string }>(

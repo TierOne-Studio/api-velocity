@@ -639,7 +639,7 @@ describe('AdminOrganizationsService', () => {
       orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'manager', userId: 'user-1' });
 
       await expect(service.updateMemberRole('org-1', 'member-1', 'member', 'manager')).rejects.toThrow(
-        'Managers can only change member roles',
+        'Organization-scoped actors can only change member roles',
       );
     });
 
@@ -685,7 +685,7 @@ describe('AdminOrganizationsService', () => {
       orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'manager', userId: 'user-1' });
 
       await expect(service.removeMember('org-1', 'member-1', 'manager')).rejects.toThrow(
-        'Managers can only remove members',
+        'Organization-scoped actors can only remove members',
       );
     });
 

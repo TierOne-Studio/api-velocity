@@ -161,7 +161,12 @@ describe('AdminUserDatabaseRepository', () => {
   // ─── listUsers ───────────────────────────────────────────────────────────────
 
   describe('listUsers', () => {
-    const baseParams = { limit: 10, offset: 0, platformRole: 'admin' as const, activeOrganizationId: undefined };
+    const baseParams = {
+      limit: 10,
+      offset: 0,
+      platformRole: 'superadmin' as const,
+      activeOrganizationId: null,
+    };
 
     it('returns data and parsed total with no filters', async () => {
       mockQuery.mockResolvedValue([{ id: 'u-1' }]);
@@ -184,6 +189,22 @@ describe('AdminUserDatabaseRepository', () => {
       await repo.listUsers({ ...baseParams, searchValue: 'alice' });
       const [sql] = mockQuery.mock.calls[0] as [string];
       expect(sql).toContain('ILIKE');
+    });
+
+    it('does not add EXISTS clause for superadmin', async () => {
+      mockQuery.mockResolvedValue([]);
+      mockQueryOne.mockResolvedValue({ count: '0' });
+      await repo.listUsers(baseParams);
+      const [sql] = mockQuery.mock.calls[0] as [string];
+      expect(sql).not.toContain('EXISTS');
+    });
+
+    it('adds EXISTS clause for admin platform role', async () => {
+      mockQuery.mockResolvedValue([]);
+      mockQueryOne.mockResolvedValue({ count: '0' });
+      await repo.listUsers({ ...baseParams, platformRole: 'admin', activeOrganizationId: 'org-1' });
+      const [sql] = mockQuery.mock.calls[0] as [string];
+      expect(sql).toContain('EXISTS');
     });
 
     it('adds EXISTS clause for manager platform role', async () => {

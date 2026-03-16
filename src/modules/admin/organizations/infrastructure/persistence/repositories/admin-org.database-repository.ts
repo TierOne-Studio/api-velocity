@@ -15,9 +15,86 @@ import type {
   UpdateOrgFields,
 } from '../../../domain/repositories/admin-org.repository.interface';
 
+const MANAGER_ROLE_PERMISSIONS = [
+  ['organization', 'read'],
+  ['organization', 'update'],
+  ['organization', 'invite'],
+  ['role', 'read'],
+  ['session', 'read'],
+  ['session', 'revoke'],
+  ['user', 'create'],
+  ['user', 'read'],
+  ['user', 'update'],
+] as const;
+
+const MEMBER_ROLE_PERMISSIONS = [
+  ['organization', 'read'],
+] as const;
+
 @Injectable()
 export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
   constructor(private readonly db: DatabaseService) {}
+
+  private async seedDefaultRoles(
+    query: (sql: string, params?: unknown[]) => Promise<unknown>,
+    organizationId: string,
+  ): Promise<void> {
+    await query(
+      `INSERT INTO roles (name, display_name, description, color, is_system, organization_id)
+       VALUES
+         ('admin', 'Admin', 'Organization administrator with full access within their organization', 'red', true, $1),
+         ('manager', 'Manager', 'Organization manager with elevated operational access within their organization', 'blue', true, $1),
+         ('member', 'Member', 'Organization member with basic access within their organization', 'gray', true, $1)
+       ON CONFLICT (organization_id, name) WHERE organization_id IS NOT NULL DO UPDATE SET
+         display_name = EXCLUDED.display_name,
+         description = EXCLUDED.description,
+         color = EXCLUDED.color,
+         is_system = EXCLUDED.is_system,
+         updated_at = NOW()`,
+      [organizationId],
+    );
+
+    await query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT r.id, p.id
+       FROM roles r
+       CROSS JOIN permissions p
+       WHERE r.organization_id = $1
+         AND r.name = 'admin'
+       ON CONFLICT DO NOTHING`,
+      [organizationId],
+    );
+
+    await query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT r.id, p.id
+       FROM roles r
+       JOIN permissions p
+         ON (p.resource, p.action) IN (${MANAGER_ROLE_PERMISSIONS.map((_, index) => `($${index * 2 + 2}, $${index * 2 + 3})`).join(', ')})
+       WHERE r.organization_id = $1
+         AND r.name = 'manager'
+       ON CONFLICT DO NOTHING`,
+      [
+        organizationId,
+        ...MANAGER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [resource, action]),
+      ],
+    );
+
+    await query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT r.id, p.id
+       FROM roles r
+       JOIN permissions p
+         ON (p.resource, p.action) IN (${MEMBER_ROLE_PERMISSIONS.map((_, index) => `($${index * 2 + 2}, $${index * 2 + 3})`).join(', ')})
+       WHERE r.organization_id = $1
+         AND r.name = 'member'
+       ON CONFLICT DO NOTHING`,
+      [
+        organizationId,
+        ...MEMBER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [resource, action]),
+      ],
+    );
+  }
 
   async findAll(search?: string, limit = 20, offset = 0): Promise<OrgWithCountRow[]> {
     let whereClause = '';
@@ -99,6 +176,8 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
          VALUES ($1, $2, $3, $4, NOW())`,
         [params.memberId, params.id, params.actorId, params.actorRole],
       );
+
+      await this.seedDefaultRoles(query, params.id);
     });
   }
 

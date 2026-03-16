@@ -9,20 +9,20 @@ import {
   HttpException,
   HttpStatus,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
-import { RolesGuard, Roles, PermissionsGuard, RequirePermissions } from '../../../../../shared';
+import { PermissionsGuard, RequirePermissions } from '../../../../../shared';
 import { RoleService, PermissionService } from '../../application/services';
 import { CreateRoleDto, UpdateRoleDto, AssignPermissionsDto } from '../dto';
-import { getActiveOrganizationId } from '../../../utils/admin.utils';
+import { getActiveOrganizationId, getPlatformRole } from '../../../utils/admin.utils';
 
 /**
  * Controller for RBAC management endpoints
  */
 @Controller('api/rbac')
-@UseGuards(RolesGuard, PermissionsGuard)
-@Roles('admin', 'manager')
+@UseGuards(PermissionsGuard)
 export class RbacController {
   constructor(
     private readonly roleService: RoleService,
@@ -65,21 +65,27 @@ export class RbacController {
 
   /**
    * Get the current authenticated user's effective permissions.
-   * Admin users receive all permissions; others receive their DB role_permissions.
-   * Accessible by any authenticated admin/manager (class-level @Roles already enforces this).
+   * Superadmin users receive all permissions; others receive their active-org role permissions.
    */
   @Get('my-permissions')
   async getMyPermissions(@Session() session: UserSession) {
-    const userRole = session?.user?.role as string;
+    if (!session?.user) {
+      throw new ForbiddenException('Authentication required');
+    }
 
-    if (userRole === 'admin') {
+    const userRole = getPlatformRole(session);
+
+    if (userRole === 'superadmin') {
       const allPermissions = await this.permissionService.findAll();
       return {
         data: allPermissions.map((p) => `${p.resource}:${p.action}`),
       };
     }
 
-    const permissions = await this.roleService.getUserPermissions(userRole);
+    const permissions = await this.roleService.getUserPermissions(
+      userRole,
+      getActiveOrganizationId(session),
+    );
     return {
       data: permissions.map((p) => `${p.resource}:${p.action}`),
     };
@@ -226,8 +232,11 @@ export class RbacController {
    */
   @Get('users/:roleName/permissions')
   @RequirePermissions('role:read')
-  async getUserPermissions(@Param('roleName') roleName: string) {
-    const permissions = await this.roleService.getUserPermissions(roleName);
+  async getUserPermissions(@Session() session: UserSession, @Param('roleName') roleName: string) {
+    const permissions = await this.roleService.getUserPermissions(
+      roleName,
+      getActiveOrganizationId(session),
+    );
     return { data: permissions };
   }
 

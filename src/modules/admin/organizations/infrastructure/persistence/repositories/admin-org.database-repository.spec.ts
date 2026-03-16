@@ -117,13 +117,38 @@ describe('AdminOrgDatabaseRepository', () => {
       await expect(repo.createOrg(params)).rejects.toThrow('connection lost');
     });
 
-    it('inserts org and member without a prior SELECT when slug is free', async () => {
-      mockQuery.mockResolvedValueOnce(undefined);
-      mockQuery.mockResolvedValueOnce(undefined);
+    it('inserts org, member, default roles, and role permissions without a prior SELECT when slug is free', async () => {
+      mockQuery.mockResolvedValue(undefined);
       await expect(repo.createOrg(params)).resolves.toBeUndefined();
-      expect(mockQuery).toHaveBeenCalledTimes(2);
+      expect(mockQuery).toHaveBeenCalledTimes(6);
       const [firstSql] = mockQuery.mock.calls[0] as [string];
       expect(firstSql).toContain('INSERT INTO organization');
+      expect(mockQuery.mock.calls[2][0]).toContain('INSERT INTO roles');
+      expect(mockQuery.mock.calls[3][0]).toContain('INSERT INTO role_permissions');
+      expect(mockQuery.mock.calls[4][0]).toContain('INSERT INTO role_permissions');
+      expect(mockQuery.mock.calls[5][0]).toContain('INSERT INTO role_permissions');
+      expect(mockQuery.mock.calls[4][1]).toEqual([
+        'org-1',
+        'organization',
+        'read',
+        'organization',
+        'update',
+        'organization',
+        'invite',
+        'role',
+        'read',
+        'session',
+        'read',
+        'session',
+        'revoke',
+        'user',
+        'create',
+        'user',
+        'read',
+        'user',
+        'update',
+      ]);
+      expect(mockQuery.mock.calls[5][1]).toEqual(['org-1', 'organization', 'read']);
     });
   });
 

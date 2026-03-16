@@ -14,9 +14,10 @@ import {
 } from '@nestjs/common';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
-import { RolesGuard, Roles, PermissionsGuard, RequirePermissions } from '../../../../../shared';
+import { PermissionsGuard, RequirePermissions } from '../../../../../shared';
 import { AdminOrganizationsService, filterAssignableRoles, getRoleLevel } from '../../application/services/admin-organizations.service';
 import { PaginationQuery, UpdateOrganizationDto } from '../../api/dto';
+import { getPlatformRole, type PlatformRole } from '../../../utils/admin.utils';
 
 /**
  * Controller for platform-level organization management.
@@ -24,31 +25,29 @@ import { PaginationQuery, UpdateOrganizationDto } from '../../api/dto';
  * Managers can only view and manage their active organization.
  */
 @Controller('api/platform-admin/organizations')
-@UseGuards(RolesGuard, PermissionsGuard)
-@Roles('admin', 'manager')
+@UseGuards(PermissionsGuard)
 export class AdminOrganizationsController {
   constructor(private readonly orgService: AdminOrganizationsService) {}
 
   private readonly allowedMemberRoles = ['admin', 'manager', 'member'] as const;
   private readonly slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-  private getSessionInfo(session: UserSession): { role: 'admin' | 'manager'; activeOrgId: string | null } {
-    const role = session?.user?.role as string;
+  private getSessionInfo(session: UserSession): { role: PlatformRole; activeOrgId: string | null } {
     const activeOrgId = (session?.session as { activeOrganizationId?: string })?.activeOrganizationId ?? null;
     return {
-      role: role === 'admin' ? 'admin' : 'manager',
+      role: getPlatformRole(session),
       activeOrgId,
     };
   }
 
-  private requireActiveOrgForManager(role: 'admin' | 'manager', activeOrgId: string | null): void {
-    if (role === 'manager' && !activeOrgId) {
+  private requireActiveOrgForManager(role: PlatformRole, activeOrgId: string | null): void {
+    if (role !== 'superadmin' && !activeOrgId) {
       throw new ForbiddenException('Active organization required');
     }
   }
 
-  private assertManagerCanAccessOrg(role: 'admin' | 'manager', activeOrgId: string | null, targetOrgId: string): void {
-    if (role === 'manager' && activeOrgId !== targetOrgId) {
+  private assertManagerCanAccessOrg(role: PlatformRole, activeOrgId: string | null, targetOrgId: string): void {
+    if (role !== 'superadmin' && activeOrgId !== targetOrgId) {
       throw new ForbiddenException('You can only access your own organization');
     }
   }
@@ -173,7 +172,7 @@ export class AdminOrganizationsController {
     const search = query.search;
 
     // Managers only see their own organization
-    if (role === 'manager' && activeOrgId) {
+    if (role !== 'admin' && activeOrgId) {
       const org = await this.orgService.findById(activeOrgId);
       return {
         data: org ? [org] : [],

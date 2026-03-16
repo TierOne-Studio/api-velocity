@@ -11,7 +11,7 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { RbacController } from './rbac.controller';
 import { RoleService, PermissionService } from '../../application/services';
 import { ROLES_KEY, PERMISSIONS_KEY } from '../../../../../shared';
-import { RolesGuard, PermissionsGuard } from '../../../../../shared';
+import { PermissionsGuard } from '../../../../../shared';
 
 describe('RbacController metadata', () => {
   let controller: RbacController;
@@ -59,14 +59,14 @@ describe('RbacController metadata', () => {
     );
   });
 
-  it('returns all permissions for admin in getMyPermissions', async () => {
+  it('returns all permissions for superadmin in getMyPermissions', async () => {
     permissionService.findAll.mockResolvedValue([
       { id: '1', resource: 'organization', action: 'create' },
       { id: '2', resource: 'user', action: 'read' },
     ]);
 
     const result = await controller.getMyPermissions({
-      user: { role: 'admin' },
+      user: { role: 'superadmin' },
     } as any);
 
     expect(result).toEqual({
@@ -76,7 +76,7 @@ describe('RbacController metadata', () => {
     expect(roleService.getUserPermissions).not.toHaveBeenCalled();
   });
 
-  it('returns role-based permissions for non-admin in getMyPermissions', async () => {
+  it('returns role-based permissions for org-scoped users in getMyPermissions', async () => {
     roleService.getUserPermissions.mockResolvedValue([
       { id: '3', resource: 'organization', action: 'read' },
       { id: '4', resource: 'organization', action: 'invite' },
@@ -84,25 +84,32 @@ describe('RbacController metadata', () => {
 
     const result = await controller.getMyPermissions({
       user: { role: 'manager' },
+      session: { activeOrganizationId: 'org-1' },
     } as any);
 
     expect(result).toEqual({
       data: ['organization:read', 'organization:invite'],
     });
-    expect(roleService.getUserPermissions).toHaveBeenCalledWith('manager');
+    expect(roleService.getUserPermissions).toHaveBeenCalledWith('manager', 'org-1');
     expect(permissionService.findAll).not.toHaveBeenCalled();
   });
 
-  it('applies class-level role restrictions', () => {
-    const roles = Reflect.getMetadata(ROLES_KEY, RbacController);
-    expect(roles).toEqual(['admin', 'manager']);
+  it('returns empty permissions for org-scoped users without active organization in getMyPermissions', async () => {
+    roleService.getUserPermissions.mockResolvedValue([]);
+
+    const result = await controller.getMyPermissions({
+      user: { role: 'admin' },
+      session: {},
+    } as any);
+
+    expect(result).toEqual({ data: [] });
+    expect(roleService.getUserPermissions).toHaveBeenCalledWith('admin', null);
   });
 
   it('applies class-level guards', () => {
     const guards = Reflect.getMetadata(GUARDS_METADATA, RbacController) as unknown[];
 
     expect(guards).toBeDefined();
-    expect(guards).toContain(RolesGuard);
     expect(guards).toContain(PermissionsGuard);
   });
 
@@ -427,10 +434,13 @@ describe('RbacController handler bodies', () => {
       const permissions = [{ id: 'p1', resource: 'user', action: 'read' }];
       roleService.getUserPermissions.mockResolvedValue(permissions);
 
-      const result = await controller.getUserPermissions('manager');
+      const result = await controller.getUserPermissions(
+        { session: { activeOrganizationId: 'org-1' } } as any,
+        'manager',
+      );
 
       expect(result).toEqual({ data: permissions });
-      expect(roleService.getUserPermissions).toHaveBeenCalledWith('manager');
+      expect(roleService.getUserPermissions).toHaveBeenCalledWith('manager', 'org-1');
     });
   });
 

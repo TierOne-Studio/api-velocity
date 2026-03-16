@@ -38,7 +38,7 @@ describe('AdminOrganizationsController validation', () => {
   });
 
   const adminSession = {
-    user: { role: 'admin' },
+    user: { role: 'superadmin' },
     session: { activeOrganizationId: null },
   } as unknown as UserSession;
 

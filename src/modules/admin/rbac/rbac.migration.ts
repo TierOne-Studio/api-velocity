@@ -1,6 +1,22 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '../../../shared/infrastructure/database/database.module';
 
+const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
+  { resource: 'organization', action: 'read' },
+  { resource: 'organization', action: 'update' },
+  { resource: 'organization', action: 'invite' },
+  { resource: 'role', action: 'read' },
+  { resource: 'session', action: 'read' },
+  { resource: 'session', action: 'revoke' },
+  { resource: 'user', action: 'create' },
+  { resource: 'user', action: 'read' },
+  { resource: 'user', action: 'update' },
+] as const;
+
+const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
+  { resource: 'organization', action: 'read' },
+] as const;
+
 /**
  * RBAC Migration service - creates tables and seeds default data
  */
@@ -35,6 +51,14 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_007_add_role_organization_scope',
         up: () => this.addRoleOrganizationScope(),
+      },
+      {
+        name: 'rbac_008_redesign_superadmin_org_roles',
+        up: () => this.redesignSuperadminAndOrganizationRoles(),
+      },
+      {
+        name: 'rbac_009_normalize_org_default_role_permissions',
+        up: () => this.normalizeOrganizationDefaultRolePermissions(),
       },
     ];
 
@@ -471,5 +495,178 @@ export class RbacMigrationService implements OnModuleInit {
       ON roles (organization_id, name)
       WHERE organization_id IS NOT NULL
     `);
+  }
+
+  private async syncRolePermissions(
+    roleId: string,
+    permissions: ReadonlyArray<{ resource: string; action: string }>,
+  ): Promise<void> {
+    const allowedPermissionTuples = permissions
+      .map((_, index) => `($${index * 2 + 2}, $${index * 2 + 3})`)
+      .join(', ');
+
+    await this.db.query(
+      `DELETE FROM role_permissions
+       WHERE role_id = $1
+         AND permission_id NOT IN (
+           SELECT id
+           FROM permissions
+           WHERE (resource, action) IN (${allowedPermissionTuples})
+         )`,
+      [roleId, ...permissions.flatMap((permission) => [permission.resource, permission.action])],
+    );
+
+    for (const permissionDescriptor of permissions) {
+      const permission = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM permissions WHERE resource = $1 AND action = $2`,
+        [permissionDescriptor.resource, permissionDescriptor.action],
+      );
+      if (permission) {
+        await this.db.query(
+          `INSERT INTO role_permissions (role_id, permission_id)
+           VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [roleId, permission.id],
+        );
+      }
+    }
+  }
+
+  async redesignSuperadminAndOrganizationRoles(): Promise<void> {
+    await this.db.query(`UPDATE "user" SET role = 'superadmin' WHERE role = 'admin'`);
+
+    await this.db.query(
+      `DELETE FROM roles WHERE organization_id IS NULL AND name IN ('admin', 'manager', 'member')`,
+    );
+
+    await this.db.query(
+      `INSERT INTO roles (name, display_name, description, color, is_system, organization_id)
+       VALUES ($1, $2, $3, $4, $5, NULL)
+       ON CONFLICT (name) WHERE organization_id IS NULL DO UPDATE SET
+         display_name = EXCLUDED.display_name,
+         description = EXCLUDED.description,
+         color = EXCLUDED.color,
+         is_system = EXCLUDED.is_system,
+         updated_at = NOW()`,
+      [
+        'superadmin',
+        'Superadmin',
+        'Global platform administrator with unrestricted access across the entire system',
+        'red',
+        true,
+      ],
+    );
+
+    const allPermissions = await this.db.query<{ id: string }>(`SELECT id FROM permissions`);
+    const superadminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
+    );
+
+    if (superadminRole) {
+      for (const permission of allPermissions) {
+        await this.db.query(
+          `INSERT INTO role_permissions (role_id, permission_id)
+           VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [superadminRole.id, permission.id],
+        );
+      }
+    }
+
+    const organizations = await this.db.query<{ id: string }>(`SELECT id FROM organization`);
+
+    for (const organization of organizations) {
+      const defaultRoles = [
+        [
+          'admin',
+          'Admin',
+          'Organization administrator with full access within their organization',
+          'red',
+        ] as const,
+        [
+          'manager',
+          'Manager',
+          'Organization manager with elevated operational access within their organization',
+          'blue',
+        ] as const,
+        [
+          'member',
+          'Member',
+          'Organization member with basic access within their organization',
+          'gray',
+        ] as const,
+      ];
+
+      for (const [name, displayName, description, color] of defaultRoles) {
+        await this.db.query(
+          `INSERT INTO roles (name, display_name, description, color, is_system, organization_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (organization_id, name) WHERE organization_id IS NOT NULL DO UPDATE SET
+             display_name = EXCLUDED.display_name,
+             description = EXCLUDED.description,
+             color = EXCLUDED.color,
+             is_system = EXCLUDED.is_system,
+             updated_at = NOW()`,
+          [name, displayName, description, color, true, organization.id],
+        );
+      }
+
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [organization.id],
+      );
+      if (adminRole) {
+        for (const permission of allPermissions) {
+          await this.db.query(
+            `INSERT INTO role_permissions (role_id, permission_id)
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING`,
+            [adminRole.id, permission.id],
+          );
+        }
+      }
+
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(managerRole.id, ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS);
+      }
+
+      const memberRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'member'`,
+        [organization.id],
+      );
+      if (memberRole) {
+        await this.syncRolePermissions(memberRole.id, ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS);
+      }
+    }
+
+    console.log('✅ RBAC superadmin/org role redesign seeded');
+  }
+
+  async normalizeOrganizationDefaultRolePermissions(): Promise<void> {
+    const organizations = await this.db.query<{ id: string }>(`SELECT id FROM organization`);
+
+    for (const organization of organizations) {
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(managerRole.id, ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS);
+      }
+
+      const memberRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'member'`,
+        [organization.id],
+      );
+      if (memberRole) {
+        await this.syncRolePermissions(memberRole.id, ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS);
+      }
+    }
+
+    console.log('✅ Organization default role permissions normalized');
   }
 }

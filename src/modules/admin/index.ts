@@ -5,7 +5,7 @@ export { AdminModule, RbacModule } from './admin.module';
 export { AdminService } from './users/application/services';
 export type { CreateUserInput } from './users/application/services';
 export { AdminUsersController } from './users/api/controllers';
-export { getPlatformRole, requireAdminOrManager, getActiveOrganizationId, requireActiveOrganizationIdForManager, getAllowedRoleNamesForCreator } from './users/utils';
+export { getPlatformRole, getActiveOrganizationId, requireActiveOrganizationIdForManager, getAllowedRoleNamesForCreator } from './users/utils';
 export type { PlatformRole } from './users/utils';
 
 // Sessions sub-domain

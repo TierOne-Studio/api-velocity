@@ -152,6 +152,27 @@ describe('OrgImpersonationService', () => {
   });
 
   describe('startImpersonation', () => {
+    it('should allow superadmin to impersonate a non-admin target when explicit organizationId is valid', async () => {
+      dbService.queryOne
+        .mockResolvedValueOnce({ role: 'member' })
+        .mockResolvedValueOnce({ id: 'member-1' });
+      dbService.query.mockResolvedValue([]);
+
+      const result = await (service as any).startImpersonation({
+        actorUserId: 'superadmin-1',
+        targetUserId: 'user-1',
+        platformRole: 'superadmin',
+        activeOrganizationId: null,
+        organizationId: 'org-1',
+      });
+
+      expect(result.sessionToken).toBeDefined();
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO session'),
+        expect.arrayContaining(['user-1', 'superadmin-1', 'org-1']),
+      );
+    });
+
     it('should allow admin to impersonate a non-admin target when explicit organizationId is valid', async () => {
       dbService.queryOne
         .mockResolvedValueOnce({ role: 'member' })
@@ -194,6 +215,19 @@ describe('OrgImpersonationService', () => {
           actorUserId: 'admin-1',
           targetUserId: 'admin-2',
           platformRole: 'admin',
+          activeOrganizationId: null,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should deny superadmin impersonation of another admin', async () => {
+      dbService.queryOne.mockResolvedValueOnce({ role: 'admin' });
+
+      await expect(
+        (service as any).startImpersonation({
+          actorUserId: 'superadmin-1',
+          targetUserId: 'admin-2',
+          platformRole: 'superadmin',
           activeOrganizationId: null,
         }),
       ).rejects.toThrow(ForbiddenException);

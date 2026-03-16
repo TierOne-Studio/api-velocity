@@ -16,15 +16,14 @@ import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { AdminService } from '../../application/services';
 import { OrgImpersonationService } from '../../../organizations/application/services';
 import {
-  requireAdminOrManager,
+  getPlatformRole,
   requireActiveOrganizationIdForManager,
 } from '../../utils/admin.utils';
-import { RolesGuard, Roles, PermissionsGuard, RequirePermissions } from '../../../../../shared';
+import { PermissionsGuard, RequirePermissions } from '../../../../../shared';
 import { PASSWORD_POLICY } from '../../../../../shared/utils/password-policy';
 
 @Controller('api/admin/users')
-@UseGuards(RolesGuard, PermissionsGuard)
-@Roles('admin', 'manager')
+@UseGuards(PermissionsGuard)
 export class AdminUsersController {
   constructor(
     private readonly adminService: AdminService,
@@ -112,7 +111,7 @@ export class AdminUsersController {
   @Get('create-metadata')
   @RequirePermissions('user:read')
   async getCreateMetadata(@Session() session: UserSession) {
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
     return this.adminService.getCreateUserMetadata(platformRole, activeOrgId);
   }
@@ -127,7 +126,7 @@ export class AdminUsersController {
   ) {
     const { parsedLimit, parsedOffset } = this.validatePagination(limit, offset);
 
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
 
     return this.adminService.listUsers({
@@ -145,7 +144,7 @@ export class AdminUsersController {
     @Session() session: UserSession,
     @Body() body: { userIds: string[] },
   ) {
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
 
     return this.adminService.getBatchCapabilities({
@@ -159,7 +158,7 @@ export class AdminUsersController {
   @Get(':userId/capabilities')
   @RequirePermissions('user:read')
   async getCapabilities(@Session() session: UserSession, @Param('userId') userId: string) {
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
 
     return this.adminService.getUserCapabilities({
@@ -185,7 +184,7 @@ export class AdminUsersController {
   ) {
     this.validateCreatePayload(body);
 
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
 
     return this.adminService.createUser(
@@ -208,7 +207,7 @@ export class AdminUsersController {
     @Param('userId') userId: string,
     @Body() body: { name?: string },
   ) {
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
     return this.adminService.updateUser(
       { userId, name: body.name },
@@ -227,7 +226,7 @@ export class AdminUsersController {
   ) {
     this.validateSetRolePayload(body);
 
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
     return this.adminService.setUserRole(
       { userId, role: body.role },
@@ -244,7 +243,7 @@ export class AdminUsersController {
     @Param('userId') userId: string,
     @Body() body: { banReason?: string },
   ) {
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
     return this.adminService.banUser(
       { userId, banReason: body.banReason },
@@ -257,7 +256,7 @@ export class AdminUsersController {
   @Post(':userId/unban')
   @RequirePermissions('user:ban')
   async unban(@Session() session: UserSession, @Param('userId') userId: string) {
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
     return this.adminService.unbanUser(
       { userId },
@@ -276,7 +275,7 @@ export class AdminUsersController {
   ) {
     this.validateSetPasswordPayload(body);
 
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
     return this.adminService.setUserPassword(
       { userId, newPassword: body.newPassword },
@@ -293,7 +292,7 @@ export class AdminUsersController {
     @Param('userId') userId: string,
     @Body() body: { organizationId?: string },
   ) {
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
     const result = await this.impersonationService.startImpersonation({
       actorUserId: session.user.id,
@@ -312,7 +311,7 @@ export class AdminUsersController {
   @Delete(':userId')
   @RequirePermissions('user:delete')
   async remove(@Session() session: UserSession, @Param('userId') userId: string) {
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
     return this.adminService.removeUser(
       { userId },
@@ -327,7 +326,7 @@ export class AdminUsersController {
   async bulkRemove(@Session() session: UserSession, @Body() body: { userIds: string[] }) {
     this.validateBulkRemovePayload(body);
 
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
     return this.adminService.removeUsers(
       { userIds: body.userIds },

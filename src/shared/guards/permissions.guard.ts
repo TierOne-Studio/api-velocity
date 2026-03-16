@@ -7,6 +7,10 @@ import {
 import { Reflector } from '@nestjs/core';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { RoleService } from '../../modules/admin/rbac/application/services';
+import {
+  getActiveOrganizationId,
+  getPlatformRole,
+} from '../../modules/admin/users/utils/admin.utils';
 
 /**
  * Guard that checks if the authenticated user has the required permissions.
@@ -42,13 +46,16 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('Authentication required');
     }
 
-    const userRole = session.user.role;
+    const platformRole = getPlatformRole(session);
 
-    if (userRole === 'admin') {
+    if (platformRole === 'superadmin') {
       return true;
     }
 
-    const userPermissions = await this.getUserPermissions(userRole);
+    const userPermissions = await this.getUserPermissions(
+      platformRole,
+      getActiveOrganizationId(session),
+    );
 
     const hasAllPermissions = requiredPermissions.every((permission) =>
       userPermissions.includes(permission),
@@ -66,8 +73,14 @@ export class PermissionsGuard implements CanActivate {
     return true;
   }
 
-  private async getUserPermissions(roleName: string): Promise<string[]> {
-    const permissions = await this.roleService.getUserPermissions(roleName);
+  private async getUserPermissions(
+    roleName: string,
+    activeOrganizationId: string | null,
+  ): Promise<string[]> {
+    const permissions = await this.roleService.getUserPermissions(
+      roleName,
+      activeOrganizationId,
+    );
     return permissions.map((p) => `${p.resource}:${p.action}`);
   }
 }

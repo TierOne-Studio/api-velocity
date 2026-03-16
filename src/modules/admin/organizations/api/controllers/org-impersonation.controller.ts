@@ -9,9 +9,13 @@ import {
 } from '@nestjs/common';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
-import { RolesGuard, Roles, PermissionsGuard, RequirePermissions } from '../../../../../shared';
+import { PermissionsGuard, RequirePermissions } from '../../../../../shared';
 import { OrgImpersonationService } from '../../application/services';
 import { ImpersonateUserDto } from '../../api/dto';
+import {
+  getPlatformRole,
+  requireActiveOrganizationIdForManager,
+} from '../../../utils/admin.utils';
 
 /**
  * Controller for org-scoped impersonation.
@@ -27,8 +31,7 @@ export class OrgImpersonationController {
    * Target user must be a member of the same organization.
    */
   @Post(':organizationId/impersonate')
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles('admin', 'manager')
+  @UseGuards(PermissionsGuard)
   @RequirePermissions('user:impersonate')
   async impersonate(
     @Param('organizationId') organizationId: string,
@@ -39,11 +42,15 @@ export class OrgImpersonationController {
       throw new ForbiddenException('Authentication required');
     }
 
-    const result = await this.impersonationService.impersonateUser(
-      session.user.id,
-      dto.userId,
+    const platformRole = getPlatformRole(session);
+    const activeOrganizationId = requireActiveOrganizationIdForManager(platformRole, session);
+    const result = await this.impersonationService.startImpersonation({
+      actorUserId: session.user.id,
+      targetUserId: dto.userId,
+      platformRole,
+      activeOrganizationId,
       organizationId,
-    );
+    });
 
     return {
       success: true,

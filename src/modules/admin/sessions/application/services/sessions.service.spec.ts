@@ -32,13 +32,13 @@ describe('SessionsService', () => {
   });
 
   describe('listUserSessions', () => {
-    it('should list sessions for admin', async () => {
+    it('should list sessions for superadmin', async () => {
       const sessions = [
         { id: 's1', userId: 'u1', token: 't1', expiresAt: new Date(), createdAt: new Date(), updatedAt: new Date(), ipAddress: null, userAgent: null },
       ];
       sessionRepo.listUserSessions.mockResolvedValue(sessions);
 
-      const result = await service.listUserSessions({ userId: 'u1', platformRole: 'admin', activeOrganizationId: null });
+      const result = await service.listUserSessions({ userId: 'u1', platformRole: 'superadmin', activeOrganizationId: null });
       expect(result).toEqual(sessions);
       expect(sessionRepo.listUserSessions).toHaveBeenCalledWith('u1');
     });
@@ -66,8 +66,8 @@ describe('SessionsService', () => {
   });
 
   describe('revokeSession', () => {
-    it('should revoke session for admin', async () => {
-      const result = await service.revokeSession({ sessionToken: 'token1' }, 'admin', null);
+    it('should revoke session for superadmin', async () => {
+      const result = await service.revokeSession({ sessionToken: 'token1' }, 'superadmin', null);
       expect(result).toEqual({ success: true });
       expect(sessionRepo.revokeSession).toHaveBeenCalledWith('token1');
     });
@@ -95,8 +95,8 @@ describe('SessionsService', () => {
   });
 
   describe('revokeAllSessions', () => {
-    it('should revoke all sessions for admin', async () => {
-      const result = await service.revokeAllSessions({ userId: 'u1' }, 'admin', null);
+    it('should revoke all sessions for superadmin', async () => {
+      const result = await service.revokeAllSessions({ userId: 'u1' }, 'superadmin', null);
       expect(result).toEqual({ success: true });
       expect(sessionRepo.revokeAllSessions).toHaveBeenCalledWith('u1');
     });

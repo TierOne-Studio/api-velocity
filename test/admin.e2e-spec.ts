@@ -140,10 +140,10 @@ describe('Admin User Management - Role-Based Access Control', () => {
   });
 
   describe('User Listing', () => {
-    it('[Admin] should list all users', async () => {
+    it('[Superadmin] should list all users', async () => {
       return request(app.getHttpServer())
         .get('/api/admin/users')
-        .set('Cookie', ctx.adminCookie)
+        .set('Cookie', ctx.superadminCookie)
         .expect(200)
         .expect((res) => {
           expect(res.body.data).toBeDefined();
@@ -164,10 +164,10 @@ describe('Admin User Management - Role-Based Access Control', () => {
   });
 
   describe('Create User Metadata', () => {
-    it('[Admin] should get all roles and organizations', async () => {
+    it('[Superadmin] should get all roles and organizations', async () => {
       return request(app.getHttpServer())
         .get('/api/admin/users/create-metadata')
-        .set('Cookie', ctx.adminCookie)
+        .set('Cookie', ctx.superadminCookie)
         .expect(200)
         .expect((res) => {
           expect(res.body.allowedRoleNames).toBeDefined();
@@ -228,24 +228,24 @@ describe('Admin User Management - Role-Based Access Control', () => {
         .expect(403);
     });
 
-    it('[Admin] should list member candidates for any organization', async () => {
+    it('[Superadmin] should list member candidates for any organization', async () => {
       const outsider = await createOutsiderCandidate('admin-list');
 
       return request(app.getHttpServer())
         .get(`/api/platform-admin/organizations/${ctx.testOrg.id}/member-candidates`)
-        .set('Cookie', ctx.adminCookie)
+        .set('Cookie', ctx.superadminCookie)
         .expect(200)
         .expect((res) => {
           expect(res.body.data.some((candidate: { id: string }) => candidate.id === outsider.userId)).toBe(true);
         });
     });
 
-    it('[Admin] should remove a candidate from the list after adding them as a member', async () => {
+    it('[Superadmin] should remove a candidate from the list after adding them as a member', async () => {
       const outsider = await createOutsiderCandidate('admin-add');
 
       await request(app.getHttpServer())
         .get(`/api/platform-admin/organizations/${ctx.testOrg.id}/member-candidates`)
-        .set('Cookie', ctx.adminCookie)
+        .set('Cookie', ctx.superadminCookie)
         .expect(200)
         .expect((res) => {
           expect(res.body.data.some((candidate: { id: string }) => candidate.id === outsider.userId)).toBe(true);
@@ -253,13 +253,13 @@ describe('Admin User Management - Role-Based Access Control', () => {
 
       await request(app.getHttpServer())
         .post(`/api/platform-admin/organizations/${ctx.testOrg.id}/members`)
-        .set('Cookie', ctx.adminCookie)
+        .set('Cookie', ctx.superadminCookie)
         .send({ userId: outsider.userId, role: 'member' })
         .expect(201);
 
       await request(app.getHttpServer())
         .get(`/api/platform-admin/organizations/${ctx.testOrg.id}/member-candidates`)
-        .set('Cookie', ctx.adminCookie)
+        .set('Cookie', ctx.superadminCookie)
         .expect(200)
         .expect((res) => {
           expect(res.body.data.some((candidate: { id: string }) => candidate.id === outsider.userId)).toBe(false);
@@ -268,17 +268,18 @@ describe('Admin User Management - Role-Based Access Control', () => {
   });
 
   describe('User Creation - Role Hierarchy', () => {
-    it('[Admin] should create admin user without organization', async () => {
+    it('[Superadmin] should create admin user with organization', async () => {
       const email = uniqueResendDeliveredEmail('newadmin');
       
       return request(app.getHttpServer())
         .post('/api/admin/users')
-        .set('Cookie', ctx.adminCookie)
+        .set('Cookie', ctx.superadminCookie)
         .send({
           name: 'New Admin',
           email,
           password: 'SecurePass123!',
           role: 'admin',
+          organizationId: ctx.testOrg.id,
         })
         .expect(201)
         .expect((res) => {
@@ -286,7 +287,7 @@ describe('Admin User Management - Role-Based Access Control', () => {
         });
     });
 
-    it('[Admin] should create manager user with organization', async () => {
+    it('[Org Admin] should create manager user with organization', async () => {
       const email = uniqueResendDeliveredEmail('newmanager');
       
       return request(app.getHttpServer())
@@ -372,7 +373,7 @@ describe('Admin User Management - Role-Based Access Control', () => {
   });
 
   describe('Role Changes - Permission Matrix', () => {
-    it('[Admin] should promote user to admin role', async () => {
+    it('[Org Admin] should promote user to admin role inside the active organization', async () => {
       // Create a fresh user for role change testing
       const signUp = await helpers.signUpAndGetCookie({
         name: 'Role Change Target',
@@ -380,8 +381,8 @@ describe('Admin User Management - Role-Based Access Control', () => {
         password: 'SecurePass123!',
       });
       await helpers.setUserRole(signUp.userId, 'member');
+      await helpers.addUserToOrganization(signUp.userId, ctx.testOrg.id, 'member');
       
-      // Promoting to admin doesn't require org - should work
       return request(app.getHttpServer())
         .put(`/api/admin/users/${signUp.userId}/role`)
         .set('Cookie', ctx.adminCookie)

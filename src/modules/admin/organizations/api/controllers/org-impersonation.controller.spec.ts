@@ -10,7 +10,7 @@ jest.mock('@thallesp/nestjs-better-auth', () => ({
 
 import { OrgImpersonationController } from './org-impersonation.controller';
 import { OrgImpersonationService } from '../../application/services';
-import { PERMISSIONS_KEY, PermissionsGuard, ROLES_KEY, RolesGuard } from '../../../../../shared';
+import { PERMISSIONS_KEY, PermissionsGuard } from '../../../../../shared';
 
 describe('OrgImpersonationController', () => {
   let controller: OrgImpersonationController;
@@ -24,6 +24,7 @@ describe('OrgImpersonationController', () => {
   beforeEach(() => {
     impersonationService = {
       impersonateUser: jest.fn(),
+      startImpersonation: jest.fn(),
       stopImpersonation: jest.fn(),
       getMembership: jest.fn(),
       canImpersonate: jest.fn(),
@@ -37,22 +38,18 @@ describe('OrgImpersonationController', () => {
     const stopHandler = (controller as unknown as Record<string, unknown>).stopImpersonating as object;
 
     const guards = Reflect.getMetadata(GUARDS_METADATA, impersonateHandler) as unknown[];
-    const roles = Reflect.getMetadata(ROLES_KEY, impersonateHandler) as string[];
     const permissions = Reflect.getMetadata(PERMISSIONS_KEY, impersonateHandler) as string[];
 
-    expect(guards).toContain(RolesGuard);
     expect(guards).toContain(PermissionsGuard);
-    expect(roles).toEqual(['admin', 'manager']);
     expect(permissions).toContain('user:impersonate');
 
     expect(Reflect.getMetadata(GUARDS_METADATA, stopHandler)).toBeUndefined();
-    expect(Reflect.getMetadata(ROLES_KEY, stopHandler)).toBeUndefined();
     expect(Reflect.getMetadata(PERMISSIONS_KEY, stopHandler)).toBeUndefined();
   });
 
   describe('impersonate', () => {
     it('should return sessionToken on successful impersonation', async () => {
-      impersonationService.impersonateUser.mockResolvedValue({
+      impersonationService.startImpersonation.mockResolvedValue({
         sessionToken: 'new-session-token',
       });
 
@@ -63,11 +60,13 @@ describe('OrgImpersonationController', () => {
       );
 
       expect(result).toEqual({ success: true, sessionToken: 'new-session-token' });
-      expect(impersonationService.impersonateUser).toHaveBeenCalledWith(
-        'manager-1',
-        'user-1',
-        'org-1',
-      );
+      expect(impersonationService.startImpersonation).toHaveBeenCalledWith({
+        actorUserId: 'manager-1',
+        targetUserId: 'user-1',
+        platformRole: 'manager',
+        activeOrganizationId: 'org-1',
+        organizationId: 'org-1',
+      });
     });
 
     it('should throw ForbiddenException when session has no user', async () => {
@@ -85,7 +84,7 @@ describe('OrgImpersonationController', () => {
     });
 
     it('should propagate service errors', async () => {
-      impersonationService.impersonateUser.mockRejectedValue(
+      impersonationService.startImpersonation.mockRejectedValue(
         new ForbiddenException('Not a member'),
       );
 

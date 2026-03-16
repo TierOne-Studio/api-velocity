@@ -5,11 +5,25 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { uniqueResendDeliveredEmail } from '../src/shared/utils/resend-test-email';
 
+const MANAGER_ROLE_PERMISSIONS = [
+  ['organization', 'read'],
+  ['organization', 'update'],
+  ['organization', 'invite'],
+  ['role', 'read'],
+  ['session', 'read'],
+  ['session', 'revoke'],
+  ['user', 'create'],
+  ['user', 'read'],
+  ['user', 'update'],
+] as const;
+
+const MEMBER_ROLE_PERMISSIONS = [['organization', 'read']] as const;
+
 export interface TestUser {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'manager' | 'member';
+  role: 'superadmin' | 'admin' | 'manager' | 'member';
 }
 
 export interface TestOrganization {
@@ -25,10 +39,12 @@ export interface TestSession {
 }
 
 export interface TestContext {
+  superadminUser: TestUser;
   adminUser: TestUser;
   managerUser: TestUser;
   memberUser: TestUser;
   testOrg: TestOrganization;
+  superadminCookie: string;
   adminCookie: string;
   managerCookie: string;
   memberCookie: string;
@@ -93,6 +109,64 @@ export class TestHelpers {
     }
   }
 
+  private async seedDefaultOrganizationRoles(organizationId: string): Promise<void> {
+    await this.dbService.query(
+      `INSERT INTO roles (name, display_name, description, color, is_system, organization_id)
+       VALUES
+         ('admin', 'Admin', 'Organization administrator with full access within their organization', 'red', true, $1),
+         ('manager', 'Manager', 'Organization manager with elevated operational access within their organization', 'blue', true, $1),
+         ('member', 'Member', 'Organization member with basic access within their organization', 'gray', true, $1)
+       ON CONFLICT (organization_id, name) WHERE organization_id IS NOT NULL DO UPDATE SET
+         display_name = EXCLUDED.display_name,
+         description = EXCLUDED.description,
+         color = EXCLUDED.color,
+         is_system = EXCLUDED.is_system,
+         updated_at = NOW()`,
+      [organizationId],
+    );
+
+    await this.dbService.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT r.id, p.id
+       FROM roles r
+       CROSS JOIN permissions p
+       WHERE r.organization_id = $1
+         AND r.name = 'admin'
+       ON CONFLICT DO NOTHING`,
+      [organizationId],
+    );
+
+    await this.dbService.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT r.id, p.id
+       FROM roles r
+       JOIN permissions p
+         ON (p.resource, p.action) IN (${MANAGER_ROLE_PERMISSIONS.map((_, index) => `($${index * 2 + 2}, $${index * 2 + 3})`).join(', ')})
+       WHERE r.organization_id = $1
+         AND r.name = 'manager'
+       ON CONFLICT DO NOTHING`,
+      [
+        organizationId,
+        ...MANAGER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [resource, action]),
+      ],
+    );
+
+    await this.dbService.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT r.id, p.id
+       FROM roles r
+       JOIN permissions p
+         ON (p.resource, p.action) IN (${MEMBER_ROLE_PERMISSIONS.map((_, index) => `($${index * 2 + 2}, $${index * 2 + 3})`).join(', ')})
+       WHERE r.organization_id = $1
+         AND r.name = 'member'
+       ON CONFLICT DO NOTHING`,
+      [
+        organizationId,
+        ...MEMBER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [resource, action]),
+      ],
+    );
+  }
+
   async signUpAndGetCookie(data: {
     name: string;
     email: string;
@@ -127,7 +201,7 @@ export class TestHelpers {
     };
   }
 
-  async setUserRole(userId: string, role: 'admin' | 'manager' | 'member'): Promise<void> {
+  async setUserRole(userId: string, role: 'superadmin' | 'admin' | 'manager' | 'member'): Promise<void> {
     await this.dbService.query(
       `UPDATE "user" SET role = $1 WHERE id = $2`,
       [role, userId]
@@ -146,6 +220,8 @@ export class TestHelpers {
        VALUES ($1, $2, $3, $4)`,
       [id, data.name, data.slug, now]
     );
+
+    await this.seedDefaultOrganizationRoles(id);
 
     return { id, name: data.name, slug: data.slug };
   }
@@ -182,6 +258,12 @@ export class TestHelpers {
     });
 
     // Sign up test users through Better Auth
+    const superadminSignUp = await this.signUpAndGetCookie({
+      name: 'Test Superadmin',
+      email: uniqueResendDeliveredEmail('superadmin-e2e-user'),
+      password: 'SecurePass123!',
+    });
+
     const adminSignUp = await this.signUpAndGetCookie({
       name: 'Test Admin',
       email: uniqueResendDeliveredEmail('admin-e2e-user'),
@@ -201,19 +283,26 @@ export class TestHelpers {
     });
 
     // Set roles
+    await this.setUserRole(superadminSignUp.userId, 'superadmin');
     await this.setUserRole(adminSignUp.userId, 'admin');
     await this.setUserRole(managerSignUp.userId, 'manager');
     await this.setUserRole(memberSignUp.userId, 'member');
 
-    // Add manager and member to the organization
+    // Add org-scoped actors to the organization
+    await this.addUserToOrganization(adminSignUp.userId, testOrg.id, 'admin');
     await this.addUserToOrganization(managerSignUp.userId, testOrg.id, 'manager');
     await this.addUserToOrganization(memberSignUp.userId, testOrg.id, 'member');
 
-    // Set active organization for manager and member
+    // Set active organization for org-scoped actors
+    await this.setActiveOrganization(adminSignUp.userId, testOrg.id);
     await this.setActiveOrganization(managerSignUp.userId, testOrg.id);
     await this.setActiveOrganization(memberSignUp.userId, testOrg.id);
 
     // Get user details
+    const [superadminUser] = await this.dbService.query<TestUser>(
+      `SELECT id, name, email, role FROM "user" WHERE id = $1`,
+      [superadminSignUp.userId]
+    );
     const [adminUser] = await this.dbService.query<TestUser>(
       `SELECT id, name, email, role FROM "user" WHERE id = $1`,
       [adminSignUp.userId]
@@ -228,10 +317,12 @@ export class TestHelpers {
     );
 
     return {
+      superadminUser,
       adminUser,
       managerUser,
       memberUser,
       testOrg,
+      superadminCookie: superadminSignUp.cookie,
       adminCookie: adminSignUp.cookie,
       managerCookie: managerSignUp.cookie,
       memberCookie: memberSignUp.cookie,

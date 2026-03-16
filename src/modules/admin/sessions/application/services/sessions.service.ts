@@ -3,6 +3,7 @@ import {
   type ISessionRepository,
   SESSION_REPOSITORY,
 } from '../../domain/repositories/session.repository.interface';
+import type { PlatformRole } from '../../../users/utils/admin.utils';
 
 @Injectable()
 export class SessionsService {
@@ -17,12 +18,12 @@ export class SessionsService {
 
   async listUserSessions(params: {
     userId: string;
-    platformRole: 'admin' | 'manager';
+    platformRole: PlatformRole;
     activeOrganizationId: string | null;
   }) {
     const { userId, platformRole, activeOrganizationId } = params;
 
-    if (platformRole === 'manager') {
+    if (platformRole !== 'superadmin') {
       if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(userId, activeOrganizationId);
     }
@@ -31,10 +32,10 @@ export class SessionsService {
 
   async revokeSession(
     input: { sessionToken: string },
-    platformRole: 'admin' | 'manager',
+    platformRole: PlatformRole,
     activeOrganizationId: string | null,
   ) {
-    if (platformRole === 'manager') {
+    if (platformRole !== 'superadmin') {
       if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
       const session = await this.sessionRepo.findSessionByToken(input.sessionToken);
       if (!session) return { success: true };
@@ -46,10 +47,10 @@ export class SessionsService {
 
   async revokeAllSessions(
     input: { userId: string },
-    platformRole: 'admin' | 'manager',
+    platformRole: PlatformRole,
     activeOrganizationId: string | null,
   ) {
-    if (platformRole === 'manager') {
+    if (platformRole !== 'superadmin') {
       if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }

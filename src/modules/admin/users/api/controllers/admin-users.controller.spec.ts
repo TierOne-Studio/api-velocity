@@ -28,8 +28,7 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminService } from '../../application/services';
 import { OrgImpersonationService } from '../../../organizations/application/services';
-import { ROLES_KEY } from '../../../../../shared';
-import { RolesGuard, PermissionsGuard } from '../../../../../shared';
+import { PermissionsGuard } from '../../../../../shared';
 
 describe('AdminUsersController', () => {
   let controller: AdminUsersController;
@@ -37,7 +36,7 @@ describe('AdminUsersController', () => {
   let impersonationService: jest.Mocked<OrgImpersonationService>;
 
   const baseSession = {
-    user: { id: 'actor-admin', role: 'admin' },
+    user: { id: 'actor-superadmin', role: 'superadmin' },
     session: {},
   } as any;
 
@@ -71,16 +70,10 @@ describe('AdminUsersController', () => {
     controller = new AdminUsersController(adminService, impersonationService);
   });
 
-  it('applies class-level admin/manager role restrictions', () => {
-    const roles = Reflect.getMetadata(ROLES_KEY, AdminUsersController);
-    expect(roles).toEqual(['admin', 'manager']);
-  });
-
-  it('applies class-level RolesGuard and PermissionsGuard', () => {
+  it('applies class-level PermissionsGuard', () => {
     const guards = Reflect.getMetadata(GUARDS_METADATA, AdminUsersController) as unknown[];
 
     expect(guards).toBeDefined();
-    expect(guards).toContain(RolesGuard);
     expect(guards).toContain(PermissionsGuard);
   });
 
@@ -91,9 +84,9 @@ describe('AdminUsersController', () => {
 
     expect(adminService.updateUser).toHaveBeenCalledWith(
       { userId: 'target-1', name: 'Updated' },
-      'admin',
+      'superadmin',
       null,
-      'actor-admin',
+      'actor-superadmin',
     );
   });
 
@@ -104,9 +97,9 @@ describe('AdminUsersController', () => {
 
     expect(adminService.setUserRole).toHaveBeenCalledWith(
       { userId: 'target-1', role: 'member' },
-      'admin',
+      'superadmin',
       null,
-      'actor-admin',
+      'actor-superadmin',
     );
   });
 
@@ -117,9 +110,9 @@ describe('AdminUsersController', () => {
 
     expect(adminService.banUser).toHaveBeenCalledWith(
       { userId: 'target-1', banReason: 'violation' },
-      'admin',
+      'superadmin',
       null,
-      'actor-admin',
+      'actor-superadmin',
     );
   });
 
@@ -130,9 +123,9 @@ describe('AdminUsersController', () => {
 
     expect(adminService.unbanUser).toHaveBeenCalledWith(
       { userId: 'target-1' },
-      'admin',
+      'superadmin',
       null,
-      'actor-admin',
+      'actor-superadmin',
     );
   });
 
@@ -143,9 +136,9 @@ describe('AdminUsersController', () => {
 
     expect(adminService.setUserPassword).toHaveBeenCalledWith(
       { userId: 'target-1', newPassword: 'NewPass123!' },
-      'admin',
+      'superadmin',
       null,
-      'actor-admin',
+      'actor-superadmin',
     );
   });
 
@@ -156,9 +149,9 @@ describe('AdminUsersController', () => {
 
     expect(adminService.removeUser).toHaveBeenCalledWith(
       { userId: 'target-1' },
-      'admin',
+      'superadmin',
       null,
-      'actor-admin',
+      'actor-superadmin',
     );
   });
 
@@ -169,9 +162,9 @@ describe('AdminUsersController', () => {
 
     expect(adminService.removeUsers).toHaveBeenCalledWith(
       { userIds: ['target-1', 'target-2'] },
-      'admin',
+      'superadmin',
       null,
-      'actor-admin',
+      'actor-superadmin',
     );
   });
 
@@ -188,9 +181,9 @@ describe('AdminUsersController', () => {
     await controller.getBatchCapabilities(baseSession, { userIds: ['target-1'] });
 
     expect(adminService.getBatchCapabilities).toHaveBeenCalledWith({
-      actorUserId: 'actor-admin',
+      actorUserId: 'actor-superadmin',
       userIds: ['target-1'],
-      platformRole: 'admin',
+      platformRole: 'superadmin',
       activeOrganizationId: null,
     });
   });
@@ -215,9 +208,9 @@ describe('AdminUsersController', () => {
     await controller.getCapabilities(baseSession, 'target-1');
 
     expect(adminService.getUserCapabilities).toHaveBeenCalledWith({
-      actorUserId: 'actor-admin',
+      actorUserId: 'actor-superadmin',
       targetUserId: 'target-1',
-      platformRole: 'admin',
+      platformRole: 'superadmin',
       activeOrganizationId: null,
     });
   });
@@ -290,7 +283,7 @@ describe('AdminUsersController', () => {
 
       expect(adminService.createUser).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Alice', role: 'admin' }),
-        'admin', null,
+        'superadmin', null,
       );
     });
 
@@ -304,7 +297,7 @@ describe('AdminUsersController', () => {
 
       expect(adminService.createUser).toHaveBeenCalledWith(
         expect.objectContaining({ role: 'member', organizationId: 'org-1' }),
-        'admin', null,
+        'superadmin', null,
       );
     });
   });
@@ -392,9 +385,9 @@ describe('AdminUsersController', () => {
       const result = await (controller as any).impersonate(baseSession, 'target-1', { organizationId: 'org-1' });
 
       expect(impersonationService.startImpersonation).toHaveBeenCalledWith({
-        actorUserId: 'actor-admin',
+        actorUserId: 'actor-superadmin',
         targetUserId: 'target-1',
-        platformRole: 'admin',
+        platformRole: 'superadmin',
         activeOrganizationId: null,
         organizationId: 'org-1',
       });

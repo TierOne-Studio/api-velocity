@@ -15,7 +15,7 @@ import {
   OrganizationWithMemberCount,
   rowToOrganization,
 } from '../../api/dto';
-import { getAllowedRoleNamesForCreator } from '../../../utils/admin.utils';
+import { getAllowedRoleNamesForCreator, type PlatformRole } from '../../../utils/admin.utils';
 import {
   type IAdminOrgRepository,
   ADMIN_ORG_REPOSITORY,
@@ -111,7 +111,7 @@ export class AdminOrganizationsService {
     },
     actor: {
       id: string;
-      platformRole: 'admin' | 'manager';
+      platformRole: PlatformRole;
     },
   ): Promise<Organization> {
     const name = input.name.trim();
@@ -284,7 +284,7 @@ export class AdminOrganizationsService {
     organizationId: string,
     email: string,
     role: 'admin' | 'manager' | 'member',
-    platformRole: 'admin' | 'manager',
+    platformRole: PlatformRole,
     inviter: { id: string; email: string; name?: string },
   ): Promise<{
     id: string;
@@ -400,7 +400,7 @@ export class AdminOrganizationsService {
     organizationId: string,
     memberId: string,
     newRole: 'admin' | 'manager' | 'member',
-    platformRole: 'admin' | 'manager',
+    platformRole: PlatformRole,
   ): Promise<{
     id: string;
     organizationId: string;
@@ -416,8 +416,8 @@ export class AdminOrganizationsService {
     const member = await this.orgRepo.findMemberById(memberId, organizationId);
     if (!member) throw new NotFoundException('Member not found');
 
-    if (platformRole === 'manager' && member.role !== 'member') {
-      throw new ForbiddenException('Managers can only change member roles');
+    if (platformRole !== 'superadmin' && platformRole !== 'admin' && member.role !== 'member') {
+      throw new ForbiddenException('Organization-scoped actors can only change member roles');
     }
 
     if (member.role === 'admin' && newRole !== 'admin') {
@@ -433,13 +433,13 @@ export class AdminOrganizationsService {
   async removeMember(
     organizationId: string,
     memberId: string,
-    platformRole: 'admin' | 'manager',
+    platformRole: PlatformRole,
   ): Promise<{ success: true }> {
     const member = await this.orgRepo.findMemberById(memberId, organizationId);
     if (!member) throw new NotFoundException('Member not found');
 
-    if (platformRole === 'manager' && member.role !== 'member') {
-      throw new ForbiddenException('Managers can only remove members');
+    if (platformRole !== 'superadmin' && platformRole !== 'admin' && member.role !== 'member') {
+      throw new ForbiddenException('Organization-scoped actors can only remove members');
     }
 
     if (member.role === 'admin') {

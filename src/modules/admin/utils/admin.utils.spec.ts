@@ -3,12 +3,19 @@ import {
   getAllowedRoleNamesForCreator,
   getActiveOrganizationId,
   getPlatformRole,
-  requireAdminOrManager,
   requireActiveOrganizationIdForManager,
 } from './admin.utils';
 
 describe('admin.utils', () => {
   describe('getAllowedRoleNamesForCreator', () => {
+    it('should allow superadmin to create admin/manager/member', () => {
+      expect(getAllowedRoleNamesForCreator('superadmin')).toEqual([
+        'admin',
+        'manager',
+        'member',
+      ]);
+    });
+
     it('should allow admin to create admin/manager/member', () => {
       expect(getAllowedRoleNamesForCreator('admin')).toEqual([
         'admin',
@@ -27,6 +34,10 @@ describe('admin.utils', () => {
       expect(getPlatformRole({ user: { role: 'admin' } } as any)).toBe('admin');
     });
 
+    it('should return superadmin for superadmin role', () => {
+      expect(getPlatformRole({ user: { role: 'superadmin' } } as any)).toBe('superadmin');
+    });
+
     it('should return manager for manager role', () => {
       expect(getPlatformRole({ user: { role: 'manager' } } as any)).toBe('manager');
     });
@@ -35,7 +46,11 @@ describe('admin.utils', () => {
       expect(getPlatformRole({ user: { role: 'something-else' } } as any)).toBe('member');
     });
 
-    it('should handle role arrays — admin wins', () => {
+    it('should handle role arrays — superadmin wins', () => {
+      expect(getPlatformRole({ user: { role: ['superadmin', 'admin'] } } as any)).toBe('superadmin');
+    });
+
+    it('should handle role arrays — admin wins when no superadmin', () => {
       expect(getPlatformRole({ user: { role: ['admin', 'member'] } } as any)).toBe('admin');
     });
 
@@ -62,32 +77,11 @@ describe('admin.utils', () => {
     });
   });
 
-  describe('requireAdminOrManager', () => {
-    it('should return admin for admin role', () => {
-      expect(requireAdminOrManager({ user: { role: 'admin' } } as any)).toBe('admin');
-    });
-
-    it('should return manager for manager role', () => {
-      expect(requireAdminOrManager({ user: { role: 'manager' } } as any)).toBe('manager');
-    });
-
-    it('should throw ForbiddenException for member role', () => {
-      expect(() => requireAdminOrManager({ user: { role: 'member' } } as any)).toThrow(ForbiddenException);
-    });
-
-    it('should throw ForbiddenException for unknown role', () => {
-      expect(() => requireAdminOrManager({ user: { role: 'guest' } } as any)).toThrow(ForbiddenException);
-    });
-
-    it('should throw ForbiddenException when user is missing', () => {
-      expect(() => requireAdminOrManager({} as any)).toThrow(ForbiddenException);
-    });
-  });
 
   describe('requireActiveOrganizationIdForManager', () => {
-    it('should return null for admin regardless of session', () => {
+    it('should return null for superadmin regardless of session', () => {
       expect(
-        requireActiveOrganizationIdForManager('admin', {} as any),
+        requireActiveOrganizationIdForManager('superadmin', {} as any),
       ).toBeNull();
     });
 

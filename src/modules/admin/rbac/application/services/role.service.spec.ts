@@ -257,22 +257,36 @@ describe('RoleService', () => {
   });
 
   describe('getUserPermissions', () => {
-    it('returns empty array when role not found — covers !role branch', async () => {
+    it('returns empty array when global role not found — covers !role branch', async () => {
       mockRoleRepo.findByName.mockResolvedValue(null);
 
-      const result = await service.getUserPermissions('nonexistent');
+      const result = await service.getUserPermissions('nonexistent', null);
 
       expect(result).toEqual([]);
     });
 
-    it('returns permissions when role exists', async () => {
-      mockRoleRepo.findByName.mockResolvedValue(makeDomainRole({ id: '1', name: 'admin' }));
+    it('returns org-scoped permissions when active organization is provided', async () => {
+      mockRoleRepo.findByNameInOrganization.mockResolvedValue(
+        makeDomainRole({ id: '1', name: 'admin', isSystem: false, organizationId: 'org-1' }),
+      );
       mockRoleRepo.getPermissions.mockResolvedValue([makeDomainPermission()]);
 
-      const result = await service.getUserPermissions('admin');
+      const result = await service.getUserPermissions('admin', 'org-1');
 
       expect(result).toHaveLength(1);
       expect(result[0].resource).toBe('user');
+      expect(mockRoleRepo.findByNameInOrganization).toHaveBeenCalledWith('admin', 'org-1');
+    });
+
+    it('returns global permissions when active organization is not provided', async () => {
+      mockRoleRepo.findByName.mockResolvedValue(makeDomainRole({ id: '1', name: 'superadmin' }));
+      mockRoleRepo.getPermissions.mockResolvedValue([makeDomainPermission()]);
+
+      const result = await service.getUserPermissions('superadmin', null);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].resource).toBe('user');
+      expect(mockRoleRepo.findByName).toHaveBeenCalledWith('superadmin');
     });
   });
 

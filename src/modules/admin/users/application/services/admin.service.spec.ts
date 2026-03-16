@@ -104,15 +104,25 @@ describe('AdminService', () => {
   });
 
   describe('getCreateUserMetadata', () => {
-    it('should return all roles and organizations for admin', async () => {
+    it('should return all roles and organizations for superadmin', async () => {
       userRepo.listRoles.mockResolvedValueOnce(mockRoles);
       userRepo.listOrganizations.mockResolvedValueOnce(mockOrganizations);
 
-      const result = await service.getCreateUserMetadata('admin', null);
+      const result = await service.getCreateUserMetadata('superadmin', null);
 
       expect(result.allowedRoleNames).toEqual(['admin', 'manager', 'member']);
       expect(result.organizations).toHaveLength(2);
       expect(result.roles).toHaveLength(3);
+    });
+
+    it('should return admin/manager/member roles but only the active organization for org admin', async () => {
+      userRepo.listRoles.mockResolvedValueOnce(mockRoles);
+      userRepo.findOrganizationById.mockResolvedValueOnce(mockOrganizations[0]);
+
+      const result = await service.getCreateUserMetadata('admin', 'org-1');
+
+      expect(result.allowedRoleNames).toEqual(['admin', 'manager', 'member']);
+      expect(result.organizations).toEqual([mockOrganizations[0]]);
     });
 
     it('should return only manager/member roles for manager', async () => {
@@ -127,6 +137,10 @@ describe('AdminService', () => {
 
     it('should throw ForbiddenException for manager without active organization', async () => {
       await expect(service.getCreateUserMetadata('manager', null)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should throw ForbiddenException for admin without active organization', async () => {
+      await expect(service.getCreateUserMetadata('admin', null)).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -149,9 +163,9 @@ describe('AdminService', () => {
       await expect(service.createUser(input, 'manager', 'org-1')).rejects.toThrow(ForbiddenException);
     });
 
-    it('should throw ForbiddenException for non-admin without organization', async () => {
+    it('should throw ForbiddenException for org-scoped role without organization', async () => {
       const input: CreateUserInput = { ...baseUserInput, role: 'member', organizationId: undefined };
-      await expect(service.createUser(input, 'admin', null)).rejects.toThrow(ForbiddenException);
+      await expect(service.createUser(input, 'superadmin', null)).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -168,23 +182,23 @@ describe('AdminService', () => {
       await expect(
         service.setUserRole(
           { userId: 'user-1', role: 'member' },
-          'admin',
+          'superadmin',
           null,
           'user-1',
         )
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('should allow admin to change manager to member using target membership org when no active organization', async () => {
+    it('should allow superadmin to change manager to member using target membership org when no active organization', async () => {
       userRepo.findUserRole.mockResolvedValueOnce('manager');
       userRepo.findUserOrganization.mockResolvedValueOnce({ organizationId: 'org-1' });
       userRepo.setUserRole.mockResolvedValueOnce({ ...mockUser, id: 'target-1', role: 'member' });
 
       const result = await service.setUserRole(
         { userId: 'target-1', role: 'member' },
-        'admin',
+        'superadmin',
         null,
-        'actor-admin',
+        'actor-superadmin',
       );
 
       expect(result!.role).toBe('member');
@@ -193,12 +207,17 @@ describe('AdminService', () => {
       );
     });
 
-    it('should throw BadRequestException for non-admin role change when no org can be resolved', async () => {
+    it('should throw BadRequestException for org-scoped role change when no org can be resolved', async () => {
       userRepo.findUserRole.mockResolvedValueOnce('manager');
       userRepo.findUserOrganization.mockResolvedValueOnce(null);
 
       await expect(
-        service.setUserRole({ userId: 'target-1', role: 'member' }, 'admin', null, 'actor-admin'),
+        service.setUserRole(
+          { userId: 'target-1', role: 'member' },
+          'superadmin',
+          null,
+          'actor-superadmin',
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -207,7 +226,7 @@ describe('AdminService', () => {
 
       const result = await service.updateUser(
         { userId: 'user-1', name: 'Self Updated' },
-        'admin',
+        'superadmin',
         null,
         'user-1',
       );
@@ -220,7 +239,7 @@ describe('AdminService', () => {
 
       const result = await service.setUserPassword(
         { userId: 'user-1', newPassword: 'NewPass123!' },
-        'admin',
+        'superadmin',
         null,
         'user-1',
       );
@@ -232,7 +251,7 @@ describe('AdminService', () => {
       await expect(
         service.unbanUser(
           { userId: 'user-1' },
-          'admin',
+          'superadmin',
           null,
           'user-1',
         )
@@ -243,19 +262,25 @@ describe('AdminService', () => {
       await expect(
         service.removeUser(
           { userId: 'user-1' },
-          'admin',
+          'superadmin',
           null,
           'user-1',
         )
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('should block admin from deleting another admin', async () => {
+    it('should allow superadmin to delete another admin', async () => {
       userRepo.findUserRole.mockResolvedValueOnce('admin');
+      userRepo.removeUser.mockResolvedValueOnce(undefined);
 
-      await expect(
-        service.removeUser({ userId: 'target-admin' }, 'admin', null, 'actor-admin')
-      ).rejects.toThrow(ForbiddenException);
+      const result = await service.removeUser(
+        { userId: 'target-admin' },
+        'superadmin',
+        null,
+        'actor-superadmin',
+      );
+
+      expect(result.success).toBe(true);
     });
 
     it('should block manager from updating manager', async () => {
@@ -270,7 +295,7 @@ describe('AdminService', () => {
       await expect(
         service.removeUsers(
           { userIds: ['user-1', 'user-2'] },
-          'admin',
+          'superadmin',
           null,
           'user-1',
         )
@@ -279,12 +304,18 @@ describe('AdminService', () => {
   });
 
   describe('target action policy', () => {
-    it('should block admin from banning another admin', async () => {
+    it('should allow superadmin to ban another admin', async () => {
       userRepo.findUserRole.mockResolvedValueOnce('admin');
+      userRepo.banUser.mockResolvedValueOnce(undefined);
 
-      await expect(
-        service.banUser({ userId: 'target-admin', banReason: 'Violation' }, 'admin', null, 'actor-admin')
-      ).rejects.toThrow(ForbiddenException);
+      const result = await service.banUser(
+        { userId: 'target-admin', banReason: 'Violation' },
+        'superadmin',
+        null,
+        'actor-superadmin',
+      );
+
+      expect(result.success).toBe(true);
     });
 
     it('should block manager from banning another manager', async () => {
@@ -299,7 +330,7 @@ describe('AdminService', () => {
       await expect(
         service.banUser(
           { userId: 'user-1', banReason: 'Violation' },
-          'admin',
+          'superadmin',
           null,
           'user-1',
         )
@@ -308,13 +339,13 @@ describe('AdminService', () => {
   });
 
   describe('listUsers', () => {
-    it('should return all users for admin', async () => {
+    it('should return all users for superadmin', async () => {
       userRepo.listUsers.mockResolvedValueOnce({ data: [mockUser], total: 1 });
 
       const result = await service.listUsers({
         limit: 10,
         offset: 0,
-        platformRole: 'admin',
+        platformRole: 'superadmin',
         activeOrganizationId: null,
       });
 
@@ -333,64 +364,84 @@ describe('AdminService', () => {
   });
 
   describe('updateUser', () => {
-    it('should allow admin to update any user', async () => {
+    it('should allow superadmin to update any user', async () => {
       userRepo.updateUser.mockResolvedValueOnce({ ...mockUser, name: 'Updated Name' });
 
-      const result = await service.updateUser({ userId: 'user-1', name: 'Updated Name' }, 'admin', null);
+      const result = await service.updateUser(
+        { userId: 'user-1', name: 'Updated Name' },
+        'superadmin',
+        null,
+      );
 
       expect(result!.name).toBe('Updated Name');
     });
   });
 
   describe('banUser', () => {
-    it('should allow admin to ban any user', async () => {
+    it('should allow superadmin to ban any user', async () => {
       userRepo.banUser.mockResolvedValueOnce(undefined);
-      const result = await service.banUser({ userId: 'user-1', banReason: 'Violation' }, 'admin', null);
+      const result = await service.banUser(
+        { userId: 'user-1', banReason: 'Violation' },
+        'superadmin',
+        null,
+      );
       expect(result.success).toBe(true);
     });
   });
 
   describe('unbanUser', () => {
-    it('should allow admin to unban any user', async () => {
+    it('should allow superadmin to unban any user', async () => {
       userRepo.unbanUser.mockResolvedValueOnce(undefined);
-      const result = await service.unbanUser({ userId: 'user-1' }, 'admin', null);
+      const result = await service.unbanUser({ userId: 'user-1' }, 'superadmin', null);
       expect(result.success).toBe(true);
     });
   });
 
   describe('setUserPassword', () => {
-    it('should allow admin to change any user password', async () => {
+    it('should allow superadmin to change any user password', async () => {
       userRepo.setUserPassword.mockResolvedValueOnce(undefined);
-      const result = await service.setUserPassword({ userId: 'user-1', newPassword: 'NewPass123!' }, 'admin', null);
+      const result = await service.setUserPassword(
+        { userId: 'user-1', newPassword: 'NewPass123!' },
+        'superadmin',
+        null,
+      );
       expect(result.status).toBe(true);
     });
   });
 
   describe('removeUser', () => {
-    it('should allow admin to delete any user', async () => {
+    it('should allow superadmin to delete any user', async () => {
       userRepo.removeUser.mockResolvedValueOnce(undefined);
-      const result = await service.removeUser({ userId: 'user-1' }, 'admin', null);
+      const result = await service.removeUser({ userId: 'user-1' }, 'superadmin', null);
       expect(result.success).toBe(true);
     });
   });
 
   describe('removeUsers (bulk delete)', () => {
-    it('should allow admin to bulk delete users and return actual deleted count', async () => {
+    it('should allow superadmin to bulk delete users and return actual deleted count', async () => {
       userRepo.removeUsers.mockResolvedValueOnce(3);
-      const result = await service.removeUsers({ userIds: ['user-1', 'user-2', 'user-3'] }, 'admin', null);
+      const result = await service.removeUsers(
+        { userIds: ['user-1', 'user-2', 'user-3'] },
+        'superadmin',
+        null,
+      );
       expect(result.success).toBe(true);
       expect(result.deletedCount).toBe(3);
     });
 
     it('should reflect actual count when some ids were not found', async () => {
       userRepo.removeUsers.mockResolvedValueOnce(2);
-      const result = await service.removeUsers({ userIds: ['user-1', 'user-2', 'ghost-id'] }, 'admin', null);
+      const result = await service.removeUsers(
+        { userIds: ['user-1', 'user-2', 'ghost-id'] },
+        'superadmin',
+        null,
+      );
       expect(result.success).toBe(true);
       expect(result.deletedCount).toBe(2);
     });
 
     it('should return early for empty userIds array', async () => {
-      const result = await service.removeUsers({ userIds: [] }, 'admin', null);
+      const result = await service.removeUsers({ userIds: [] }, 'superadmin', null);
       expect(result.success).toBe(true);
       expect(result.deletedCount).toBe(0);
     });
@@ -420,26 +471,32 @@ describe('AdminService', () => {
   });
 
   describe('createUser - happy path', () => {
-    it('should allow admin to create a member with organization', async () => {
+    it('should allow superadmin to create a member with organization', async () => {
       const createdUser = { ...mockUser, id: 'new-user-1', name: 'New Member', email: 'newmember@example.com', role: 'member' };
       userRepo.createUser.mockResolvedValueOnce(createdUser);
 
       const result = await service.createUser(
         { name: 'New Member', email: 'newmember@example.com', password: 'SecurePass123!', role: 'member', organizationId: 'org-1' },
-        'admin',
+        'superadmin',
         null,
       );
 
       expect(result).toEqual(createdUser);
     });
 
-    it('should allow admin to create an admin user without organization', async () => {
+    it('should allow superadmin to create an admin user with organization', async () => {
       const createdUser = { ...mockUser, id: 'new-admin-1', name: 'New Admin', email: 'newadmin@example.com', role: 'admin' };
       userRepo.createUser.mockResolvedValueOnce(createdUser);
 
       const result = await service.createUser(
-        { name: 'New Admin', email: 'newadmin@example.com', password: 'SecurePass123!', role: 'admin' },
-        'admin',
+        {
+          name: 'New Admin',
+          email: 'newadmin@example.com',
+          password: 'SecurePass123!',
+          role: 'admin',
+          organizationId: 'org-1',
+        },
+        'superadmin',
         null,
       );
 
@@ -452,7 +509,7 @@ describe('AdminService', () => {
       await expect(
         service.createUser(
           { name: 'Existing User', email: 'existing@example.com', password: 'SecurePass123!', role: 'member', organizationId: 'org-1' },
-          'admin',
+          'superadmin',
           null,
         ),
       ).rejects.toThrow(ForbiddenException);
@@ -467,7 +524,7 @@ describe('AdminService', () => {
         limit: 10,
         offset: 0,
         searchValue: 'test',
-        platformRole: 'admin',
+        platformRole: 'superadmin',
         activeOrganizationId: null,
       });
 
@@ -497,7 +554,7 @@ describe('AdminService', () => {
         service.getUserCapabilities({
           actorUserId: 'admin-1',
           targetUserId: 'missing-user',
-          platformRole: 'admin',
+          platformRole: 'superadmin',
           activeOrganizationId: null,
         }),
       ).rejects.toThrow('Target user not found');
@@ -524,7 +581,7 @@ describe('AdminService', () => {
 
       const result = await service.updateUser(
         { userId: 'user-1', name: 'Updated' },
-        'admin',
+        'superadmin',
         null,
         undefined,
       );
@@ -536,7 +593,7 @@ describe('AdminService', () => {
       userRepo.findUserRole.mockResolvedValueOnce(null);
 
       await expect(
-        service.banUser({ userId: 'ghost-user' }, 'admin', null, 'actor-1'),
+        service.banUser({ userId: 'ghost-user' }, 'superadmin', null, 'actor-1'),
       ).rejects.toThrow('Target user not found');
     });
   });
@@ -552,7 +609,7 @@ describe('AdminService', () => {
 
     it('throws when no fields to update', async () => {
       await expect(
-        service.updateUser({ userId: 'user-1' }, 'admin', null, undefined),
+        service.updateUser({ userId: 'user-1' }, 'superadmin', null, undefined),
       ).rejects.toThrow('No data to update');
     });
   });
@@ -602,7 +659,7 @@ describe('AdminService', () => {
       userRepo.listUsers.mockResolvedValueOnce({ data: [], total: 0 });
 
       const result = await service.listUsers({
-        limit: 10, offset: 0, platformRole: 'admin', activeOrganizationId: null,
+        limit: 10, offset: 0, platformRole: 'superadmin', activeOrganizationId: null,
       });
 
       expect(result.total).toBe(0);
@@ -617,9 +674,9 @@ describe('AdminService', () => {
 
       await service.setUserRole(
         { userId: 'target-1', role: 'manager' },
-        'admin',
+        'superadmin',
         null,
-        'actor-admin',
+        'actor-superadmin',
       );
 
       expect(userRepo.setUserRole).toHaveBeenCalledWith(
@@ -636,7 +693,7 @@ describe('AdminService', () => {
         service.getUserCapabilities({
           actorUserId: 'admin-1',
           targetUserId: 'ghost',
-          platformRole: 'admin',
+          platformRole: 'superadmin',
           activeOrganizationId: null,
         }),
       ).rejects.toThrow('Target user not found');
@@ -658,13 +715,13 @@ describe('AdminService', () => {
   });
 
   describe('getUserCapabilities', () => {
-    it('returns self-safe capabilities for admin acting on self', async () => {
+    it('returns self-safe capabilities for superadmin acting on self', async () => {
       userRepo.findUserRole.mockResolvedValueOnce('admin');
 
       const result = await service.getUserCapabilities({
-        actorUserId: 'admin-1',
-        targetUserId: 'admin-1',
-        platformRole: 'admin',
+        actorUserId: 'superadmin-1',
+        targetUserId: 'superadmin-1',
+        platformRole: 'superadmin',
         activeOrganizationId: null,
       });
 
@@ -734,9 +791,9 @@ describe('AdminService', () => {
         .mockResolvedValueOnce('manager');
 
       const result = await service.getBatchCapabilities({
-        actorUserId: 'admin-1',
+        actorUserId: 'superadmin-1',
         userIds: ['user-1', 'user-2'],
-        platformRole: 'admin',
+        platformRole: 'superadmin',
         activeOrganizationId: null,
       });
 
@@ -778,19 +835,19 @@ describe('AdminService', () => {
       expect(userRepo.findMemberInOrg).toHaveBeenCalledWith('member-1', 'org-1');
     });
 
-    it('returns self capabilities correctly in batch', async () => {
+    it('returns self capabilities correctly in batch for superadmin', async () => {
       userRepo.findUserRole.mockResolvedValueOnce('admin');
 
       const result = await service.getBatchCapabilities({
-        actorUserId: 'admin-1',
-        userIds: ['admin-1'],
-        platformRole: 'admin',
+        actorUserId: 'superadmin-1',
+        userIds: ['superadmin-1'],
+        platformRole: 'superadmin',
         activeOrganizationId: null,
       });
 
-      expect(result['admin-1'].isSelf).toBe(true);
-      expect(result['admin-1'].actions.update).toBe(true);
-      expect(result['admin-1'].actions.setRole).toBe(false);
+      expect(result['superadmin-1'].isSelf).toBe(true);
+      expect(result['superadmin-1'].actions.update).toBe(true);
+      expect(result['superadmin-1'].actions.setRole).toBe(false);
     });
   });
 });

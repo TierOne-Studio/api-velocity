@@ -59,7 +59,7 @@ export interface ListUsersParams {
   offset: number;
   searchValue?: string;
   activeOrganizationId: string | null;
-  platformRole: 'admin' | 'manager';
+  platformRole: 'superadmin' | 'admin' | 'manager' | 'member';
 }
 
 export const ADMIN_USER_REPOSITORY = 'ADMIN_USER_REPOSITORY';

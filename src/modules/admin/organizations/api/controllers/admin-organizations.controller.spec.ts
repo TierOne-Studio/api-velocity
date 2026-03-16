@@ -51,7 +51,7 @@ describe('AdminOrganizationsController', () => {
     it('passes admin platform role to service', async () => {
       const adminSession = {
         user: { role: 'admin' },
-        session: { activeOrganizationId: null },
+        session: { activeOrganizationId: 'org-1' },
       } as unknown as UserSession;
 
       await controller.getRolesMetadata(adminSession);
@@ -72,7 +72,7 @@ describe('AdminOrganizationsController', () => {
 
       const adminSession = {
         user: { role: 'admin' },
-        session: { activeOrganizationId: null },
+        session: { activeOrganizationId: 'org-1' },
       } as unknown as UserSession;
 
       await controller.updateMemberRole(adminSession, 'org-1', 'member-1', { role: 'manager' });
@@ -107,7 +107,7 @@ describe('AdminOrganizationsController', () => {
 
       const adminSession = {
         user: { id: 'admin-1', email: 'admin@example.com', name: 'Admin', role: 'admin' },
-        session: { activeOrganizationId: null },
+        session: { activeOrganizationId: 'org-1' },
       } as unknown as UserSession;
 
       await controller.createInvitation(adminSession, 'org-1', {
@@ -128,7 +128,7 @@ describe('AdminOrganizationsController', () => {
       );
     });
 
-    it('returns member candidates for admins', async () => {
+    it('returns member candidates for superadmin', async () => {
       (orgService as any).listMemberCandidates = jest.fn<any>().mockResolvedValue([
         {
           id: 'user-2',
@@ -140,7 +140,7 @@ describe('AdminOrganizationsController', () => {
       ]);
 
       const adminSession = {
-        user: { role: 'admin' },
+        user: { role: 'superadmin' },
         session: { activeOrganizationId: null },
       } as unknown as UserSession;
 
@@ -227,14 +227,14 @@ describe('AdminOrganizationsController', () => {
 
   describe('list', () => {
     const adminSession = {
-      user: { role: 'admin' }, session: { activeOrganizationId: null },
+      user: { role: 'superadmin' }, session: { activeOrganizationId: null },
     } as unknown as UserSession;
 
     const managerSession = {
       user: { role: 'manager' }, session: { activeOrganizationId: 'org-1' },
     } as unknown as UserSession;
 
-    it('admin sees all orgs via findAll', async () => {
+    it('superadmin sees all orgs via findAll', async () => {
       orgService.findAll.mockResolvedValue({ data: [], pagination: {} } as never);
 
       await controller.list(adminSession, { page: 1, limit: 20 } as any);
@@ -281,7 +281,7 @@ describe('AdminOrganizationsController', () => {
 
   describe('findOne', () => {
     const adminSession = {
-      user: { role: 'admin' }, session: { activeOrganizationId: null },
+      user: { role: 'superadmin' }, session: { activeOrganizationId: null },
     } as unknown as UserSession;
 
     it('returns org when found', async () => {
@@ -309,7 +309,7 @@ describe('AdminOrganizationsController', () => {
 
   describe('getMembers', () => {
     const adminSession = {
-      user: { role: 'admin' }, session: { activeOrganizationId: null },
+      user: { role: 'superadmin' }, session: { activeOrganizationId: null },
     } as unknown as UserSession;
 
     it('returns members when org found', async () => {
@@ -330,7 +330,7 @@ describe('AdminOrganizationsController', () => {
 
   describe('getInvitations', () => {
     const adminSession = {
-      user: { role: 'admin' }, session: { activeOrganizationId: null },
+      user: { role: 'superadmin' }, session: { activeOrganizationId: null },
     } as unknown as UserSession;
 
     it('returns invitations when org found', async () => {
@@ -351,7 +351,7 @@ describe('AdminOrganizationsController', () => {
 
   describe('deleteInvitation', () => {
     const adminSession = {
-      user: { role: 'admin' }, session: { activeOrganizationId: null },
+      user: { role: 'superadmin' }, session: { activeOrganizationId: null },
     } as unknown as UserSession;
 
     it('calls deleteInvitation and returns success', async () => {
@@ -366,7 +366,7 @@ describe('AdminOrganizationsController', () => {
 
   describe('addMember', () => {
     const adminSession = {
-      user: { role: 'admin' }, session: { activeOrganizationId: null },
+      user: { role: 'superadmin' }, session: { activeOrganizationId: null },
     } as unknown as UserSession;
 
     it('adds member when org found and role is valid', async () => {
@@ -411,7 +411,7 @@ describe('AdminOrganizationsController', () => {
 
   describe('update', () => {
     const adminSession = {
-      user: { role: 'admin' }, session: { activeOrganizationId: null },
+      user: { role: 'superadmin' }, session: { activeOrganizationId: null },
     } as unknown as UserSession;
 
     const managerSession = {
@@ -450,7 +450,7 @@ describe('AdminOrganizationsController', () => {
 
   describe('delete', () => {
     const adminSession = {
-      user: { role: 'admin' }, session: { activeOrganizationId: null },
+      user: { role: 'superadmin' }, session: { activeOrganizationId: null },
     } as unknown as UserSession;
 
     const managerSession = {
@@ -495,7 +495,7 @@ describe('AdminOrganizationsController', () => {
 
   describe('validateCreateInvitationPayload — branch coverage', () => {
     const adminSession = {
-      user: { id: 'a-1', email: 'a@a.com', name: 'A', role: 'admin' },
+      user: { id: 'a-1', email: 'a@a.com', name: 'A', role: 'superadmin' },
       session: { activeOrganizationId: null },
     } as unknown as UserSession;
 
@@ -520,7 +520,7 @@ describe('AdminOrganizationsController', () => {
 
   describe('validateUpdateMemberRolePayload — branch coverage', () => {
     const adminSession = {
-      user: { role: 'admin' }, session: { activeOrganizationId: null },
+      user: { role: 'superadmin' }, session: { activeOrganizationId: null },
     } as unknown as UserSession;
 
     it('throws when role is invalid', async () => {
