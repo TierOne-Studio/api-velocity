@@ -353,6 +353,65 @@ describe('AdminService', () => {
       expect(result.total).toBe(1);
     });
 
+    it('should preserve memberships returned by the repository', async () => {
+      userRepo.listUsers.mockResolvedValueOnce({
+        data: [
+          {
+            ...mockUser,
+            memberships: [
+              {
+                organizationId: 'org-1',
+                organizationName: 'Org 1',
+                roleName: 'manager',
+                roleDisplayName: 'Manager',
+              },
+            ],
+          },
+        ],
+        total: 1,
+      } as never);
+
+      const result = await service.listUsers({
+        limit: 10,
+        offset: 0,
+        platformRole: 'superadmin',
+        activeOrganizationId: null,
+      });
+
+      expect(result.data[0]).toEqual(
+        expect.objectContaining({
+          memberships: [
+            {
+              organizationId: 'org-1',
+              organizationName: 'Org 1',
+              roleName: 'manager',
+              roleDisplayName: 'Manager',
+            },
+          ],
+        }),
+      );
+    });
+
+    it('should forward organizationId for superadmin filtering', async () => {
+      userRepo.listUsers.mockResolvedValueOnce({ data: [mockUser], total: 1 });
+
+      await service.listUsers({
+        limit: 10,
+        offset: 0,
+        searchValue: undefined,
+        organizationId: 'org-2',
+        platformRole: 'superadmin',
+        activeOrganizationId: null,
+      });
+
+      expect(userRepo.listUsers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          organizationId: 'org-2',
+          platformRole: 'superadmin',
+        }),
+      );
+    });
+
     it('should throw ForbiddenException for manager without active organization', async () => {
       await expect(service.listUsers({
         limit: 10,

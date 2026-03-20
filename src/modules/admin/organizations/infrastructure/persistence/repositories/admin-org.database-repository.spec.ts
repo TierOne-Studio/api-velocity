@@ -150,6 +150,26 @@ describe('AdminOrgDatabaseRepository', () => {
       ]);
       expect(mockQuery.mock.calls[5][1]).toEqual(['org-1', 'organization', 'read']);
     });
+
+    it('skips creator member insertion when member params are omitted', async () => {
+      mockQuery.mockResolvedValue(undefined);
+
+      await expect(
+        repo.createOrg({
+          ...params,
+          actorRole: undefined as unknown as 'admin',
+          memberId: undefined as unknown as string,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(mockQuery).toHaveBeenCalledTimes(5);
+      expect(mockQuery.mock.calls[0][0]).toContain('INSERT INTO organization');
+      expect(mockQuery.mock.calls[1][0]).toContain('INSERT INTO roles');
+      expect(mockQuery.mock.calls[2][0]).toContain('INSERT INTO role_permissions');
+      expect(mockQuery.mock.calls[3][0]).toContain('INSERT INTO role_permissions');
+      expect(mockQuery.mock.calls[4][0]).toContain('INSERT INTO role_permissions');
+      expect(mockQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO member'))).toBe(false);
+    });
   });
 
   // ─── updateOrg ──────────────────────────────────────────────────────────────
@@ -283,6 +303,15 @@ describe('AdminOrgDatabaseRepository', () => {
       mockQueryOne.mockResolvedValue(null);
       expect(await repo.findUserById('ghost')).toBeNull();
     });
+
+    it('selects the role column along with the user id', async () => {
+      mockQueryOne.mockResolvedValue({ id: 'u-1', role: 'member' });
+
+      const result = await repo.findUserById('u-1');
+
+      expect(result).toEqual({ id: 'u-1', role: 'member' });
+      expect(mockQueryOne.mock.calls[0][0]).toContain('SELECT id, role FROM "user"');
+    });
   });
 
   describe('listMemberCandidates', () => {
@@ -297,6 +326,15 @@ describe('AdminOrgDatabaseRepository', () => {
       expect(sql).toContain('NOT EXISTS');
       expect(sql).toContain('member m');
       expect(params).toEqual(['org-1', 25]);
+    });
+
+    it('filters out superadmin users from candidate queries', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await (repo as any).listMemberCandidates('org-1', { search: 'alice', limit: 10 });
+
+      const [sql] = mockQuery.mock.calls[0];
+      expect(sql).toContain(`COALESCE(u.role, '') NOT LIKE '%superadmin%'`);
     });
 
     it('adds search filtering when provided', async () => {

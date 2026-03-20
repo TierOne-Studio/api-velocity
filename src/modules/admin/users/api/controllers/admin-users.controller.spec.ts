@@ -270,6 +270,16 @@ describe('AdminUsersController', () => {
         expect.objectContaining({ limit: 10, offset: 0, searchValue: undefined }),
       );
     });
+
+    it('passes organizationId when provided', async () => {
+      adminService.listUsers.mockResolvedValue({ users: [], total: 0 } as never);
+
+      await controller.list(baseSession, '10', '0', undefined, 'org-2');
+
+      expect(adminService.listUsers).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: 'org-2' }),
+      );
+    });
   });
 
   describe('create', () => {

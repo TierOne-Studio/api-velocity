@@ -171,11 +171,13 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
         throw err;
       }
 
-      await query(
-        `INSERT INTO member (id, "organizationId", "userId", role, "createdAt")
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [params.memberId, params.id, params.actorId, params.actorRole],
-      );
+      if (params.memberId && params.actorRole) {
+        await query(
+          `INSERT INTO member (id, "organizationId", "userId", role, "createdAt")
+           VALUES ($1, $2, $3, $4, NOW())`,
+          [params.memberId, params.id, params.actorId, params.actorRole],
+        );
+      }
 
       await this.seedDefaultRoles(query, params.id);
     });
@@ -262,6 +264,7 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
          WHERE m."organizationId" = $1
            AND m."userId" = u.id
        )
+       AND COALESCE(u.role, '') NOT LIKE '%superadmin%'
        ${searchClause}
        ORDER BY u.name ASC, u.email ASC
        LIMIT $${limitParam}`,
@@ -334,9 +337,9 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     return result.length > 0;
   }
 
-  async findUserById(userId: string): Promise<{ id: string } | null> {
-    return this.db.queryOne<{ id: string }>(
-      'SELECT id FROM "user" WHERE id = $1',
+  async findUserById(userId: string): Promise<{ id: string; role?: string | null } | null> {
+    return this.db.queryOne<{ id: string; role?: string | null }>(
+      'SELECT id, role FROM "user" WHERE id = $1',
       [userId],
     );
   }

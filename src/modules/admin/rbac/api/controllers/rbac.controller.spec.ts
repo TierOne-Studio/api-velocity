@@ -207,10 +207,36 @@ describe('RbacController handler bodies', () => {
       const result = await controller.getRoles({
         user: { role: 'manager' },
         session: { activeOrganizationId: 'org-1' },
-      } as any);
+      } as any, undefined);
 
       expect(result).toEqual({ data: roles });
       expect(roleService.findAll).toHaveBeenCalledWith('org-1');
+    });
+
+    it('returns explicitly targeted roles for superadmin', async () => {
+      const roles = [{ id: '1', name: 'admin' }];
+      roleService.findAll.mockResolvedValue(roles);
+
+      const result = await controller.getRoles({
+        user: { role: 'superadmin' },
+        session: {},
+      } as any, 'org-2');
+
+      expect(result).toEqual({ data: roles });
+      expect(roleService.findAll).toHaveBeenCalledWith('org-2');
+    });
+
+    it('returns all roles for superadmin when organizationId is omitted', async () => {
+      const roles = [{ id: '1', name: 'admin' }, { id: '2', name: 'member' }];
+      roleService.findAll.mockResolvedValue(roles);
+
+      const result = await controller.getRoles({
+        user: { role: 'superadmin' },
+        session: {},
+      } as any, undefined);
+
+      expect(result).toEqual({ data: roles });
+      expect(roleService.findAll).toHaveBeenCalledWith(null);
     });
   });
 
@@ -252,6 +278,7 @@ describe('RbacController handler bodies', () => {
           session: { activeOrganizationId: 'org-1' },
         } as any,
         dto,
+        undefined,
       );
 
       expect(result).toEqual({ data: created });
@@ -269,6 +296,7 @@ describe('RbacController handler bodies', () => {
             session: { activeOrganizationId: 'org-1' },
           } as any,
           dto,
+          undefined,
         ),
       ).rejects.toThrow('Role name already exists');
     });
@@ -281,6 +309,7 @@ describe('RbacController handler bodies', () => {
             session: { activeOrganizationId: 'org-1' },
           } as any,
           { name: '', displayName: 'X' } as any,
+          undefined,
         ),
       ).rejects.toThrow('Role name is required');
     });
@@ -293,6 +322,7 @@ describe('RbacController handler bodies', () => {
             session: { activeOrganizationId: 'org-1' },
           } as any,
           { name: 'x', displayName: '' } as any,
+          undefined,
         ),
       ).rejects.toThrow('Role displayName is required');
     });
@@ -305,8 +335,29 @@ describe('RbacController handler bodies', () => {
             session: {},
           } as any,
           { name: 'editor', displayName: 'Editor' },
+          undefined,
         ),
       ).rejects.toThrow('Active organization required');
+    });
+
+    it('allows superadmin to create a role with explicit organizationId', async () => {
+      const dto = { name: 'editor', displayName: 'Editor' };
+      const created = { id: '3', ...dto, isSystem: false };
+      roleService.findByNameInOrganization.mockResolvedValue(null);
+      roleService.create.mockResolvedValue(created);
+
+      const result = await controller.createRole(
+        {
+          user: { role: 'superadmin' },
+          session: {},
+        } as any,
+        dto,
+        'org-9',
+      );
+
+      expect(result).toEqual({ data: created });
+      expect(roleService.findByNameInOrganization).toHaveBeenCalledWith('editor', 'org-9');
+      expect(roleService.create).toHaveBeenCalledWith(dto, 'org-9');
     });
   });
 

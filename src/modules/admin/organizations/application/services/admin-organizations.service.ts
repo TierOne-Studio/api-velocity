@@ -37,6 +37,7 @@ export const ROLE_HIERARCHY: Record<string, number> = {
   member: 0,
   manager: 1,
   admin: 2,
+  superadmin: 3,
 };
 
 /**
@@ -72,6 +73,14 @@ export class AdminOrganizationsService {
 
   private readonly slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+  private isSuperadminUserRole(role: string | null | undefined): boolean {
+    return String(role ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .includes('superadmin');
+  }
+
   /**
    * Get all roles from the database for organization membership.
    * When requesterRole is provided, assignableRoles is filtered to roles
@@ -82,13 +91,16 @@ export class AdminOrganizationsService {
     assignableRoles: string[];
   }> {
     const rows = await this.orgRepo.getRoles();
-    const allRoleNames = rows.map((r) => r.name);
+    const uniqueRows = rows.filter(
+      (row, index, items) => items.findIndex((candidate) => candidate.name === row.name) === index,
+    );
+    const allRoleNames = uniqueRows.map((r) => r.name);
     const assignableRoles = requesterRole
       ? filterAssignableRoles(allRoleNames, requesterRole)
       : allRoleNames;
 
     return {
-      roles: rows.map((r) => ({
+      roles: uniqueRows.map((r) => ({
         name: r.name,
         displayName: r.display_name,
         description: r.description,
@@ -130,8 +142,9 @@ export class AdminOrganizationsService {
     }
 
     const organizationId = this.generateId();
-    const memberId = this.generateId();
-    const creatorMemberRole = 'admin';
+    const shouldCreateCreatorMembership = actor.platformRole !== 'superadmin';
+    const memberId = shouldCreateCreatorMembership ? this.generateId() : undefined;
+    const creatorMemberRole = shouldCreateCreatorMembership ? 'admin' : undefined;
     const metadataJson = input.metadata === undefined ? null : JSON.stringify(input.metadata);
 
     await this.orgRepo.createOrg({
@@ -388,6 +401,9 @@ export class AdminOrganizationsService {
 
     const user = await this.orgRepo.findUserById(userId);
     if (!user) throw new NotFoundException('User not found');
+    if (this.isSuperadminUserRole(user.role)) {
+      throw new ForbiddenException('Superadmin users cannot be added as organization members');
+    }
 
     const existingMember = await this.orgRepo.findMemberByUserId(userId, organizationId);
     if (existingMember) throw new ConflictException('User is already a member of this organization');

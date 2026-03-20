@@ -176,6 +176,38 @@ describe('AdminUserDatabaseRepository', () => {
       expect(result.total).toBe(1);
     });
 
+    it('returns additive memberships data when present in query rows', async () => {
+      mockQuery.mockResolvedValue([
+        {
+          id: 'u-1',
+          memberships: [
+            {
+              organizationId: 'org-1',
+              organizationName: 'Org 1',
+              roleName: 'admin',
+              roleDisplayName: 'Admin',
+            },
+          ],
+        },
+      ]);
+      mockQueryOne.mockResolvedValue({ count: '1' });
+
+      const result = await repo.listUsers(baseParams);
+
+      expect(result.data[0]).toEqual(
+        expect.objectContaining({
+          memberships: [
+            {
+              organizationId: 'org-1',
+              organizationName: 'Org 1',
+              roleName: 'admin',
+              roleDisplayName: 'Admin',
+            },
+          ],
+        }),
+      );
+    });
+
     it('returns 0 total when queryOne returns null', async () => {
       mockQuery.mockResolvedValue([]);
       mockQueryOne.mockResolvedValue(null);
@@ -197,6 +229,15 @@ describe('AdminUserDatabaseRepository', () => {
       await repo.listUsers(baseParams);
       const [sql] = mockQuery.mock.calls[0] as [string];
       expect(sql).not.toContain('EXISTS');
+    });
+
+    it('adds EXISTS clause for superadmin when organizationId is provided', async () => {
+      mockQuery.mockResolvedValue([]);
+      mockQueryOne.mockResolvedValue({ count: '0' });
+      await repo.listUsers({ ...baseParams, organizationId: 'org-2' });
+      const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+      expect(sql).toContain('EXISTS');
+      expect(params).toContain('org-2');
     });
 
     it('adds EXISTS clause for admin platform role', async () => {
@@ -238,6 +279,23 @@ describe('AdminUserDatabaseRepository', () => {
       // queryOne call (count without pagination) should only have 1 param: search
       const [, countParams] = mockQueryOne.mock.calls[0] as [string, unknown[]];
       expect(countParams).toHaveLength(1);
+    });
+
+    it('aggregates organization memberships with role display metadata in the list query', async () => {
+      mockQuery.mockResolvedValue([]);
+      mockQueryOne.mockResolvedValue({ count: '0' });
+
+      await repo.listUsers(baseParams);
+
+      const [sql] = mockQuery.mock.calls[0] as [string];
+      expect(sql).toContain('COALESCE(');
+      expect(sql).toContain('json_agg');
+      expect(sql).toContain(`'organizationId', m."organizationId"`);
+      expect(sql).toContain(`'organizationName', o.name`);
+      expect(sql).toContain(`'roleName', m.role`);
+      expect(sql).toContain(`'roleDisplayName', COALESCE(r.display_name, m.role)`);
+      expect(sql).toContain('JOIN organization o ON o.id = m."organizationId"');
+      expect(sql).toContain('LEFT JOIN roles r ON r.organization_id = m."organizationId" AND r.name = m.role');
     });
   });
 

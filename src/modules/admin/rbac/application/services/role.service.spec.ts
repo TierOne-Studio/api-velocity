@@ -67,6 +67,15 @@ describe('RoleService', () => {
       expect(result[0].displayName).toBe('Admin');
       expect(mockRoleRepo.findAll).toHaveBeenCalledWith('org-1');
     });
+
+    it('should return all roles when no organization filter is provided', async () => {
+      mockRoleRepo.findAll.mockResolvedValue([makeDomainRole(), makeDomainRole({ id: '2', name: 'member' })]);
+
+      const result = await service.findAll(null);
+
+      expect(result).toHaveLength(2);
+      expect(mockRoleRepo.findAll).toHaveBeenCalledWith(null);
+    });
   });
 
   describe('findByName', () => {

@@ -123,6 +123,7 @@ export class AdminUsersController {
     @Query('limit') limit = '10',
     @Query('offset') offset = '0',
     @Query('searchValue') searchValue?: string,
+    @Query('organizationId') organizationId?: string,
   ) {
     const { parsedLimit, parsedOffset } = this.validatePagination(limit, offset);
 
@@ -133,6 +134,7 @@ export class AdminUsersController {
       limit: parsedLimit,
       offset: parsedOffset,
       searchValue,
+      organizationId,
       platformRole,
       activeOrganizationId: activeOrgId,
     });

@@ -45,7 +45,7 @@ describe('RbacController validation', () => {
 
   it('rejects createRole when name is missing', async () => {
     await expect(
-      controller.createRole(session, { displayName: 'Editor' } as any),
+      controller.createRole(session, { displayName: 'Editor' } as any, undefined),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
@@ -53,7 +53,7 @@ describe('RbacController validation', () => {
 
   it('rejects createRole when displayName is missing', async () => {
     await expect(
-      controller.createRole(session, { name: 'editor' } as any),
+      controller.createRole(session, { name: 'editor' } as any, undefined),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
@@ -61,7 +61,7 @@ describe('RbacController validation', () => {
 
   it('rejects createRole when name is the reserved legacy user role', async () => {
     await expect(
-      controller.createRole(session, { name: 'user', displayName: 'User' } as any),
+      controller.createRole(session, { name: 'user', displayName: 'User' } as any, undefined),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
@@ -102,6 +102,7 @@ describe('RbacController validation', () => {
     const result = await controller.createRole(
       session,
       { name: 'editor', displayName: 'Editor' } as any,
+      undefined,
     );
 
     expect(result).toEqual({ data: { id: 'role-1', name: 'editor' } });

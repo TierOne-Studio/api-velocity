@@ -16,7 +16,7 @@ export class RoleService {
   /**
    * Get all roles
    */
-  async findAll(activeOrganizationId: string): Promise<Role[]> {
+  async findAll(activeOrganizationId?: string | null): Promise<Role[]> {
     return this.roleRepo.findAll(activeOrganizationId);
   }
 

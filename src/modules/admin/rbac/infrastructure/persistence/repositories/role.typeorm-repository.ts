@@ -41,11 +41,17 @@ export class TypeOrmRoleRepository implements IRoleRepository {
     private readonly dataSource: DataSource,
   ) {}
 
-  async findAll(activeOrganizationId: string): Promise<Role[]> {
-    const entities = await this.roleRepo.find({
-      where: [{ isSystem: true }, { organizationId: activeOrganizationId }],
-      order: { isSystem: 'DESC', name: 'ASC' },
-    });
+  async findAll(activeOrganizationId?: string | null): Promise<Role[]> {
+    const entities = await this.roleRepo.find(
+      activeOrganizationId
+        ? {
+            where: { organizationId: activeOrganizationId },
+            order: { isSystem: 'DESC', name: 'ASC' },
+          }
+        : {
+            order: { organizationId: 'ASC', isSystem: 'DESC', name: 'ASC' },
+          },
+    );
     return entities.map(mapRole);
   }
 

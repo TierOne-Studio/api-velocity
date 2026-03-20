@@ -75,8 +75,8 @@ export interface CreateOrgParams {
   logo: string | null;
   metadataJson: string | null;
   actorId: string;
-  actorRole: string;
-  memberId: string;
+  actorRole?: string;
+  memberId?: string;
 }
 
 export interface UpdateOrgFields {
@@ -112,7 +112,7 @@ export interface IAdminOrgRepository {
   addMember(id: string, organizationId: string, userId: string, role: string): Promise<MemberRow>;
   updateMemberRole(memberId: string, organizationId: string, role: string): Promise<MemberRow | null>;
   removeMember(memberId: string, organizationId: string): Promise<boolean>;
-  findUserById(userId: string): Promise<{ id: string } | null>;
+  findUserById(userId: string): Promise<{ id: string; role?: string | null } | null>;
 
   // Invitations
   findPendingInvitation(organizationId: string, email: string): Promise<{ id: string } | null>;

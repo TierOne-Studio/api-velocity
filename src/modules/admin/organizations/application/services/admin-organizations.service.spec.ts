@@ -122,7 +122,7 @@ describe('AdminOrganizationsService', () => {
   });
 
   describe('create', () => {
-    it('should always assign admin member role to creator regardless of platform role', async () => {
+    it('should assign admin member role when actor is manager', async () => {
       orgRepo.createOrg.mockResolvedValue(undefined);
       orgRepo.findById.mockResolvedValue({ id: 'org-2', name: 'New Org', slug: 'new-org', logo: null, metadata: null, createdAt: new Date(), member_count: '0' });
 
@@ -142,6 +142,29 @@ describe('AdminOrganizationsService', () => {
       expect(orgRepo.createOrg).toHaveBeenCalledWith(
         expect.objectContaining({ actorRole: 'admin' }),
       );
+    });
+
+    it('should not create a creator membership when actor is superadmin', async () => {
+      orgRepo.createOrg.mockResolvedValue(undefined);
+      orgRepo.findById.mockResolvedValue({ id: 'org-4', name: 'Superadmin Org', slug: 'superadmin-org', logo: null, metadata: null, createdAt: new Date(), member_count: '0' });
+
+      const created = await service.create(
+        {
+          name: 'Superadmin Org',
+          slug: 'superadmin-org',
+        },
+        {
+          id: 'superadmin-1',
+          platformRole: 'superadmin',
+        },
+      );
+
+      expect(created.name).toBe('Superadmin Org');
+      expect(created.slug).toBe('superadmin-org');
+      const createParams = orgRepo.createOrg.mock.calls[0][0];
+      expect(createParams.actorId).toBe('superadmin-1');
+      expect(createParams.actorRole).toBeUndefined();
+      expect(createParams.memberId).toBeUndefined();
     });
 
     it('should reject duplicate organization slug', async () => {
@@ -416,7 +439,7 @@ describe('AdminOrganizationsService', () => {
 
     it('should add an existing user as a member', async () => {
       orgRepo.findById.mockResolvedValueOnce(mockOrganization);
-      orgRepo.findUserById.mockResolvedValue({ id: 'user-2' });
+      orgRepo.findUserById.mockResolvedValue({ id: 'user-2', role: 'member' });
       orgRepo.findMemberByUserId.mockResolvedValue(null);
       orgRepo.addMember.mockResolvedValue(mockMemberResult);
 
@@ -441,12 +464,23 @@ describe('AdminOrganizationsService', () => {
 
     it('should throw ConflictException when user is already a member', async () => {
       orgRepo.findById.mockResolvedValueOnce(mockOrganization);
-      orgRepo.findUserById.mockResolvedValue({ id: 'user-2' });
+      orgRepo.findUserById.mockResolvedValue({ id: 'user-2', role: 'member' });
       orgRepo.findMemberByUserId.mockResolvedValue({ id: 'existing-member' });
 
       await expect(service.addMember('org-1', 'user-2', 'member')).rejects.toThrow(
         'User is already a member of this organization',
       );
+    });
+
+    it('should reject adding a superadmin as a member', async () => {
+      orgRepo.findById.mockResolvedValueOnce(mockOrganization);
+      orgRepo.findUserById.mockResolvedValue({ id: 'user-2', role: 'superadmin' });
+
+      await expect(service.addMember('org-1', 'user-2', 'member')).rejects.toThrow(
+        'Superadmin users cannot be added as organization members',
+      );
+      expect(orgRepo.findMemberByUserId).not.toHaveBeenCalled();
+      expect(orgRepo.addMember).not.toHaveBeenCalled();
     });
   });
 
@@ -762,6 +796,20 @@ describe('AdminOrganizationsService', () => {
       expect(result.assignableRoles).toHaveLength(2);
     });
 
+    it('deduplicates role metadata and assignableRoles when multiple rows share the same role name', async () => {
+      orgRepo.getRoles.mockResolvedValue([
+        { name: 'admin', display_name: 'Admin', description: 'Admin A', color: '#ff0000', is_system: true },
+        { name: 'member', display_name: 'Member', description: 'Member A', color: '#0000ff', is_system: true },
+        { name: 'member', display_name: 'Member', description: 'Member B', color: '#0000ff', is_system: false },
+        { name: 'manager', display_name: 'Manager', description: 'Manager', color: '#00ff00', is_system: true },
+      ]);
+
+      const result = await service.getRoles('superadmin');
+
+      expect(result.roles.map((role) => role.name)).toEqual(['admin', 'member', 'manager']);
+      expect(result.assignableRoles).toEqual(['admin', 'member', 'manager']);
+    });
+
     it('should handle empty roles table', async () => {
       orgRepo.getRoles.mockResolvedValue([]);
 
@@ -840,6 +888,10 @@ describe('Role Hierarchy Utilities', () => {
 
     it('admin should assign all roles', () => {
       expect(filterAssignableRoles(allRoles, 'admin')).toEqual(['admin', 'manager', 'member']);
+    });
+
+    it('superadmin should assign all org roles', () => {
+      expect(filterAssignableRoles(allRoles, 'superadmin')).toEqual(['admin', 'manager', 'member']);
     });
 
     it('member should only assign member', () => {

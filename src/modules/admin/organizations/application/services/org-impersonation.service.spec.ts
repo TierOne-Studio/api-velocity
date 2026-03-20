@@ -268,21 +268,47 @@ describe('OrgImpersonationService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('should fail clearly when admin omits organizationId for multi-org target', async () => {
+    it('should default to the first target organization for superadmin when organizationId is omitted for a multi-org target', async () => {
       dbService.queryOne.mockResolvedValueOnce({ role: 'member' });
-      dbService.query.mockResolvedValueOnce([
-        { organizationId: 'org-1' },
-        { organizationId: 'org-2' },
-      ]);
+      dbService.query
+        .mockResolvedValueOnce([
+          { organizationId: 'org-2' },
+          { organizationId: 'org-1' },
+        ])
+        .mockResolvedValueOnce([]);
 
-      await expect(
-        (service as any).startImpersonation({
-          actorUserId: 'admin-1',
-          targetUserId: 'user-1',
-          platformRole: 'admin',
-          activeOrganizationId: null,
-        }),
-      ).rejects.toThrow('organizationId is required');
+      const result = await (service as any).startImpersonation({
+        actorUserId: 'superadmin-1',
+        targetUserId: 'user-1',
+        platformRole: 'superadmin',
+        activeOrganizationId: null,
+      });
+
+      expect(result.sessionToken).toBeDefined();
+      expect(dbService.query).toHaveBeenLastCalledWith(
+        expect.stringContaining('INSERT INTO session'),
+        expect.arrayContaining(['user-1', 'superadmin-1', 'org-1']),
+      );
+    });
+
+    it('should use admin active organization for multi-org target when target belongs to the active org', async () => {
+      dbService.queryOne
+        .mockResolvedValueOnce({ role: 'member' })
+        .mockResolvedValueOnce({ id: 'member-1' });
+      dbService.query.mockResolvedValue([]);
+
+      const result = await (service as any).startImpersonation({
+        actorUserId: 'admin-1',
+        targetUserId: 'user-1',
+        platformRole: 'admin',
+        activeOrganizationId: 'org-2',
+      });
+
+      expect(result.sessionToken).toBeDefined();
+      expect(dbService.query).toHaveBeenLastCalledWith(
+        expect.stringContaining('INSERT INTO session'),
+        expect.arrayContaining(['user-1', 'admin-1', 'org-2']),
+      );
     });
 
     it('should derive organizationId automatically for admin when target belongs to exactly one org', async () => {

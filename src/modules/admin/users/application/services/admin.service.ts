@@ -305,14 +305,22 @@ export class AdminService {
     limit: number;
     offset: number;
     searchValue?: string;
+    organizationId?: string;
     activeOrganizationId: string | null;
     platformRole: PlatformRole;
   }) {
-    const { limit, offset, searchValue, platformRole, activeOrganizationId } = params;
+    const { limit, offset, searchValue, organizationId, platformRole, activeOrganizationId } = params;
     if (!this.isSuperadmin(platformRole) && !activeOrganizationId) {
       throw new ForbiddenException('Active organization required');
     }
-    const result = await this.userRepo.listUsers({ limit, offset, searchValue, activeOrganizationId, platformRole });
+    const result = await this.userRepo.listUsers({
+      limit,
+      offset,
+      searchValue,
+      organizationId: this.isSuperadmin(platformRole) ? organizationId ?? null : undefined,
+      activeOrganizationId,
+      platformRole,
+    });
     return { ...result, limit, offset };
   }
 

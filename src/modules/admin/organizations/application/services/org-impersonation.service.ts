@@ -74,7 +74,8 @@ export class OrgImpersonationService {
         throw new ForbiddenException('You cannot impersonate another admin');
       }
 
-      let resolvedOrganizationId = organizationId;
+      let resolvedOrganizationId =
+        platformRole === 'admin' ? organizationId ?? activeOrganizationId ?? undefined : organizationId;
 
       if (resolvedOrganizationId) {
         const targetMembership = await this.db.queryOne<{ id: string }>(
@@ -93,14 +94,11 @@ export class OrgImpersonationService {
            ORDER BY "organizationId" ASC`,
           [targetUserId],
         );
-        const distinctOrganizationIds = [...new Set(memberships.map((membership) => membership.organizationId))];
+        const distinctOrganizationIds = [...new Set(memberships.map((membership) => membership.organizationId))]
+          .sort((left, right) => left.localeCompare(right));
 
         if (distinctOrganizationIds.length === 0) {
           throw new BadRequestException('Target user must belong to an organization');
-        }
-
-        if (distinctOrganizationIds.length > 1) {
-          throw new BadRequestException('organizationId is required when target belongs to multiple organizations');
         }
 
         resolvedOrganizationId = distinctOrganizationIds[0];

@@ -10,6 +10,14 @@ export interface UserRow {
   banExpires: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  memberships?: UserMembershipRow[];
+}
+
+export interface UserMembershipRow {
+  organizationId: string;
+  organizationName: string;
+  roleName: string;
+  roleDisplayName: string;
 }
 
 export interface SessionRow {
@@ -58,6 +66,7 @@ export interface ListUsersParams {
   limit: number;
   offset: number;
   searchValue?: string;
+  organizationId?: string | null;
   activeOrganizationId: string | null;
   platformRole: 'superadmin' | 'admin' | 'manager' | 'member';
 }

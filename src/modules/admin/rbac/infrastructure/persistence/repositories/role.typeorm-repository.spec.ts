@@ -49,6 +49,7 @@ describe('TypeOrmRoleRepository', () => {
     description: 'Admin role',
     color: 'red',
     isSystem: true,
+    organizationId: 'org-1',
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-01-01'),
     permissions: [],
@@ -60,6 +61,7 @@ describe('TypeOrmRoleRepository', () => {
     description: 'Admin role',
     color: 'red',
     isSystem: true,
+    organizationId: 'org-1',
     createdAt: roleEntity.createdAt,
     updatedAt: roleEntity.updatedAt,
   };
@@ -80,6 +82,18 @@ describe('TypeOrmRoleRepository', () => {
     it('returns mapped role array', async () => {
       mockRoleFind.mockResolvedValue([roleEntity]);
       expect(await repo.findAll('org-1')).toEqual([roleMapped]);
+      expect(mockRoleFind).toHaveBeenCalledWith({
+        where: { organizationId: 'org-1' },
+        order: { isSystem: 'DESC', name: 'ASC' },
+      });
+    });
+
+    it('returns mapped role array for all organizations when no org filter is provided', async () => {
+      mockRoleFind.mockResolvedValue([roleEntity]);
+      expect(await repo.findAll(null)).toEqual([roleMapped]);
+      expect(mockRoleFind).toHaveBeenCalledWith({
+        order: { organizationId: 'ASC', isSystem: 'DESC', name: 'ASC' },
+      });
     });
 
     it('returns empty array when no roles', async () => {

@@ -5,7 +5,7 @@ import { UpdateRoleDto } from '../../api/dto/update-role.dto';
 export const ROLE_REPOSITORY = Symbol('ROLE_REPOSITORY');
 
 export interface IRoleRepository {
-  findAll(activeOrganizationId: string): Promise<Role[]>;
+  findAll(activeOrganizationId?: string | null): Promise<Role[]>;
   findById(id: string): Promise<Role | null>;
   findByName(name: string): Promise<Role | null>;
   findByNameInOrganization(name: string, activeOrganizationId: string): Promise<Role | null>;
