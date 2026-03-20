@@ -20,6 +20,8 @@ describe('AdminOrganizationsController', () => {
       create: jest.fn(),
       getRoles: jest.fn().mockImplementation(async () => ({ roles: [], assignableRoles: [] })),
       findAll: jest.fn(),
+      findAllForUser: jest.fn(),
+      canUserReadOrganization: jest.fn(),
       findById: jest.fn(),
       getMembers: jest.fn(),
       listMemberCandidates: jest.fn(),
@@ -231,7 +233,7 @@ describe('AdminOrganizationsController', () => {
     } as unknown as UserSession;
 
     const managerSession = {
-      user: { role: 'manager' }, session: { activeOrganizationId: 'org-1' },
+      user: { id: 'manager-1', role: 'manager' }, session: { activeOrganizationId: 'org-1' },
     } as unknown as UserSession;
 
     it('superadmin sees all orgs via findAll', async () => {
@@ -242,22 +244,25 @@ describe('AdminOrganizationsController', () => {
       expect(orgService.findAll).toHaveBeenCalled();
     });
 
-    it('manager sees only their org via findById — org found branch', async () => {
-      orgService.findById.mockResolvedValue({ id: 'org-1', name: 'My Org' } as never);
+    it('non-superadmin sees only readable member organizations via findAllForUser', async () => {
+      orgService.findAllForUser.mockResolvedValue({ data: [{ id: 'org-1', name: 'My Org' }], total: 1, page: 1, limit: 20, totalPages: 1 } as never);
 
       const result = await controller.list(managerSession, {} as any);
 
-      expect(orgService.findById).toHaveBeenCalledWith('org-1');
+      expect(orgService.findAllForUser).toHaveBeenCalledWith(
+        'manager-1',
+        expect.objectContaining({ page: 1, limit: 20, search: undefined }),
+      );
       expect((result as any).data).toHaveLength(1);
     });
 
-    it('manager sees empty list when org not found — org null branch', async () => {
-      orgService.findById.mockResolvedValue(null as never);
+    it('non-superadmin sees empty list when they have no readable member organizations', async () => {
+      orgService.findAllForUser.mockResolvedValue({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 } as never);
 
       const result = await controller.list(managerSession, {} as any);
 
       expect((result as any).data).toHaveLength(0);
-      expect((result as any).pagination.total).toBe(0);
+      expect((result as any).total).toBe(0);
     });
 
     it('manager without activeOrgId throws ForbiddenException', async () => {
@@ -311,6 +316,9 @@ describe('AdminOrganizationsController', () => {
     const adminSession = {
       user: { role: 'superadmin' }, session: { activeOrganizationId: null },
     } as unknown as UserSession;
+    const managerSession = {
+      user: { id: 'manager-1', role: 'manager' }, session: { activeOrganizationId: 'org-1' },
+    } as unknown as UserSession;
 
     it('returns members when org found', async () => {
       orgService.findById.mockResolvedValue({ id: 'org-1' } as never);
@@ -319,6 +327,17 @@ describe('AdminOrganizationsController', () => {
       const result = await controller.getMembers(adminSession, 'org-1');
 
       expect((result as any).data).toHaveLength(1);
+    });
+
+    it('allows non-superadmin to read members for a readable non-active organization', async () => {
+      orgService.canUserReadOrganization.mockResolvedValue(true as never);
+      orgService.findById.mockResolvedValue({ id: 'org-2' } as never);
+      orgService.getMembers.mockResolvedValue([{ id: 'm-1' }, { id: 'm-2' }] as never);
+
+      const result = await controller.getMembers(managerSession, 'org-2');
+
+      expect(orgService.canUserReadOrganization).toHaveBeenCalledWith('manager-1', 'org-2');
+      expect((result as any).data).toHaveLength(2);
     });
 
     it('throws 404 when org not found — covers !org branch', async () => {

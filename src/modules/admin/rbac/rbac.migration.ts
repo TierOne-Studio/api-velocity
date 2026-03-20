@@ -60,6 +60,10 @@ export class RbacMigrationService implements OnModuleInit {
         name: 'rbac_009_normalize_org_default_role_permissions',
         up: () => this.normalizeOrganizationDefaultRolePermissions(),
       },
+      {
+        name: 'rbac_010_remove_superadmin_org_memberships',
+        up: () => this.removeSuperadminOrganizationMemberships(),
+      },
     ];
 
     let pendingCount = 0;
@@ -668,5 +672,16 @@ export class RbacMigrationService implements OnModuleInit {
     }
 
     console.log('✅ Organization default role permissions normalized');
+  }
+
+  async removeSuperadminOrganizationMemberships(): Promise<void> {
+    await this.db.query(`
+      DELETE FROM member
+      WHERE "userId" IN (
+        SELECT id
+        FROM "user"
+        WHERE COALESCE(role, '') LIKE '%superadmin%'
+      )
+    `);
   }
 }

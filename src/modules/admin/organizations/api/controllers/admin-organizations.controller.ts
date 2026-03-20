@@ -52,6 +52,24 @@ export class AdminOrganizationsController {
     }
   }
 
+  private async assertCanReadOrg(
+    session: UserSession,
+    role: PlatformRole,
+    activeOrgId: string | null,
+    targetOrgId: string,
+  ): Promise<void> {
+    this.requireActiveOrgForManager(role, activeOrgId);
+
+    if (role === 'superadmin') {
+      return;
+    }
+
+    const canRead = await this.orgService.canUserReadOrganization(session.user.id, targetOrgId);
+    if (!canRead) {
+      throw new ForbiddenException('You can only access your own organization');
+    }
+  }
+
   private validateAddMemberPayload(body: { userId: string; role: string }): void {
     if (!body?.userId?.trim()) {
       throw new HttpException('userId is required', HttpStatus.BAD_REQUEST);
@@ -159,7 +177,7 @@ export class AdminOrganizationsController {
 
   /**
    * List organizations with pagination and search
-   * Admins see all organizations, managers only see their active organization
+   * Superadmins see all organizations, other users only see readable organizations they belong to
    */
   @Get()
   @RequirePermissions('organization:read')
@@ -171,13 +189,8 @@ export class AdminOrganizationsController {
     const limit = query.limit ? parseInt(String(query.limit), 10) : 20;
     const search = query.search;
 
-    // Managers only see their own organization
-    if (role !== 'admin' && activeOrgId) {
-      const org = await this.orgService.findById(activeOrgId);
-      return {
-        data: org ? [org] : [],
-        pagination: { page: 1, limit: 1, total: org ? 1 : 0, totalPages: 1 },
-      };
+    if (role !== 'superadmin') {
+      return this.orgService.findAllForUser(session.user.id, { page, limit, search });
     }
 
     const result = await this.orgService.findAll({ page, limit, search });
@@ -191,8 +204,7 @@ export class AdminOrganizationsController {
   @RequirePermissions('organization:read')
   async findOne(@Session() session: UserSession, @Param('id') id: string) {
     const { role, activeOrgId } = this.getSessionInfo(session);
-    this.requireActiveOrgForManager(role, activeOrgId);
-    this.assertManagerCanAccessOrg(role, activeOrgId, id);
+    await this.assertCanReadOrg(session, role, activeOrgId, id);
 
     const org = await this.orgService.findById(id);
     if (!org) {
@@ -208,8 +220,7 @@ export class AdminOrganizationsController {
   @RequirePermissions('organization:read')
   async getMembers(@Session() session: UserSession, @Param('id') id: string) {
     const { role, activeOrgId } = this.getSessionInfo(session);
-    this.requireActiveOrgForManager(role, activeOrgId);
-    this.assertManagerCanAccessOrg(role, activeOrgId, id);
+    await this.assertCanReadOrg(session, role, activeOrgId, id);
 
     const org = await this.orgService.findById(id);
     if (!org) {
@@ -246,8 +257,7 @@ export class AdminOrganizationsController {
   @RequirePermissions('organization:read')
   async getInvitations(@Session() session: UserSession, @Param('id') id: string) {
     const { role, activeOrgId } = this.getSessionInfo(session);
-    this.requireActiveOrgForManager(role, activeOrgId);
-    this.assertManagerCanAccessOrg(role, activeOrgId, id);
+    await this.assertCanReadOrg(session, role, activeOrgId, id);
 
     const org = await this.orgService.findById(id);
     if (!org) {

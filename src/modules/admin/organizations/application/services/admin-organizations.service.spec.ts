@@ -36,6 +36,9 @@ describe('AdminOrganizationsService', () => {
     const mockOrgRepo: jest.Mocked<IAdminOrgRepository> = {
       findAll: jest.fn(),
       countAll: jest.fn(),
+      findAllForUser: jest.fn(),
+      countAllForUser: jest.fn(),
+      canUserReadOrganization: jest.fn(),
       findById: jest.fn(),
       findBasicById: jest.fn(),
       findBySlug: jest.fn(),
@@ -118,6 +121,32 @@ describe('AdminOrganizationsService', () => {
       expect(result.total).toBe(0);
       expect(result.data).toHaveLength(0);
       expect(result.totalPages).toBe(0);
+    });
+  });
+
+  describe('findAllForUser', () => {
+    it('should return paginated readable member organizations for the user', async () => {
+      orgRepo.countAllForUser.mockResolvedValue(2);
+      orgRepo.findAllForUser.mockResolvedValue([mockOrganization]);
+
+      const result = await service.findAllForUser('user-1', { page: 2, limit: 5 });
+
+      expect(orgRepo.countAllForUser).toHaveBeenCalledWith('user-1', undefined);
+      expect(orgRepo.findAllForUser).toHaveBeenCalledWith('user-1', undefined, 5, 5);
+      expect(result.total).toBe(2);
+      expect(result.page).toBe(2);
+      expect(result.limit).toBe(5);
+      expect(result.data[0].memberCount).toBe(5);
+    });
+
+    it('should apply search filter for readable member organizations', async () => {
+      orgRepo.countAllForUser.mockResolvedValue(1);
+      orgRepo.findAllForUser.mockResolvedValue([mockOrganization]);
+
+      await service.findAllForUser('user-99', { page: 1, limit: 20, search: 'acme' });
+
+      expect(orgRepo.countAllForUser).toHaveBeenCalledWith('user-99', 'acme');
+      expect(orgRepo.findAllForUser).toHaveBeenCalledWith('user-99', 'acme', 20, 0);
     });
   });
 
@@ -484,6 +513,16 @@ describe('AdminOrganizationsService', () => {
     });
   });
 
+  describe('canUserReadOrganization', () => {
+    it('delegates readable organization checks to the repository', async () => {
+      orgRepo.canUserReadOrganization.mockResolvedValue(true);
+
+      await expect(service.canUserReadOrganization('user-1', 'org-2')).resolves.toBe(true);
+
+      expect(orgRepo.canUserReadOrganization).toHaveBeenCalledWith('user-1', 'org-2');
+    });
+  });
+
   describe('findById', () => {
     it('should return organization with member count', async () => {
       orgRepo.findById.mockResolvedValue(mockOrganization);
@@ -692,6 +731,23 @@ describe('AdminOrganizationsService', () => {
       await expect(service.updateMemberRole('org-1', 'member-1', 'manager', 'admin')).rejects.toThrow(
         'Cannot change role of the last organization admin',
       );
+    });
+
+    it('should allow superadmin to downgrade the last organization admin', async () => {
+      orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'admin', userId: 'user-1' });
+      orgRepo.updateMemberRole.mockResolvedValue({
+        id: 'member-1',
+        role: 'manager',
+        userId: 'user-1',
+        organizationId: 'org-1',
+        createdAt: new Date(),
+      });
+
+      const result = await service.updateMemberRole('org-1', 'member-1', 'manager', 'superadmin');
+
+      expect(result.role).toBe('manager');
+      expect(orgRepo.countAdmins).not.toHaveBeenCalled();
+      expect(orgRepo.updateMemberRole).toHaveBeenCalledWith('member-1', 'org-1', 'manager');
     });
 
     it('should throw NotFoundException when updateMemberRole returns null', async () => {

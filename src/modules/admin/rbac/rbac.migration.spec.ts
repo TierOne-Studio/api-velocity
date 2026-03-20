@@ -44,7 +44,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true)   // rbac_006 already run
         .mockResolvedValueOnce(true)   // rbac_007 already run
         .mockResolvedValueOnce(true)   // rbac_008 already run
-        .mockResolvedValueOnce(true);  // rbac_009 already run
+        .mockResolvedValueOnce(true)   // rbac_009 already run
+        .mockResolvedValueOnce(true);  // rbac_010 already run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -66,7 +67,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true)    // rbac_006 already run
         .mockResolvedValueOnce(false)   // rbac_007 NOT run
         .mockResolvedValueOnce(false)   // rbac_008 NOT run
-        .mockResolvedValueOnce(false);  // rbac_009 NOT run
+        .mockResolvedValueOnce(false)   // rbac_009 NOT run
+        .mockResolvedValueOnce(false);  // rbac_010 NOT run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -85,8 +87,11 @@ describe('RbacMigrationService', () => {
       expect(dbService.recordMigration).toHaveBeenCalledWith(
         'rbac_009_normalize_org_default_role_permissions',
       );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_010_remove_superadmin_org_memberships',
+      );
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('6 new'),
+        expect.stringContaining('7 new'),
       );
       consoleSpy.mockRestore();
     });
@@ -117,6 +122,9 @@ describe('RbacMigrationService', () => {
       );
       expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
         'rbac_009_normalize_org_default_role_permissions',
+      );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_010_remove_superadmin_org_memberships',
       );
     });
   });
@@ -260,6 +268,22 @@ describe('RbacMigrationService', () => {
         expect.stringContaining('Organization default role permissions normalized'),
       );
       consoleSpy.mockRestore();
+    });
+  });
+
+  describe('removeSuperadminOrganizationMemberships', () => {
+    it('deletes all organization memberships for users whose role includes superadmin', async () => {
+      await service.removeSuperadminOrganizationMemberships();
+
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM member'),
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('FROM "user"'),
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining("LIKE '%superadmin%'"),
+      );
     });
   });
 

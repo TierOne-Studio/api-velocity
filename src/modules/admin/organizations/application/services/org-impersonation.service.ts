@@ -70,7 +70,7 @@ export class OrgImpersonationService {
     }
 
     if (platformRole === 'superadmin' || platformRole === 'admin') {
-      if (target.role === 'admin') {
+      if (platformRole === 'admin' && target.role === 'admin') {
         throw new ForbiddenException('You cannot impersonate another admin');
       }
 

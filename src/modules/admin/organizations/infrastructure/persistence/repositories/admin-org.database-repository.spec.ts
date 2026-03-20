@@ -43,6 +43,33 @@ describe('AdminOrgDatabaseRepository', () => {
     });
   });
 
+  describe('findAllForUser', () => {
+    it('builds a membership and permission scoped query without search', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repo.findAllForUser('user-1');
+
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('JOIN member membership');
+      expect(sql).toContain('membership."userId" = $1');
+      expect(sql).toContain('JOIN roles r');
+      expect(sql).toContain('JOIN role_permissions rp');
+      expect(sql).toContain("p.resource = 'organization'");
+      expect(sql).toContain("p.action = 'read'");
+      expect(params).toEqual(['user-1', 20, 0]);
+    });
+
+    it('adds search filtering to membership and permission scoped query', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repo.findAllForUser('user-2', 'acme', 10, 5);
+
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('WHERE (o.name ILIKE $2 OR o.slug ILIKE $2)');
+      expect(params).toEqual(['user-2', '%acme%', 10, 5]);
+    });
+  });
+
   // ─── countAll ───────────────────────────────────────────────────────────────
 
   describe('countAll', () => {
@@ -63,6 +90,49 @@ describe('AdminOrgDatabaseRepository', () => {
       const [sql, params] = mockQueryOne.mock.calls[0];
       expect(sql).toContain('WHERE');
       expect(params).toEqual(['%test%']);
+    });
+  });
+
+  describe('countAllForUser', () => {
+    it('returns 0 when membership scoped count query returns null', async () => {
+      mockQueryOne.mockResolvedValue(null);
+
+      const count = await repo.countAllForUser('user-1');
+
+      expect(count).toBe(0);
+    });
+
+    it('builds a membership and permission scoped count query with search', async () => {
+      mockQueryOne.mockResolvedValue({ count: '3' });
+
+      await repo.countAllForUser('user-3', 'test');
+
+      const [sql, params] = mockQueryOne.mock.calls[0];
+      expect(sql).toContain('COUNT(DISTINCT o.id)');
+      expect(sql).toContain('JOIN member membership');
+      expect(sql).toContain("p.action = 'read'");
+      expect(sql).toContain('WHERE (o.name ILIKE $2 OR o.slug ILIKE $2)');
+      expect(params).toEqual(['user-3', '%test%']);
+    });
+  });
+
+  describe('canUserReadOrganization', () => {
+    it('returns true when the user can read the target organization', async () => {
+      mockQueryOne.mockResolvedValue({ id: 'org-2' });
+
+      await expect(repo.canUserReadOrganization('user-1', 'org-2')).resolves.toBe(true);
+
+      const [sql, params] = mockQueryOne.mock.calls[0];
+      expect(sql).toContain('membership."userId" = $1');
+      expect(sql).toContain("p.action = 'read'");
+      expect(sql).toContain('WHERE o.id = $2');
+      expect(params).toEqual(['user-1', 'org-2']);
+    });
+
+    it('returns false when the user cannot read the target organization', async () => {
+      mockQueryOne.mockResolvedValue(null);
+
+      await expect(repo.canUserReadOrganization('user-1', 'org-9')).resolves.toBe(false);
     });
   });
 

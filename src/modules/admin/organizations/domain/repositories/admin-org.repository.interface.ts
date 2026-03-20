@@ -92,6 +92,9 @@ export interface IAdminOrgRepository {
   // Organization
   findAll(search?: string, limit?: number, offset?: number): Promise<OrgWithCountRow[]>;
   countAll(search?: string): Promise<number>;
+  findAllForUser(userId: string, search?: string, limit?: number, offset?: number): Promise<OrgWithCountRow[]>;
+  countAllForUser(userId: string, search?: string): Promise<number>;
+  canUserReadOrganization(userId: string, organizationId: string): Promise<boolean>;
   findById(id: string): Promise<OrgWithCountRow | null>;
   findBasicById(id: string): Promise<OrgBasicRow | null>;
   findBySlug(slug: string): Promise<{ id: string } | null>;

@@ -117,6 +117,43 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     );
   }
 
+  async findAllForUser(
+    userId: string,
+    search?: string,
+    limit = 20,
+    offset = 0,
+  ): Promise<OrgWithCountRow[]> {
+    let whereClause = '';
+    const params: unknown[] = [userId];
+    if (search) {
+      whereClause = 'WHERE (o.name ILIKE $2 OR o.slug ILIKE $2)';
+      params.push(`%${search}%`);
+    }
+    const limitParam = params.length + 1;
+    const offsetParam = params.length + 2;
+    return this.db.query<OrgWithCountRow>(
+      `SELECT o.*, COUNT(DISTINCT m_all.id) as member_count
+       FROM organization o
+       JOIN member membership
+         ON membership."organizationId" = o.id
+        AND membership."userId" = $1
+       JOIN roles r
+         ON r.organization_id = o.id
+        AND r.name = membership.role
+       JOIN role_permissions rp ON rp.role_id = r.id
+       JOIN permissions p
+         ON p.id = rp.permission_id
+        AND p.resource = 'organization'
+        AND p.action = 'read'
+       LEFT JOIN member m_all ON m_all."organizationId" = o.id
+       ${whereClause}
+       GROUP BY o.id
+       ORDER BY o."createdAt" DESC
+       LIMIT $${limitParam} OFFSET $${offsetParam}`,
+      [...params, limit, offset],
+    );
+  }
+
   async countAll(search?: string): Promise<number> {
     let whereClause = '';
     const params: unknown[] = [];
@@ -129,6 +166,56 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
       params,
     );
     return parseInt(result?.count ?? '0', 10);
+  }
+
+  async countAllForUser(userId: string, search?: string): Promise<number> {
+    let whereClause = '';
+    const params: unknown[] = [userId];
+    if (search) {
+      whereClause = 'WHERE (o.name ILIKE $2 OR o.slug ILIKE $2)';
+      params.push(`%${search}%`);
+    }
+    const result = await this.db.queryOne<{ count: string }>(
+      `SELECT COUNT(DISTINCT o.id) as count
+       FROM organization o
+       JOIN member membership
+         ON membership."organizationId" = o.id
+        AND membership."userId" = $1
+       JOIN roles r
+         ON r.organization_id = o.id
+        AND r.name = membership.role
+       JOIN role_permissions rp ON rp.role_id = r.id
+       JOIN permissions p
+         ON p.id = rp.permission_id
+        AND p.resource = 'organization'
+        AND p.action = 'read'
+       ${whereClause}`,
+      params,
+    );
+    return parseInt(result?.count ?? '0', 10);
+  }
+
+  async canUserReadOrganization(userId: string, organizationId: string): Promise<boolean> {
+    const result = await this.db.queryOne<{ id: string }>(
+      `SELECT o.id
+       FROM organization o
+       JOIN member membership
+         ON membership."organizationId" = o.id
+        AND membership."userId" = $1
+       JOIN roles r
+         ON r.organization_id = o.id
+        AND r.name = membership.role
+       JOIN role_permissions rp ON rp.role_id = r.id
+       JOIN permissions p
+         ON p.id = rp.permission_id
+        AND p.resource = 'organization'
+        AND p.action = 'read'
+       WHERE o.id = $2
+       LIMIT 1`,
+      [userId, organizationId],
+    );
+
+    return !!result;
   }
 
   async findById(id: string): Promise<OrgWithCountRow | null> {

@@ -21,6 +21,8 @@ describe('AdminOrganizationsController validation', () => {
       create: jest.fn(),
       getRoles: jest.fn(),
       findAll: jest.fn(),
+      findAllForUser: jest.fn(),
+      canUserReadOrganization: jest.fn(),
       findById: jest.fn(),
       getMembers: jest.fn(),
       listMemberCandidates: jest.fn(),

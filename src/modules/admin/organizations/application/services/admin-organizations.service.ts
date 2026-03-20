@@ -73,6 +73,26 @@ export class AdminOrganizationsService {
 
   private readonly slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+  private mapPaginatedOrganizations(
+    rows: Awaited<ReturnType<IAdminOrgRepository['findAll']>>,
+    total: number,
+    page: number,
+    limit: number,
+  ): PaginatedResult<OrganizationWithMemberCount> {
+    const data: OrganizationWithMemberCount[] = rows.map((row) => ({
+      ...rowToOrganization(row),
+      memberCount: parseInt(row.member_count, 10),
+    }));
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
   private isSuperadminUserRole(role: string | null | undefined): boolean {
     return String(role ?? '')
       .split(',')
@@ -178,18 +198,26 @@ export class AdminOrganizationsService {
     const total = await this.orgRepo.countAll(search);
     const rows = await this.orgRepo.findAll(search, limit, offset);
 
-    const data: OrganizationWithMemberCount[] = rows.map((row) => ({
-      ...rowToOrganization(row),
-      memberCount: parseInt(row.member_count, 10),
-    }));
+    return this.mapPaginatedOrganizations(rows, total, page, limit);
+  }
 
-    return {
-      data,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+  async findAllForUser(
+    userId: string,
+    query: PaginationQuery,
+  ): Promise<PaginatedResult<OrganizationWithMemberCount>> {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+    const offset = (page - 1) * limit;
+    const search = query.search?.trim() || undefined;
+
+    const total = await this.orgRepo.countAllForUser(userId, search);
+    const rows = await this.orgRepo.findAllForUser(userId, search, limit, offset);
+
+    return this.mapPaginatedOrganizations(rows, total, page, limit);
+  }
+
+  async canUserReadOrganization(userId: string, organizationId: string): Promise<boolean> {
+    return this.orgRepo.canUserReadOrganization(userId, organizationId);
   }
 
   /**
@@ -436,7 +464,7 @@ export class AdminOrganizationsService {
       throw new ForbiddenException('Organization-scoped actors can only change member roles');
     }
 
-    if (member.role === 'admin' && newRole !== 'admin') {
+    if (platformRole !== 'superadmin' && member.role === 'admin' && newRole !== 'admin') {
       const adminCount = await this.orgRepo.countAdmins(organizationId);
       if (adminCount <= 1) throw new ForbiddenException('Cannot change role of the last organization admin');
     }
