@@ -5,7 +5,8 @@
       "WebFetch(domain:js.langchain.com)",
       "WebFetch(domain:docs.langchain.com)",
       "WebFetch(domain:reference.langchain.com)",
-      "Bash(npx jest:*)"
+      "Bash(npx jest:*)",
+      "Bash(PGPASSWORD=09KEgubUCZ44zloE psql \"postgresql://postgres.thvvulffndlczbggnjja@aws-0-us-west-2.pooler.supabase.com:5432/postgres\" -c \":*)"
     ]
   }
 }
