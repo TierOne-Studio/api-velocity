@@ -10,15 +10,14 @@ jest.mock('@thallesp/nestjs-better-auth', () => ({
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { SessionsController } from './sessions.controller';
 import { SessionsService } from '../../application/services/sessions.service';
-import { ROLES_KEY, PERMISSIONS_KEY } from '../../../../../shared';
-import { RolesGuard, PermissionsGuard } from '../../../../../shared';
+import { PERMISSIONS_KEY, PermissionsGuard } from '../../../../../shared';
 
 describe('SessionsController', () => {
   let controller: SessionsController;
   let sessionsService: jest.Mocked<SessionsService>;
 
-  const adminSession = {
-    user: { id: 'actor-admin', role: 'admin' },
+  const superadminSession = {
+    user: { id: 'actor-superadmin', role: 'superadmin' },
     session: {},
   } as any;
 
@@ -39,16 +38,11 @@ describe('SessionsController', () => {
   // ─── class-level metadata ────────────────────────────────────────────────
 
   describe('metadata', () => {
-    it('applies RolesGuard and PermissionsGuard at class level', () => {
+    it('applies PermissionsGuard at class level', () => {
       const guards = Reflect.getMetadata(GUARDS_METADATA, SessionsController);
-      expect(guards).toContain(RolesGuard);
       expect(guards).toContain(PermissionsGuard);
     });
 
-    it('restricts class to admin and manager roles', () => {
-      const roles = Reflect.getMetadata(ROLES_KEY, SessionsController);
-      expect(roles).toEqual(['admin', 'manager']);
-    });
 
     it('requires session:read permission on listSessions', () => {
       const permissions = Reflect.getMetadata(PERMISSIONS_KEY, controller.listSessions);
@@ -69,14 +63,14 @@ describe('SessionsController', () => {
   // ─── listSessions ────────────────────────────────────────────────────────
 
   describe('listSessions', () => {
-    it('delegates to service with admin role and null activeOrganizationId', async () => {
+    it('delegates to service with superadmin role and null activeOrganizationId', async () => {
       sessionsService.listUserSessions.mockResolvedValue([{ id: 's1' }] as any);
 
-      const result = await controller.listSessions(adminSession, 'user-1');
+      const result = await controller.listSessions(superadminSession, 'user-1');
 
       expect(sessionsService.listUserSessions).toHaveBeenCalledWith({
         userId: 'user-1',
-        platformRole: 'admin',
+        platformRole: 'superadmin',
         activeOrganizationId: null,
       });
       expect(result).toEqual([{ id: 's1' }]);
@@ -98,14 +92,14 @@ describe('SessionsController', () => {
   // ─── revokeSession ───────────────────────────────────────────────────────
 
   describe('revokeSession', () => {
-    it('delegates to service with admin role and null activeOrganizationId', async () => {
+    it('delegates to service with superadmin role and null activeOrganizationId', async () => {
       sessionsService.revokeSession.mockResolvedValue({ success: true });
 
-      const result = await controller.revokeSession(adminSession, { sessionToken: 'token1' });
+      const result = await controller.revokeSession(superadminSession, { sessionToken: 'token1' });
 
       expect(sessionsService.revokeSession).toHaveBeenCalledWith(
         { sessionToken: 'token1' },
-        'admin',
+        'superadmin',
         null,
       );
       expect(result).toEqual({ success: true });
@@ -125,25 +119,25 @@ describe('SessionsController', () => {
 
     it('rejects empty sessionToken', async () => {
       await expect(
-        controller.revokeSession(adminSession, { sessionToken: '' }),
+        controller.revokeSession(superadminSession, { sessionToken: '' }),
       ).rejects.toThrow('sessionToken is required');
     });
 
     it('rejects whitespace-only sessionToken', async () => {
       await expect(
-        controller.revokeSession(adminSession, { sessionToken: '   ' }),
+        controller.revokeSession(superadminSession, { sessionToken: '   ' }),
       ).rejects.toThrow('sessionToken is required');
     });
 
     it('rejects null sessionToken', async () => {
       await expect(
-        controller.revokeSession(adminSession, { sessionToken: null as any }),
+        controller.revokeSession(superadminSession, { sessionToken: null as any }),
       ).rejects.toThrow('sessionToken is required');
     });
 
     it('rejects undefined sessionToken', async () => {
       await expect(
-        controller.revokeSession(adminSession, { sessionToken: undefined as any }),
+        controller.revokeSession(superadminSession, { sessionToken: undefined as any }),
       ).rejects.toThrow('sessionToken is required');
     });
   });
@@ -151,14 +145,14 @@ describe('SessionsController', () => {
   // ─── revokeAll ───────────────────────────────────────────────────────────
 
   describe('revokeAll', () => {
-    it('delegates to service with admin role and null activeOrganizationId', async () => {
+    it('delegates to service with superadmin role and null activeOrganizationId', async () => {
       sessionsService.revokeAllSessions.mockResolvedValue({ success: true });
 
-      const result = await controller.revokeAll(adminSession, 'user-1');
+      const result = await controller.revokeAll(superadminSession, 'user-1');
 
       expect(sessionsService.revokeAllSessions).toHaveBeenCalledWith(
         { userId: 'user-1' },
-        'admin',
+        'superadmin',
         null,
       );
       expect(result).toEqual({ success: true });

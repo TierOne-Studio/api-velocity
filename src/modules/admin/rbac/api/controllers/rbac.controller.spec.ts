@@ -11,7 +11,7 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { RbacController } from './rbac.controller';
 import { RoleService, PermissionService } from '../../application/services';
 import { ROLES_KEY, PERMISSIONS_KEY } from '../../../../../shared';
-import { RolesGuard, PermissionsGuard } from '../../../../../shared';
+import { PermissionsGuard } from '../../../../../shared';
 
 describe('RbacController metadata', () => {
   let controller: RbacController;
@@ -27,6 +27,7 @@ describe('RbacController metadata', () => {
     getPermissions: ReturnType<typeof jest.fn>;
     getUserPermissions: ReturnType<typeof jest.fn>;
     hasPermission: ReturnType<typeof jest.fn>;
+    getUserActiveMemberRole: ReturnType<typeof jest.fn>;
   };
   let permissionService: {
     findAll: ReturnType<typeof jest.fn>;
@@ -46,6 +47,7 @@ describe('RbacController metadata', () => {
       getPermissions: jest.fn(),
       getUserPermissions: jest.fn(),
       hasPermission: jest.fn(),
+      getUserActiveMemberRole: jest.fn<() => Promise<string | null>>().mockResolvedValue(null),
     };
 
     permissionService = {
@@ -59,14 +61,14 @@ describe('RbacController metadata', () => {
     );
   });
 
-  it('returns all permissions for admin in getMyPermissions', async () => {
+  it('returns all permissions for superadmin in getMyPermissions', async () => {
     permissionService.findAll.mockResolvedValue([
       { id: '1', resource: 'organization', action: 'create' },
       { id: '2', resource: 'user', action: 'read' },
     ]);
 
     const result = await controller.getMyPermissions({
-      user: { role: 'admin' },
+      user: { role: 'superadmin' },
     } as any);
 
     expect(result).toEqual({
@@ -76,7 +78,7 @@ describe('RbacController metadata', () => {
     expect(roleService.getUserPermissions).not.toHaveBeenCalled();
   });
 
-  it('returns role-based permissions for non-admin in getMyPermissions', async () => {
+  it('returns role-based permissions for org-scoped users in getMyPermissions', async () => {
     roleService.getUserPermissions.mockResolvedValue([
       { id: '3', resource: 'organization', action: 'read' },
       { id: '4', resource: 'organization', action: 'invite' },
@@ -84,25 +86,49 @@ describe('RbacController metadata', () => {
 
     const result = await controller.getMyPermissions({
       user: { role: 'manager' },
+      session: { activeOrganizationId: 'org-1' },
     } as any);
 
     expect(result).toEqual({
       data: ['organization:read', 'organization:invite'],
     });
-    expect(roleService.getUserPermissions).toHaveBeenCalledWith('manager');
+    expect(roleService.getUserPermissions).toHaveBeenCalledWith('manager', 'org-1');
     expect(permissionService.findAll).not.toHaveBeenCalled();
   });
 
-  it('applies class-level role restrictions', () => {
-    const roles = Reflect.getMetadata(ROLES_KEY, RbacController);
-    expect(roles).toEqual(['admin', 'manager']);
+  it('returns empty permissions for org-scoped users without active organization in getMyPermissions', async () => {
+    roleService.getUserPermissions.mockResolvedValue([]);
+
+    const result = await controller.getMyPermissions({
+      user: { role: 'admin' },
+      session: {},
+    } as any);
+
+    expect(result).toEqual({ data: [] });
+    expect(roleService.getUserPermissions).toHaveBeenCalledWith('admin', null);
+  });
+
+  it('resolves org membership role when user.role is null (post-Phase0 users)', async () => {
+    roleService.getUserActiveMemberRole.mockResolvedValueOnce('admin');
+    roleService.getUserPermissions.mockResolvedValue([
+      { id: '1', resource: 'user', action: 'read' },
+      { id: '2', resource: 'role', action: 'read' },
+    ]);
+
+    const result = await controller.getMyPermissions({
+      user: { id: 'u-1', role: null },
+      session: { activeOrganizationId: 'org-1' },
+    } as any);
+
+    expect(roleService.getUserActiveMemberRole).toHaveBeenCalledWith('u-1', 'org-1');
+    expect(roleService.getUserPermissions).toHaveBeenCalledWith('admin', 'org-1');
+    expect(result).toEqual({ data: ['user:read', 'role:read'] });
   });
 
   it('applies class-level guards', () => {
     const guards = Reflect.getMetadata(GUARDS_METADATA, RbacController) as unknown[];
 
     expect(guards).toBeDefined();
-    expect(guards).toContain(RolesGuard);
     expect(guards).toContain(PermissionsGuard);
   });
 
@@ -156,6 +182,7 @@ describe('RbacController handler bodies', () => {
     getPermissions: ReturnType<typeof jest.fn>;
     getUserPermissions: ReturnType<typeof jest.fn>;
     hasPermission: ReturnType<typeof jest.fn>;
+    getUserActiveMemberRole: ReturnType<typeof jest.fn>;
   };
   let permissionService: {
     findAll: ReturnType<typeof jest.fn>;
@@ -175,6 +202,7 @@ describe('RbacController handler bodies', () => {
       getPermissions: jest.fn(),
       getUserPermissions: jest.fn(),
       hasPermission: jest.fn(),
+      getUserActiveMemberRole: jest.fn<() => Promise<string | null>>().mockResolvedValue(null),
     };
 
     permissionService = {
@@ -200,10 +228,36 @@ describe('RbacController handler bodies', () => {
       const result = await controller.getRoles({
         user: { role: 'manager' },
         session: { activeOrganizationId: 'org-1' },
-      } as any);
+      } as any, undefined);
 
       expect(result).toEqual({ data: roles });
       expect(roleService.findAll).toHaveBeenCalledWith('org-1');
+    });
+
+    it('returns explicitly targeted roles for superadmin', async () => {
+      const roles = [{ id: '1', name: 'admin' }];
+      roleService.findAll.mockResolvedValue(roles);
+
+      const result = await controller.getRoles({
+        user: { role: 'superadmin' },
+        session: {},
+      } as any, 'org-2');
+
+      expect(result).toEqual({ data: roles });
+      expect(roleService.findAll).toHaveBeenCalledWith('org-2');
+    });
+
+    it('returns all roles for superadmin when organizationId is omitted', async () => {
+      const roles = [{ id: '1', name: 'admin' }, { id: '2', name: 'member' }];
+      roleService.findAll.mockResolvedValue(roles);
+
+      const result = await controller.getRoles({
+        user: { role: 'superadmin' },
+        session: {},
+      } as any, undefined);
+
+      expect(result).toEqual({ data: roles });
+      expect(roleService.findAll).toHaveBeenCalledWith(null);
     });
   });
 
@@ -235,7 +289,7 @@ describe('RbacController handler bodies', () => {
   describe('createRole', () => {
     it('creates role in the active organization and returns it', async () => {
       const dto = { name: 'editor', displayName: 'Editor', description: 'Edit', color: 'blue' };
-      const created = { id: '3', ...dto, isSystem: false };
+      const created = { id: '3', ...dto, isDefault: false };
       roleService.findByNameInOrganization.mockResolvedValue(null);
       roleService.create.mockResolvedValue(created);
 
@@ -245,6 +299,7 @@ describe('RbacController handler bodies', () => {
           session: { activeOrganizationId: 'org-1' },
         } as any,
         dto,
+        undefined,
       );
 
       expect(result).toEqual({ data: created });
@@ -262,6 +317,7 @@ describe('RbacController handler bodies', () => {
             session: { activeOrganizationId: 'org-1' },
           } as any,
           dto,
+          undefined,
         ),
       ).rejects.toThrow('Role name already exists');
     });
@@ -274,6 +330,7 @@ describe('RbacController handler bodies', () => {
             session: { activeOrganizationId: 'org-1' },
           } as any,
           { name: '', displayName: 'X' } as any,
+          undefined,
         ),
       ).rejects.toThrow('Role name is required');
     });
@@ -286,6 +343,7 @@ describe('RbacController handler bodies', () => {
             session: { activeOrganizationId: 'org-1' },
           } as any,
           { name: 'x', displayName: '' } as any,
+          undefined,
         ),
       ).rejects.toThrow('Role displayName is required');
     });
@@ -298,8 +356,29 @@ describe('RbacController handler bodies', () => {
             session: {},
           } as any,
           { name: 'editor', displayName: 'Editor' },
+          undefined,
         ),
       ).rejects.toThrow('Active organization required');
+    });
+
+    it('allows superadmin to create a role with explicit organizationId', async () => {
+      const dto = { name: 'editor', displayName: 'Editor' };
+      const created = { id: '3', ...dto, isDefault: false };
+      roleService.findByNameInOrganization.mockResolvedValue(null);
+      roleService.create.mockResolvedValue(created);
+
+      const result = await controller.createRole(
+        {
+          user: { role: 'superadmin' },
+          session: {},
+        } as any,
+        dto,
+        'org-9',
+      );
+
+      expect(result).toEqual({ data: created });
+      expect(roleService.findByNameInOrganization).toHaveBeenCalledWith('editor', 'org-9');
+      expect(roleService.create).toHaveBeenCalledWith(dto, 'org-9');
     });
   });
 
@@ -325,6 +404,28 @@ describe('RbacController handler bodies', () => {
     it('throws 400 when no fields provided', async () => {
       await expect(controller.updateRole('2', {} as any)).rejects.toThrow('At least one field is required');
     });
+
+    it('renames a role when the payload contains a new name', async () => {
+      const updated = { id: '2', name: 'owner', displayName: 'Owner' };
+      roleService.update.mockResolvedValue(updated);
+
+      const result = await controller.updateRole('2', { name: 'owner' });
+
+      expect(result).toEqual({ data: updated });
+      expect(roleService.update).toHaveBeenCalledWith('2', { name: 'owner' });
+    });
+
+    it('throws 409 when renaming to an existing role name', async () => {
+      roleService.update.mockRejectedValue(new Error('Role name already exists'));
+
+      await expect(controller.updateRole('2', { name: 'owner' })).rejects.toThrow('Role name already exists');
+    });
+
+    it('throws 403 when renaming a global role', async () => {
+      roleService.update.mockRejectedValue(new Error('Cannot rename global role'));
+
+      await expect(controller.updateRole('2', { name: 'owner' })).rejects.toThrow('Cannot rename global role');
+    });
   });
 
   // ============ deleteRole ============
@@ -338,10 +439,16 @@ describe('RbacController handler bodies', () => {
       expect(result).toEqual({ success: true });
     });
 
-    it('throws 403 when deleting system role', async () => {
-      roleService.delete.mockRejectedValue(new Error('Cannot delete system role'));
+    it('throws 403 when deleting a global role', async () => {
+      roleService.delete.mockRejectedValue(new Error('Cannot delete global role'));
 
-      await expect(controller.deleteRole('1')).rejects.toThrow('Cannot delete system role');
+      await expect(controller.deleteRole('1')).rejects.toThrow('Cannot delete global role');
+    });
+
+    it('throws 409 when deleting a role that is still assigned', async () => {
+      roleService.delete.mockRejectedValue(new Error('Role is still assigned and cannot be deleted'));
+
+      await expect(controller.deleteRole('1')).rejects.toThrow('Role is still assigned and cannot be deleted');
     });
 
     it('throws 404 when role not found', async () => {
@@ -427,10 +534,13 @@ describe('RbacController handler bodies', () => {
       const permissions = [{ id: 'p1', resource: 'user', action: 'read' }];
       roleService.getUserPermissions.mockResolvedValue(permissions);
 
-      const result = await controller.getUserPermissions('manager');
+      const result = await controller.getUserPermissions(
+        { session: { activeOrganizationId: 'org-1' } } as any,
+        'manager',
+      );
 
       expect(result).toEqual({ data: permissions });
-      expect(roleService.getUserPermissions).toHaveBeenCalledWith('manager');
+      expect(roleService.getUserPermissions).toHaveBeenCalledWith('manager', 'org-1');
     });
   });
 

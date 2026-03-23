@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:js.langchain.com)",
+      "WebFetch(domain:docs.langchain.com)",
+      "WebFetch(domain:reference.langchain.com)",
+      "Bash(npx jest:*)"
+    ]
+  }
+}

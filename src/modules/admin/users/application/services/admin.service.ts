@@ -5,6 +5,7 @@ import { EmailService } from '../../../../../shared/email/email.service';
 import { ConfigService } from '../../../../../shared/config/config.service';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
 import {
+  type PlatformRole,
   getAllowedRoleNamesForCreator,
   requireActiveOrganizationIdForManager,
 } from '../../utils/admin.utils';
@@ -35,6 +36,10 @@ export class AdminService {
     private readonly configService: ConfigService,
   ) {}
 
+  private isSuperadmin(platformRole: PlatformRole): boolean {
+    return platformRole === 'superadmin';
+  }
+
   private async getTargetRole(userId: string): Promise<'admin' | 'manager' | 'member' | null> {
     const role = await this.userRepo.findUserRole(userId);
     if (!role) return null;
@@ -46,7 +51,7 @@ export class AdminService {
     params: {
       actorUserId?: string;
       targetUserId: string;
-      platformRole: 'admin' | 'manager';
+      platformRole: PlatformRole;
       allowSelf: boolean;
     },
   ): Promise<void> {
@@ -68,12 +73,12 @@ export class AdminService {
       throw new ForbiddenException('Target user not found');
     }
 
-    if (platformRole === 'admin' && targetRole === 'admin') {
-      throw new ForbiddenException('Admins cannot perform this action on other admins');
+    if (this.isSuperadmin(platformRole)) {
+      return;
     }
 
-    if (platformRole === 'manager' && targetRole !== 'member') {
-      throw new ForbiddenException('Managers can only perform this action on members');
+    if (targetRole !== 'member') {
+      throw new ForbiddenException('Organization-scoped actors can only perform this action on members');
     }
   }
 
@@ -84,22 +89,22 @@ export class AdminService {
 
   private async resolveRoleAssignmentOrganizationId(params: {
     targetUserId: string;
-    platformRole: 'admin' | 'manager';
+    platformRole: PlatformRole;
     activeOrganizationId: string | null;
   }): Promise<string | null> {
     const { targetUserId, platformRole, activeOrganizationId } = params;
     if (activeOrganizationId) return activeOrganizationId;
-    if (platformRole !== 'admin') return null;
+    if (!this.isSuperadmin(platformRole)) return null;
     const member = await this.userRepo.findUserOrganization(targetUserId);
     return member?.organizationId ?? null;
   }
 
-  async getCreateUserMetadata(platformRole: 'admin' | 'manager', activeOrganizationId: string | null) {
+  async getCreateUserMetadata(platformRole: PlatformRole, activeOrganizationId: string | null) {
     const roles = await this.userRepo.listRoles();
     const allowedRoleNames = getAllowedRoleNamesForCreator(platformRole);
 
     let organizations: Array<{ id: string; name: string; slug: string }> = [];
-    if (platformRole === 'admin') {
+    if (this.isSuperadmin(platformRole)) {
       organizations = await this.userRepo.listOrganizations();
     } else {
       if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
@@ -113,7 +118,7 @@ export class AdminService {
         displayName: r.display_name,
         description: r.description ?? undefined,
         color: r.color ?? undefined,
-        isSystem: r.is_system,
+        isDefault: r.is_default,
       })),
       allowedRoleNames,
       organizations,
@@ -122,7 +127,7 @@ export class AdminService {
 
   async updateUser(
     input: { userId: string; name?: string },
-    platformRole: 'admin' | 'manager',
+    platformRole: PlatformRole,
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
@@ -133,7 +138,7 @@ export class AdminService {
       allowSelf: true,
     });
 
-    if (platformRole === 'manager') {
+    if (!this.isSuperadmin(platformRole)) {
       if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
@@ -144,7 +149,7 @@ export class AdminService {
 
   async setUserRole(
     input: { userId: string; role: 'admin' | 'manager' | 'member' },
-    platformRole: 'admin' | 'manager',
+    platformRole: PlatformRole,
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
@@ -160,22 +165,20 @@ export class AdminService {
       throw new ForbiddenException('Role not allowed');
     }
 
-    if (platformRole === 'manager') {
+    if (!this.isSuperadmin(platformRole)) {
       if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
 
     const organizationIdForRole =
-      input.role === 'admin'
-        ? undefined
-        : (await this.resolveRoleAssignmentOrganizationId({
-            targetUserId: input.userId,
-            platformRole,
-            activeOrganizationId,
-          })) ?? undefined;
+      (await this.resolveRoleAssignmentOrganizationId({
+        targetUserId: input.userId,
+        platformRole,
+        activeOrganizationId,
+      })) ?? undefined;
 
-    if (input.role !== 'admin' && !organizationIdForRole) {
-      throw new BadRequestException('Organization is required for non-admin role assignments');
+    if (!organizationIdForRole) {
+      throw new BadRequestException('Organization is required for role assignments');
     }
 
     return this.userRepo.setUserRole({
@@ -188,7 +191,7 @@ export class AdminService {
 
   async banUser(
     input: { userId: string; banReason?: string },
-    platformRole: 'admin' | 'manager',
+    platformRole: PlatformRole,
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
@@ -199,7 +202,7 @@ export class AdminService {
       allowSelf: false,
     });
 
-    if (platformRole === 'manager') {
+    if (!this.isSuperadmin(platformRole)) {
       if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
@@ -210,7 +213,7 @@ export class AdminService {
 
   async unbanUser(
     input: { userId: string },
-    platformRole: 'admin' | 'manager',
+    platformRole: PlatformRole,
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
@@ -221,7 +224,7 @@ export class AdminService {
       allowSelf: false,
     });
 
-    if (platformRole === 'manager') {
+    if (!this.isSuperadmin(platformRole)) {
       if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
@@ -232,7 +235,7 @@ export class AdminService {
 
   async setUserPassword(
     input: { userId: string; newPassword: string },
-    platformRole: 'admin' | 'manager',
+    platformRole: PlatformRole,
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
@@ -243,7 +246,7 @@ export class AdminService {
       allowSelf: true,
     });
 
-    if (platformRole === 'manager') {
+    if (!this.isSuperadmin(platformRole)) {
       if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
@@ -255,7 +258,7 @@ export class AdminService {
 
   async removeUser(
     input: { userId: string },
-    platformRole: 'admin' | 'manager',
+    platformRole: PlatformRole,
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
@@ -266,7 +269,7 @@ export class AdminService {
       allowSelf: false,
     });
 
-    if (platformRole === 'manager') {
+    if (!this.isSuperadmin(platformRole)) {
       if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
@@ -276,13 +279,13 @@ export class AdminService {
 
   async removeUsers(
     input: { userIds: string[] },
-    platformRole: 'admin' | 'manager',
+    platformRole: PlatformRole,
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
     if (input.userIds.length === 0) return { success: true, deletedCount: 0 };
 
-    if (platformRole === 'manager') {
+    if (!this.isSuperadmin(platformRole)) {
       if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
       for (const userId of input.userIds) {
         await this.assertTargetActionAllowed({ actorUserId, targetUserId: userId, platformRole, allowSelf: false });
@@ -302,19 +305,29 @@ export class AdminService {
     limit: number;
     offset: number;
     searchValue?: string;
+    organizationId?: string;
     activeOrganizationId: string | null;
-    platformRole: 'admin' | 'manager';
+    platformRole: PlatformRole;
   }) {
-    const { limit, offset, searchValue, platformRole, activeOrganizationId } = params;
-    if (platformRole === 'manager' && !activeOrganizationId) throw new ForbiddenException('Active organization required');
-    const result = await this.userRepo.listUsers({ limit, offset, searchValue, activeOrganizationId, platformRole });
+    const { limit, offset, searchValue, organizationId, platformRole, activeOrganizationId } = params;
+    if (!this.isSuperadmin(platformRole) && !activeOrganizationId) {
+      throw new ForbiddenException('Active organization required');
+    }
+    const result = await this.userRepo.listUsers({
+      limit,
+      offset,
+      searchValue,
+      organizationId: this.isSuperadmin(platformRole) ? organizationId ?? null : undefined,
+      activeOrganizationId,
+      platformRole,
+    });
     return { ...result, limit, offset };
   }
 
   async getUserCapabilities(params: {
     actorUserId: string;
     targetUserId: string;
-    platformRole: 'admin' | 'manager';
+    platformRole: PlatformRole;
     activeOrganizationId: string | null;
   }) {
     const { actorUserId, targetUserId, platformRole, activeOrganizationId } = params;
@@ -326,7 +339,7 @@ export class AdminService {
     const isTargetMember = targetRole === 'member';
 
     let isTargetInActiveOrganization = true;
-    if (platformRole === 'manager') {
+    if (!this.isSuperadmin(platformRole)) {
       if (!activeOrganizationId) {
         isTargetInActiveOrganization = false;
       } else {
@@ -335,13 +348,11 @@ export class AdminService {
       }
     }
 
-    const canSelfSafeAction = isSelf && (platformRole === 'admin' || isTargetInActiveOrganization);
+    const canSelfSafeAction = isSelf && (this.isSuperadmin(platformRole) || isTargetInActiveOrganization);
 
     const canMutateNonSelf =
       !isSelf &&
-      (platformRole === 'admin'
-        ? targetRole !== 'admin'
-        : isTargetMember && isTargetInActiveOrganization);
+      (this.isSuperadmin(platformRole) || (isTargetMember && isTargetInActiveOrganization));
 
     return {
       targetUserId,
@@ -363,7 +374,7 @@ export class AdminService {
   async getBatchCapabilities(params: {
     actorUserId: string;
     userIds: string[];
-    platformRole: 'admin' | 'manager';
+    platformRole: PlatformRole;
     activeOrganizationId: string | null;
   }): Promise<Record<string, Awaited<ReturnType<AdminService['getUserCapabilities']>>>> {
     const { actorUserId, userIds, platformRole, activeOrganizationId } = params;
@@ -386,7 +397,7 @@ export class AdminService {
     return result;
   }
 
-  async createUser(input: CreateUserInput, platformRole: 'admin' | 'manager', activeOrganizationId: string | null) {
+  async createUser(input: CreateUserInput, platformRole: PlatformRole, activeOrganizationId: string | null) {
     const allowed = getAllowedRoleNamesForCreator(platformRole);
     if (!allowed.includes(input.role)) {
       throw new ForbiddenException('Role not allowed');
@@ -396,15 +407,13 @@ export class AdminService {
       session: { activeOrganizationId: activeOrganizationId ?? undefined },
     } as unknown as UserSession);
 
-    const organizationIdToUse = input.role === 'admin' ? undefined : input.organizationId;
+    const organizationIdToUse = input.organizationId;
 
-    if (input.role !== 'admin') {
-      if (!organizationIdToUse) {
-        throw new ForbiddenException('Organization is required for non-admin users');
-      }
-      if (platformRole === 'manager' && enforcedActiveOrgId && organizationIdToUse !== enforcedActiveOrgId) {
-        throw new ForbiddenException('Managers can only assign users to their active organization');
-      }
+    if (!organizationIdToUse) {
+      throw new ForbiddenException('Organization is required for org-scoped users');
+    }
+    if (!this.isSuperadmin(platformRole) && enforcedActiveOrgId && organizationIdToUse !== enforcedActiveOrgId) {
+      throw new ForbiddenException('Organization-scoped actors can only assign users to their active organization');
     }
 
     const userId = randomUUID();

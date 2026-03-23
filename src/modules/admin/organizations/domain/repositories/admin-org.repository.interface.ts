@@ -65,7 +65,7 @@ export interface RoleRow {
   display_name: string;
   description: string | null;
   color: string | null;
-  is_system: boolean;
+  is_default: boolean;
 }
 
 export interface CreateOrgParams {
@@ -75,8 +75,8 @@ export interface CreateOrgParams {
   logo: string | null;
   metadataJson: string | null;
   actorId: string;
-  actorRole: string;
-  memberId: string;
+  actorRole?: string;
+  memberId?: string;
 }
 
 export interface UpdateOrgFields {
@@ -92,6 +92,9 @@ export interface IAdminOrgRepository {
   // Organization
   findAll(search?: string, limit?: number, offset?: number): Promise<OrgWithCountRow[]>;
   countAll(search?: string): Promise<number>;
+  findAllForUser(userId: string, search?: string, limit?: number, offset?: number): Promise<OrgWithCountRow[]>;
+  countAllForUser(userId: string, search?: string): Promise<number>;
+  canUserReadOrganization(userId: string, organizationId: string): Promise<boolean>;
   findById(id: string): Promise<OrgWithCountRow | null>;
   findBasicById(id: string): Promise<OrgBasicRow | null>;
   findBySlug(slug: string): Promise<{ id: string } | null>;
@@ -108,11 +111,12 @@ export interface IAdminOrgRepository {
   findMemberById(memberId: string, organizationId: string): Promise<MemberBasicRow | null>;
   findMemberByUserId(userId: string, organizationId: string): Promise<{ id: string } | null>;
   findMemberByEmail(organizationId: string, email: string): Promise<{ id: string } | null>;
-  countAdmins(organizationId: string): Promise<number>;
+  countMembersWithManageCapability(organizationId: string): Promise<number>;
+  roleGrantsManagePermission(roleName: string, organizationId: string): Promise<boolean>;
   addMember(id: string, organizationId: string, userId: string, role: string): Promise<MemberRow>;
   updateMemberRole(memberId: string, organizationId: string, role: string): Promise<MemberRow | null>;
   removeMember(memberId: string, organizationId: string): Promise<boolean>;
-  findUserById(userId: string): Promise<{ id: string } | null>;
+  findUserById(userId: string): Promise<{ id: string; role?: string | null } | null>;
 
   // Invitations
   findPendingInvitation(organizationId: string, email: string): Promise<{ id: string } | null>;
@@ -129,5 +133,5 @@ export interface IAdminOrgRepository {
   deleteInvitation(invitationId: string, organizationId: string): Promise<boolean>;
 
   // Roles
-  getRoles(): Promise<RoleRow[]>;
+  getRoles(organizationId: string | null): Promise<RoleRow[]>;
 }

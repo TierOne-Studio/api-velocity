@@ -14,9 +14,10 @@ import {
 } from '@nestjs/common';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
-import { RolesGuard, Roles, PermissionsGuard, RequirePermissions } from '../../../../../shared';
-import { AdminOrganizationsService, filterAssignableRoles, getRoleLevel } from '../../application/services/admin-organizations.service';
+import { PermissionsGuard, RequirePermissions } from '../../../../../shared';
+import { AdminOrganizationsService } from '../../application/services/admin-organizations.service';
 import { PaginationQuery, UpdateOrganizationDto } from '../../api/dto';
+import { getPlatformRole, type PlatformRole } from '../../../utils/admin.utils';
 
 /**
  * Controller for platform-level organization management.
@@ -24,31 +25,46 @@ import { PaginationQuery, UpdateOrganizationDto } from '../../api/dto';
  * Managers can only view and manage their active organization.
  */
 @Controller('api/platform-admin/organizations')
-@UseGuards(RolesGuard, PermissionsGuard)
-@Roles('admin', 'manager')
+@UseGuards(PermissionsGuard)
 export class AdminOrganizationsController {
   constructor(private readonly orgService: AdminOrganizationsService) {}
 
-  private readonly allowedMemberRoles = ['admin', 'manager', 'member'] as const;
   private readonly slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-  private getSessionInfo(session: UserSession): { role: 'admin' | 'manager'; activeOrgId: string | null } {
-    const role = session?.user?.role as string;
+  private getSessionInfo(session: UserSession): { role: PlatformRole; activeOrgId: string | null } {
     const activeOrgId = (session?.session as { activeOrganizationId?: string })?.activeOrganizationId ?? null;
     return {
-      role: role === 'admin' ? 'admin' : 'manager',
+      role: getPlatformRole(session),
       activeOrgId,
     };
   }
 
-  private requireActiveOrgForManager(role: 'admin' | 'manager', activeOrgId: string | null): void {
-    if (role === 'manager' && !activeOrgId) {
+  private requireActiveOrgForManager(role: PlatformRole, activeOrgId: string | null): void {
+    if (role !== 'superadmin' && !activeOrgId) {
       throw new ForbiddenException('Active organization required');
     }
   }
 
-  private assertManagerCanAccessOrg(role: 'admin' | 'manager', activeOrgId: string | null, targetOrgId: string): void {
-    if (role === 'manager' && activeOrgId !== targetOrgId) {
+  private assertManagerCanAccessOrg(role: PlatformRole, activeOrgId: string | null, targetOrgId: string): void {
+    if (role !== 'superadmin' && activeOrgId !== targetOrgId) {
+      throw new ForbiddenException('You can only access your own organization');
+    }
+  }
+
+  private async assertCanReadOrg(
+    session: UserSession,
+    role: PlatformRole,
+    activeOrgId: string | null,
+    targetOrgId: string,
+  ): Promise<void> {
+    this.requireActiveOrgForManager(role, activeOrgId);
+
+    if (role === 'superadmin') {
+      return;
+    }
+
+    const canRead = await this.orgService.canUserReadOrganization(session.user.id, targetOrgId);
+    if (!canRead) {
       throw new ForbiddenException('You can only access your own organization');
     }
   }
@@ -58,14 +74,14 @@ export class AdminOrganizationsController {
       throw new HttpException('userId is required', HttpStatus.BAD_REQUEST);
     }
 
-    if (!body?.role || !this.allowedMemberRoles.includes(body.role as (typeof this.allowedMemberRoles)[number])) {
-      throw new HttpException('invalid role', HttpStatus.BAD_REQUEST);
+    if (!body?.role?.trim()) {
+      throw new HttpException('role is required', HttpStatus.BAD_REQUEST);
     }
   }
 
   private validateUpdateMemberRolePayload(body: { role: string }): void {
-    if (!body?.role || !this.allowedMemberRoles.includes(body.role as (typeof this.allowedMemberRoles)[number])) {
-      throw new HttpException('invalid role', HttpStatus.BAD_REQUEST);
+    if (!body?.role?.trim()) {
+      throw new HttpException('role is required', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -91,8 +107,8 @@ export class AdminOrganizationsController {
       throw new HttpException('invalid email', HttpStatus.BAD_REQUEST);
     }
 
-    if (!body?.role || !this.allowedMemberRoles.includes(body.role as (typeof this.allowedMemberRoles)[number])) {
-      throw new HttpException('invalid role', HttpStatus.BAD_REQUEST);
+    if (!body?.role?.trim()) {
+      throw new HttpException('role is required', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -153,14 +169,18 @@ export class AdminOrganizationsController {
    */
   @Get('roles-metadata')
   @RequirePermissions('organization:read')
-  async getRolesMetadata(@Session() session: UserSession) {
-    const { role } = this.getSessionInfo(session);
-    return this.orgService.getRoles(role);
+  async getRolesMetadata(
+    @Session() session: UserSession,
+    @Query('organizationId') organizationId?: string,
+  ) {
+    const { role, activeOrgId } = this.getSessionInfo(session);
+    const targetOrgId = role === 'superadmin' && organizationId?.trim() ? organizationId.trim() : activeOrgId;
+    return this.orgService.getRoles(targetOrgId, role);
   }
 
   /**
    * List organizations with pagination and search
-   * Admins see all organizations, managers only see their active organization
+   * Superadmins see all organizations, other users only see readable organizations they belong to
    */
   @Get()
   @RequirePermissions('organization:read')
@@ -172,13 +192,8 @@ export class AdminOrganizationsController {
     const limit = query.limit ? parseInt(String(query.limit), 10) : 20;
     const search = query.search;
 
-    // Managers only see their own organization
-    if (role === 'manager' && activeOrgId) {
-      const org = await this.orgService.findById(activeOrgId);
-      return {
-        data: org ? [org] : [],
-        pagination: { page: 1, limit: 1, total: org ? 1 : 0, totalPages: 1 },
-      };
+    if (role !== 'superadmin') {
+      return this.orgService.findAllForUser(session.user.id, { page, limit, search });
     }
 
     const result = await this.orgService.findAll({ page, limit, search });
@@ -192,8 +207,7 @@ export class AdminOrganizationsController {
   @RequirePermissions('organization:read')
   async findOne(@Session() session: UserSession, @Param('id') id: string) {
     const { role, activeOrgId } = this.getSessionInfo(session);
-    this.requireActiveOrgForManager(role, activeOrgId);
-    this.assertManagerCanAccessOrg(role, activeOrgId, id);
+    await this.assertCanReadOrg(session, role, activeOrgId, id);
 
     const org = await this.orgService.findById(id);
     if (!org) {
@@ -209,8 +223,7 @@ export class AdminOrganizationsController {
   @RequirePermissions('organization:read')
   async getMembers(@Session() session: UserSession, @Param('id') id: string) {
     const { role, activeOrgId } = this.getSessionInfo(session);
-    this.requireActiveOrgForManager(role, activeOrgId);
-    this.assertManagerCanAccessOrg(role, activeOrgId, id);
+    await this.assertCanReadOrg(session, role, activeOrgId, id);
 
     const org = await this.orgService.findById(id);
     if (!org) {
@@ -247,8 +260,7 @@ export class AdminOrganizationsController {
   @RequirePermissions('organization:read')
   async getInvitations(@Session() session: UserSession, @Param('id') id: string) {
     const { role, activeOrgId } = this.getSessionInfo(session);
-    this.requireActiveOrgForManager(role, activeOrgId);
-    this.assertManagerCanAccessOrg(role, activeOrgId, id);
+    await this.assertCanReadOrg(session, role, activeOrgId, id);
 
     const org = await this.orgService.findById(id);
     if (!org) {
@@ -266,7 +278,7 @@ export class AdminOrganizationsController {
   async createInvitation(
     @Session() session: UserSession,
     @Param('id') id: string,
-    @Body() body: { email: string; role: 'admin' | 'manager' | 'member' },
+    @Body() body: { email: string; role: string },
   ) {
     this.validateCreateInvitationPayload(body);
 
@@ -323,15 +335,6 @@ export class AdminOrganizationsController {
     this.requireActiveOrgForManager(role, activeOrgId);
     this.assertManagerCanAccessOrg(role, activeOrgId, id);
 
-    // Validate that the requester can assign the requested role
-    const requestedRoleLevel = getRoleLevel(body.role);
-    const requesterRoleLevel = getRoleLevel(role);
-    if (requestedRoleLevel > requesterRoleLevel) {
-      throw new ForbiddenException(
-        `Cannot assign role '${body.role}' — exceeds your permission level`,
-      );
-    }
-
     const org = await this.orgService.findById(id);
     if (!org) {
       throw new HttpException('Organization not found', HttpStatus.NOT_FOUND);
@@ -349,7 +352,7 @@ export class AdminOrganizationsController {
     @Session() session: UserSession,
     @Param('id') id: string,
     @Param('memberId') memberId: string,
-    @Body() body: { role: 'admin' | 'manager' | 'member' },
+    @Body() body: { role: string },
   ) {
     this.validateUpdateMemberRolePayload(body);
 

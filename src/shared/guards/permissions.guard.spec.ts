@@ -8,7 +8,7 @@ import { RoleService } from '../../modules/admin/rbac/application/services';
 describe('PermissionsGuard', () => {
   let guard: PermissionsGuard;
   let reflector: Reflector;
-  let roleService: jest.Mocked<Pick<RoleService, 'getUserPermissions'>>;
+  let roleService: jest.Mocked<Pick<RoleService, 'getUserPermissions' | 'getUserActiveMemberRole'>>;
 
   const createMockExecutionContext = (session: unknown): ExecutionContext => {
     return {
@@ -30,6 +30,7 @@ describe('PermissionsGuard', () => {
   beforeEach(async () => {
     const mockRoleService = {
       getUserPermissions: jest.fn(),
+      getUserActiveMemberRole: jest.fn<() => Promise<string | null>>().mockResolvedValue(null),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -68,26 +69,40 @@ describe('PermissionsGuard', () => {
       jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['user:read']);
     });
 
-    it('should allow access for admin role without RoleService call', async () => {
-      const context = createMockExecutionContext({ user: { role: 'admin' } });
+    it('should allow access for superadmin role without consulting role permissions', async () => {
+      const context = createMockExecutionContext({ user: { role: 'superadmin' } });
       await expect(guard.canActivate(context)).resolves.toBe(true);
       expect(roleService.getUserPermissions).not.toHaveBeenCalled();
     });
 
-    it('should allow access for non-admin with required permissions', async () => {
+    it('should allow access for org-scoped role with required permissions in active organization', async () => {
       roleService.getUserPermissions.mockResolvedValueOnce([
         makePermission('user', 'read'),
       ]);
-      const context = createMockExecutionContext({ user: { role: 'manager' } });
+      const context = createMockExecutionContext({
+        user: { role: 'manager' },
+        session: { activeOrganizationId: 'org-1' },
+      });
       await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(roleService.getUserPermissions).toHaveBeenCalledWith('manager', 'org-1');
     });
 
-    it('should deny access for non-admin missing required permissions', async () => {
+    it('should deny access for org-scoped role missing required permissions', async () => {
       roleService.getUserPermissions.mockResolvedValueOnce([
         makePermission('role', 'list'),
       ]);
-      const context = createMockExecutionContext({ user: { role: 'member' } });
+      const context = createMockExecutionContext({
+        user: { role: 'member' },
+        session: { activeOrganizationId: 'org-1' },
+      });
       await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should deny access for org-scoped role without active organization', async () => {
+      roleService.getUserPermissions.mockResolvedValueOnce([]);
+      const context = createMockExecutionContext({ user: { role: 'admin' }, session: {} });
+      await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+      expect(roleService.getUserPermissions).toHaveBeenCalledWith('admin', null);
     });
 
     it('should deny access when no session', async () => {
@@ -102,8 +117,25 @@ describe('PermissionsGuard', () => {
 
     it('should deny access when user has no permissions at all', async () => {
       roleService.getUserPermissions.mockResolvedValueOnce([]);
-      const context = createMockExecutionContext({ user: { role: 'member' } });
+      const context = createMockExecutionContext({
+        user: { role: 'member' },
+        session: { activeOrganizationId: 'org-1' },
+      });
       await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('resolves org membership role when user.role is null (post-Phase0 users)', async () => {
+      roleService.getUserActiveMemberRole.mockResolvedValueOnce('admin');
+      roleService.getUserPermissions.mockResolvedValueOnce([
+        makePermission('user', 'read'),
+      ]);
+      const context = createMockExecutionContext({
+        user: { id: 'u-1', role: null },
+        session: { activeOrganizationId: 'org-1' },
+      });
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(roleService.getUserActiveMemberRole).toHaveBeenCalledWith('u-1', 'org-1');
+      expect(roleService.getUserPermissions).toHaveBeenCalledWith('admin', 'org-1');
     });
   });
 
@@ -118,7 +150,10 @@ describe('PermissionsGuard', () => {
         makePermission('user', 'create'),
         makePermission('user', 'update'),
       ]);
-      const context = createMockExecutionContext({ user: { role: 'manager' } });
+      const context = createMockExecutionContext({
+        user: { role: 'manager' },
+        session: { activeOrganizationId: 'org-1' },
+      });
       await expect(guard.canActivate(context)).resolves.toBe(true);
     });
 
@@ -126,7 +161,10 @@ describe('PermissionsGuard', () => {
       roleService.getUserPermissions.mockResolvedValueOnce([
         makePermission('user', 'read'),
       ]);
-      const context = createMockExecutionContext({ user: { role: 'manager' } });
+      const context = createMockExecutionContext({
+        user: { role: 'manager' },
+        session: { activeOrganizationId: 'org-1' },
+      });
       await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
     });
   });

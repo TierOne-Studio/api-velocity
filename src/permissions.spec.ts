@@ -40,6 +40,11 @@ describe('permissions module (source verification)', () => {
   });
 
   describe('roles', () => {
+    it('should define superadminRole using ac.newRole', () => {
+      expect(source).toContain('superadminRole');
+      expect(source).toContain('...adminAc.statements');
+    });
+
     it('should define adminRole using ac.newRole', () => {
       expect(source).toContain('adminRole');
       expect(source).toContain('ac.newRole');
@@ -55,7 +60,8 @@ describe('permissions module (source verification)', () => {
       expect(source).toContain('memberRole');
     });
 
-    it('should export roles object with admin, manager, member keys', () => {
+    it('should export roles object with superadmin, admin, manager, member keys', () => {
+      expect(source).toContain('superadmin: superadminRole');
       expect(source).toContain('admin: adminRole');
       expect(source).toContain('manager: managerRole');
       expect(source).toContain('member: memberRole');
@@ -68,6 +74,11 @@ describe('permissions module (source verification)', () => {
   });
 
   describe('roleMetadata', () => {
+    it('should define superadmin metadata', () => {
+      expect(source).toContain('superadmin:');
+      expect(source).toContain('name: "Superadmin"');
+    });
+
     it('should define admin metadata with red color', () => {
       expect(source).toContain('color: "red"');
     });
@@ -81,6 +92,7 @@ describe('permissions module (source verification)', () => {
     });
 
     it('should include name fields for each role', () => {
+      expect(source).toContain('name: "Superadmin"');
       expect(source).toContain('name: "Admin"');
       expect(source).toContain('name: "Manager"');
       expect(source).toContain('name: "Member"');

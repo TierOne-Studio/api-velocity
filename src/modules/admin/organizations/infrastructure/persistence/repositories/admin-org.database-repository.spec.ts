@@ -43,6 +43,33 @@ describe('AdminOrgDatabaseRepository', () => {
     });
   });
 
+  describe('findAllForUser', () => {
+    it('builds a membership and permission scoped query without search', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repo.findAllForUser('user-1');
+
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('JOIN member membership');
+      expect(sql).toContain('membership."userId" = $1');
+      expect(sql).toContain('JOIN roles r');
+      expect(sql).toContain('JOIN role_permissions rp');
+      expect(sql).toContain("p.resource = 'organization'");
+      expect(sql).toContain("p.action = 'read'");
+      expect(params).toEqual(['user-1', 20, 0]);
+    });
+
+    it('adds search filtering to membership and permission scoped query', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repo.findAllForUser('user-2', 'acme', 10, 5);
+
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('WHERE (o.name ILIKE $2 OR o.slug ILIKE $2)');
+      expect(params).toEqual(['user-2', '%acme%', 10, 5]);
+    });
+  });
+
   // ─── countAll ───────────────────────────────────────────────────────────────
 
   describe('countAll', () => {
@@ -63,6 +90,49 @@ describe('AdminOrgDatabaseRepository', () => {
       const [sql, params] = mockQueryOne.mock.calls[0];
       expect(sql).toContain('WHERE');
       expect(params).toEqual(['%test%']);
+    });
+  });
+
+  describe('countAllForUser', () => {
+    it('returns 0 when membership scoped count query returns null', async () => {
+      mockQueryOne.mockResolvedValue(null);
+
+      const count = await repo.countAllForUser('user-1');
+
+      expect(count).toBe(0);
+    });
+
+    it('builds a membership and permission scoped count query with search', async () => {
+      mockQueryOne.mockResolvedValue({ count: '3' });
+
+      await repo.countAllForUser('user-3', 'test');
+
+      const [sql, params] = mockQueryOne.mock.calls[0];
+      expect(sql).toContain('COUNT(DISTINCT o.id)');
+      expect(sql).toContain('JOIN member membership');
+      expect(sql).toContain("p.action = 'read'");
+      expect(sql).toContain('WHERE (o.name ILIKE $2 OR o.slug ILIKE $2)');
+      expect(params).toEqual(['user-3', '%test%']);
+    });
+  });
+
+  describe('canUserReadOrganization', () => {
+    it('returns true when the user can read the target organization', async () => {
+      mockQueryOne.mockResolvedValue({ id: 'org-2' });
+
+      await expect(repo.canUserReadOrganization('user-1', 'org-2')).resolves.toBe(true);
+
+      const [sql, params] = mockQueryOne.mock.calls[0];
+      expect(sql).toContain('membership."userId" = $1');
+      expect(sql).toContain("p.action = 'read'");
+      expect(sql).toContain('WHERE o.id = $2');
+      expect(params).toEqual(['user-1', 'org-2']);
+    });
+
+    it('returns false when the user cannot read the target organization', async () => {
+      mockQueryOne.mockResolvedValue(null);
+
+      await expect(repo.canUserReadOrganization('user-1', 'org-9')).resolves.toBe(false);
     });
   });
 
@@ -117,13 +187,58 @@ describe('AdminOrgDatabaseRepository', () => {
       await expect(repo.createOrg(params)).rejects.toThrow('connection lost');
     });
 
-    it('inserts org and member without a prior SELECT when slug is free', async () => {
-      mockQuery.mockResolvedValueOnce(undefined);
-      mockQuery.mockResolvedValueOnce(undefined);
+    it('inserts org, member, default roles, and role permissions without a prior SELECT when slug is free', async () => {
+      mockQuery.mockResolvedValue(undefined);
       await expect(repo.createOrg(params)).resolves.toBeUndefined();
-      expect(mockQuery).toHaveBeenCalledTimes(2);
+      expect(mockQuery).toHaveBeenCalledTimes(6);
       const [firstSql] = mockQuery.mock.calls[0] as [string];
       expect(firstSql).toContain('INSERT INTO organization');
+      expect(mockQuery.mock.calls[2][0]).toContain('INSERT INTO roles');
+      expect(mockQuery.mock.calls[3][0]).toContain('INSERT INTO role_permissions');
+      expect(mockQuery.mock.calls[4][0]).toContain('INSERT INTO role_permissions');
+      expect(mockQuery.mock.calls[5][0]).toContain('INSERT INTO role_permissions');
+      expect(mockQuery.mock.calls[4][1]).toEqual([
+        'org-1',
+        'organization',
+        'read',
+        'organization',
+        'update',
+        'organization',
+        'invite',
+        'role',
+        'read',
+        'session',
+        'read',
+        'session',
+        'revoke',
+        'user',
+        'create',
+        'user',
+        'read',
+        'user',
+        'update',
+      ]);
+      expect(mockQuery.mock.calls[5][1]).toEqual(['org-1', 'organization', 'read']);
+    });
+
+    it('skips creator member insertion when member params are omitted', async () => {
+      mockQuery.mockResolvedValue(undefined);
+
+      await expect(
+        repo.createOrg({
+          ...params,
+          actorRole: undefined as unknown as 'admin',
+          memberId: undefined as unknown as string,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(mockQuery).toHaveBeenCalledTimes(5);
+      expect(mockQuery.mock.calls[0][0]).toContain('INSERT INTO organization');
+      expect(mockQuery.mock.calls[1][0]).toContain('INSERT INTO roles');
+      expect(mockQuery.mock.calls[2][0]).toContain('INSERT INTO role_permissions');
+      expect(mockQuery.mock.calls[3][0]).toContain('INSERT INTO role_permissions');
+      expect(mockQuery.mock.calls[4][0]).toContain('INSERT INTO role_permissions');
+      expect(mockQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO member'))).toBe(false);
     });
   });
 
@@ -202,15 +317,32 @@ describe('AdminOrgDatabaseRepository', () => {
     });
   });
 
-  describe('countAdmins', () => {
+  describe('countMembersWithManageCapability', () => {
     it('returns 0 when queryOne returns null', async () => {
       mockQueryOne.mockResolvedValue(null);
-      expect(await repo.countAdmins('org-1')).toBe(0);
+      expect(await repo.countMembersWithManageCapability('org-1')).toBe(0);
     });
 
     it('parses count string', async () => {
       mockQueryOne.mockResolvedValue({ count: '5' });
-      expect(await repo.countAdmins('org-1')).toBe(5);
+      expect(await repo.countMembersWithManageCapability('org-1')).toBe(5);
+    });
+  });
+
+  describe('roleGrantsManagePermission', () => {
+    it('returns true when role has manage-members permission', async () => {
+      mockQueryOne.mockResolvedValue({ has_manage: 'true' });
+      expect(await repo.roleGrantsManagePermission('admin', 'org-1')).toBe(true);
+    });
+
+    it('returns false when role does not have manage-members permission', async () => {
+      mockQueryOne.mockResolvedValue({ has_manage: 'false' });
+      expect(await repo.roleGrantsManagePermission('member', 'org-1')).toBe(false);
+    });
+
+    it('returns false when queryOne returns null', async () => {
+      mockQueryOne.mockResolvedValue(null);
+      expect(await repo.roleGrantsManagePermission('unknown', 'org-1')).toBe(false);
     });
   });
 
@@ -258,6 +390,15 @@ describe('AdminOrgDatabaseRepository', () => {
       mockQueryOne.mockResolvedValue(null);
       expect(await repo.findUserById('ghost')).toBeNull();
     });
+
+    it('selects the role column along with the user id', async () => {
+      mockQueryOne.mockResolvedValue({ id: 'u-1', role: 'member' });
+
+      const result = await repo.findUserById('u-1');
+
+      expect(result).toEqual({ id: 'u-1', role: 'member' });
+      expect(mockQueryOne.mock.calls[0][0]).toContain('SELECT id, role FROM "user"');
+    });
   });
 
   describe('listMemberCandidates', () => {
@@ -272,6 +413,15 @@ describe('AdminOrgDatabaseRepository', () => {
       expect(sql).toContain('NOT EXISTS');
       expect(sql).toContain('member m');
       expect(params).toEqual(['org-1', 25]);
+    });
+
+    it('filters out superadmin users from candidate queries', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await (repo as any).listMemberCandidates('org-1', { search: 'alice', limit: 10 });
+
+      const [sql] = mockQuery.mock.calls[0];
+      expect(sql).toContain(`COALESCE(u.role, '') NOT LIKE '%superadmin%'`);
     });
 
     it('adds search filtering when provided', async () => {
@@ -341,10 +491,16 @@ describe('AdminOrgDatabaseRepository', () => {
   // ─── getRoles ───────────────────────────────────────────────────────────────
 
   describe('getRoles', () => {
-    it('returns all role rows', async () => {
-      const roles = [{ name: 'admin', display_name: 'Admin', is_system: true }];
+    it('returns org-scoped role rows when organizationId is provided', async () => {
+      const roles = [{ name: 'admin', display_name: 'Admin', is_default: true }];
       mockQuery.mockResolvedValue(roles);
-      expect(await repo.getRoles()).toEqual(roles);
+      expect(await repo.getRoles('org-1')).toEqual(roles);
+    });
+
+    it('returns global role rows when organizationId is null', async () => {
+      const roles = [{ name: 'superadmin', display_name: 'Superadmin', is_default: true }];
+      mockQuery.mockResolvedValue(roles);
+      expect(await repo.getRoles(null)).toEqual(roles);
     });
   });
 });

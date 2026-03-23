@@ -1,6 +1,45 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '../../../shared/infrastructure/database/database.module';
 
+const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
+  { resource: 'organization', action: 'read' },
+  { resource: 'organization', action: 'update' },
+  { resource: 'organization', action: 'delete' },
+  { resource: 'organization', action: 'invite' },
+  { resource: 'organization', action: 'manage-members' },
+  { resource: 'role', action: 'read' },
+  { resource: 'role', action: 'create' },
+  { resource: 'role', action: 'update' },
+  { resource: 'role', action: 'delete' },
+  { resource: 'role', action: 'assign' },
+  { resource: 'session', action: 'read' },
+  { resource: 'session', action: 'revoke' },
+  { resource: 'user', action: 'create' },
+  { resource: 'user', action: 'read' },
+  { resource: 'user', action: 'update' },
+  { resource: 'user', action: 'delete' },
+  { resource: 'user', action: 'ban' },
+  { resource: 'user', action: 'impersonate' },
+  { resource: 'user', action: 'set-role' },
+  { resource: 'user', action: 'set-password' },
+] as const;
+
+const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
+  { resource: 'organization', action: 'read' },
+  { resource: 'organization', action: 'update' },
+  { resource: 'organization', action: 'invite' },
+  { resource: 'role', action: 'read' },
+  { resource: 'session', action: 'read' },
+  { resource: 'session', action: 'revoke' },
+  { resource: 'user', action: 'create' },
+  { resource: 'user', action: 'read' },
+  { resource: 'user', action: 'update' },
+] as const;
+
+const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
+  { resource: 'organization', action: 'read' },
+] as const;
+
 /**
  * RBAC Migration service - creates tables and seeds default data
  */
@@ -36,6 +75,26 @@ export class RbacMigrationService implements OnModuleInit {
         name: 'rbac_007_add_role_organization_scope',
         up: () => this.addRoleOrganizationScope(),
       },
+      {
+        name: 'rbac_008_redesign_superadmin_org_roles',
+        up: () => this.redesignSuperadminAndOrganizationRoles(),
+      },
+      {
+        name: 'rbac_009_normalize_org_default_role_permissions',
+        up: () => this.normalizeOrganizationDefaultRolePermissions(),
+      },
+      {
+        name: 'rbac_010_remove_superadmin_org_memberships',
+        up: () => this.removeSuperadminOrganizationMemberships(),
+      },
+      {
+        name: 'rbac_011_add_manage_members_permission',
+        up: () => this.addManageMembersPermission(),
+      },
+      {
+        name: 'rbac_012_assign_admin_full_permissions',
+        up: () => this.assignAdminFullPermissions(),
+      },
     ];
 
     let pendingCount = 0;
@@ -68,7 +127,7 @@ export class RbacMigrationService implements OnModuleInit {
         display_name VARCHAR(100) NOT NULL,
         description TEXT,
         color VARCHAR(20) DEFAULT 'gray',
-        is_system BOOLEAN DEFAULT false,
+        is_default BOOLEAN DEFAULT false,
         organization_id TEXT REFERENCES organization(id) ON DELETE CASCADE,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
@@ -193,35 +252,35 @@ export class RbacMigrationService implements OnModuleInit {
         displayName: 'Admin',
         description: 'Global platform administrator with full access to all organizations and settings',
         color: 'red',
-        isSystem: true,
+        isDefault: true,
       },
       {
         name: 'manager',
         displayName: 'Manager',
         description: 'Organization manager with full access within their assigned organization',
         color: 'blue',
-        isSystem: true,
+        isDefault: true,
       },
       {
         name: 'member',
         displayName: 'Member',
         description: 'Organization member with basic access within their assigned organization',
         color: 'gray',
-        isSystem: true,
+        isDefault: true,
       },
     ];
 
     for (const role of roles) {
       await this.db.query(
-        `INSERT INTO roles (name, display_name, description, color, is_system, organization_id)
+        `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
          VALUES ($1, $2, $3, $4, $5, NULL)
          ON CONFLICT (name) WHERE organization_id IS NULL DO UPDATE SET
            display_name = EXCLUDED.display_name,
            description = EXCLUDED.description,
            color = EXCLUDED.color,
-           is_system = EXCLUDED.is_system,
+           is_default = EXCLUDED.is_default,
            updated_at = NOW()`,
-        [role.name, role.displayName, role.description, role.color, role.isSystem],
+        [role.name, role.displayName, role.description, role.color, role.isDefault],
       );
     }
 
@@ -471,5 +530,252 @@ export class RbacMigrationService implements OnModuleInit {
       ON roles (organization_id, name)
       WHERE organization_id IS NOT NULL
     `);
+  }
+
+  private async syncRolePermissions(
+    roleId: string,
+    permissions: ReadonlyArray<{ resource: string; action: string }>,
+  ): Promise<void> {
+    const allowedPermissionTuples = permissions
+      .map((_, index) => `($${index * 2 + 2}, $${index * 2 + 3})`)
+      .join(', ');
+
+    await this.db.query(
+      `DELETE FROM role_permissions
+       WHERE role_id = $1
+         AND permission_id NOT IN (
+           SELECT id
+           FROM permissions
+           WHERE (resource, action) IN (${allowedPermissionTuples})
+         )`,
+      [roleId, ...permissions.flatMap((permission) => [permission.resource, permission.action])],
+    );
+
+    for (const permissionDescriptor of permissions) {
+      const permission = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM permissions WHERE resource = $1 AND action = $2`,
+        [permissionDescriptor.resource, permissionDescriptor.action],
+      );
+      if (permission) {
+        await this.db.query(
+          `INSERT INTO role_permissions (role_id, permission_id)
+           VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [roleId, permission.id],
+        );
+      }
+    }
+  }
+
+  async redesignSuperadminAndOrganizationRoles(): Promise<void> {
+    await this.db.query(`UPDATE "user" SET role = 'superadmin' WHERE role = 'admin'`);
+
+    await this.db.query(
+      `DELETE FROM roles WHERE organization_id IS NULL AND name IN ('admin', 'manager', 'member')`,
+    );
+
+    await this.db.query(
+      `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
+       VALUES ($1, $2, $3, $4, $5, NULL)
+       ON CONFLICT (name) WHERE organization_id IS NULL DO UPDATE SET
+         display_name = EXCLUDED.display_name,
+         description = EXCLUDED.description,
+         color = EXCLUDED.color,
+         is_default = EXCLUDED.is_default,
+         updated_at = NOW()`,
+      [
+        'superadmin',
+        'Superadmin',
+        'Global platform administrator with unrestricted access across the entire system',
+        'red',
+        true,
+      ],
+    );
+
+    const allPermissions = await this.db.query<{ id: string }>(`SELECT id FROM permissions`);
+    const superadminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
+    );
+
+    if (superadminRole) {
+      for (const permission of allPermissions) {
+        await this.db.query(
+          `INSERT INTO role_permissions (role_id, permission_id)
+           VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [superadminRole.id, permission.id],
+        );
+      }
+    }
+
+    const organizations = await this.db.query<{ id: string }>(`SELECT id FROM organization`);
+
+    for (const organization of organizations) {
+      const defaultRoles = [
+        [
+          'admin',
+          'Admin',
+          'Organization administrator with full access within their organization',
+          'red',
+        ] as const,
+        [
+          'manager',
+          'Manager',
+          'Organization manager with elevated operational access within their organization',
+          'blue',
+        ] as const,
+        [
+          'member',
+          'Member',
+          'Organization member with basic access within their organization',
+          'gray',
+        ] as const,
+      ];
+
+      for (const [name, displayName, description, color] of defaultRoles) {
+        await this.db.query(
+          `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (organization_id, name) WHERE organization_id IS NOT NULL DO UPDATE SET
+             display_name = EXCLUDED.display_name,
+             description = EXCLUDED.description,
+             color = EXCLUDED.color,
+             is_default = EXCLUDED.is_default,
+             updated_at = NOW()`,
+          [name, displayName, description, color, true, organization.id],
+        );
+      }
+
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [organization.id],
+      );
+      if (adminRole) {
+        for (const permission of allPermissions) {
+          await this.db.query(
+            `INSERT INTO role_permissions (role_id, permission_id)
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING`,
+            [adminRole.id, permission.id],
+          );
+        }
+      }
+
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(managerRole.id, ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS);
+      }
+
+      const memberRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'member'`,
+        [organization.id],
+      );
+      if (memberRole) {
+        await this.syncRolePermissions(memberRole.id, ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS);
+      }
+    }
+
+    console.log('✅ RBAC superadmin/org role redesign seeded');
+  }
+
+  async normalizeOrganizationDefaultRolePermissions(): Promise<void> {
+    const organizations = await this.db.query<{ id: string }>(`SELECT id FROM organization`);
+
+    for (const organization of organizations) {
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(managerRole.id, ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS);
+      }
+
+      const memberRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'member'`,
+        [organization.id],
+      );
+      if (memberRole) {
+        await this.syncRolePermissions(memberRole.id, ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS);
+      }
+    }
+
+    console.log('✅ Organization default role permissions normalized');
+  }
+
+  async removeSuperadminOrganizationMemberships(): Promise<void> {
+    await this.db.query(`
+      DELETE FROM member
+      WHERE "userId" IN (
+        SELECT id
+        FROM "user"
+        WHERE COALESCE(role, '') LIKE '%superadmin%'
+      )
+    `);
+  }
+
+  /**
+   * Add the organization:manage-members permission and assign it to all existing
+   * org-scoped admin roles. This is the capability that drives org-lockout invariants.
+   */
+  async addManageMembersPermission(): Promise<void> {
+    await this.db.query(
+      `INSERT INTO permissions (resource, action, description)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (resource, action) DO NOTHING`,
+      ['organization', 'manage-members', 'Manage organization members and roles'],
+    );
+
+    // Assign to global superadmin role
+    const superadminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
+    );
+    const manageMembersPerm = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM permissions WHERE resource = 'organization' AND action = 'manage-members'`,
+    );
+
+    if (superadminRole && manageMembersPerm) {
+      await this.db.query(
+        `INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [superadminRole.id, manageMembersPerm.id],
+      );
+    }
+
+    // Assign to all existing org-scoped admin roles
+    if (manageMembersPerm) {
+      await this.db.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT r.id, $1
+         FROM roles r
+         WHERE r.organization_id IS NOT NULL
+           AND r.name = 'admin'
+         ON CONFLICT DO NOTHING`,
+        [manageMembersPerm.id],
+      );
+    }
+
+    console.log('✅ organization:manage-members permission added and assigned to org admin roles');
+  }
+
+  /**
+   * Assign the full ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS set to all existing
+   * org-scoped admin roles so they are consistent with the new spec.
+   */
+  async assignAdminFullPermissions(): Promise<void> {
+    const organizations = await this.db.query<{ id: string }>(`SELECT id FROM organization`);
+
+    for (const org of organizations) {
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [org.id],
+      );
+      if (adminRole) {
+        await this.syncRolePermissions(adminRole.id, ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS);
+      }
+    }
+
+    console.log('✅ Org admin roles updated with full permission set');
   }
 }

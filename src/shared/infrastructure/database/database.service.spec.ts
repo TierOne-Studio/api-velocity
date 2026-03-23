@@ -75,7 +75,10 @@ describe('DatabaseService - Migration Tracking', () => {
         .mockResolvedValueOnce({ rows: [{ name: '002' }] }) // hasMigrationRun check 2
         .mockResolvedValueOnce({ rows: [{ name: '003' }] }) // hasMigrationRun check 3
         .mockResolvedValueOnce({ rows: [{ name: '004' }] }) // hasMigrationRun check 4
-        .mockResolvedValueOnce({ rows: [{ name: '005' }] }); // hasMigrationRun check 5
+        .mockResolvedValueOnce({ rows: [{ name: '005' }] }) // hasMigrationRun check 5
+        .mockResolvedValueOnce({ rows: [{ name: '006' }] }) // hasMigrationRun check 6
+        .mockResolvedValueOnce({ rows: [{ name: '007' }] }) // hasMigrationRun check 7
+        .mockResolvedValueOnce({ rows: [{ name: '008' }] }); // hasMigrationRun check 8
 
       await service.runMigrations();
 
@@ -91,7 +94,10 @@ describe('DatabaseService - Migration Tracking', () => {
         .mockResolvedValueOnce({ rows: [{ name: '002' }] })
         .mockResolvedValueOnce({ rows: [{ name: '003' }] })
         .mockResolvedValueOnce({ rows: [{ name: '004' }] })
-        .mockResolvedValueOnce({ rows: [{ name: '005' }] });
+        .mockResolvedValueOnce({ rows: [{ name: '005' }] })
+        .mockResolvedValueOnce({ rows: [{ name: '006' }] })
+        .mockResolvedValueOnce({ rows: [{ name: '007' }] })
+        .mockResolvedValueOnce({ rows: [{ name: '008' }] });
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runMigrations();
@@ -198,7 +204,7 @@ describe('DatabaseService - Migration Tracking', () => {
   });
 
   describe('runMigrations — all pending', () => {
-    it('should run all 5 migrations when none have run, covering all SQL bodies', async () => {
+    it('should run all 8 migrations when none have run, covering all SQL bodies', async () => {
       // CREATE TABLE _migrations
       mockPool.query
         .mockResolvedValueOnce({ rows: [] })  // CREATE TABLE _migrations
@@ -242,7 +248,7 @@ describe('DatabaseService - Migration Tracking', () => {
 
       // Should log completed with count
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('5 new'),
+        expect.stringContaining('8 new'),
       );
       consoleSpy.mockRestore();
     });

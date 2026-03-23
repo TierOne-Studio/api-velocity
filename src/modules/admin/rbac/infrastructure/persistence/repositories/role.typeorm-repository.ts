@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
-import { IRoleRepository } from '../../../domain/repositories/role.repository.interface';
+import { IRoleRepository, RoleUsageSummary } from '../../../domain/repositories/role.repository.interface';
 import { Role, Permission } from '../../../domain/entities/role.entity';
 import { CreateRoleDto } from '../../../api/dto/create-role.dto';
 import { UpdateRoleDto } from '../../../api/dto/update-role.dto';
@@ -15,7 +15,8 @@ function mapRole(e: RoleTypeOrmEntity): Role {
     displayName: e.displayName,
     description: e.description,
     color: e.color,
-    isSystem: e.isSystem,
+    isDefault: e.isDefault,
+    isSystem: !e.organizationId,
     organizationId: e.organizationId,
     createdAt: e.createdAt,
     updatedAt: e.updatedAt,
@@ -41,11 +42,17 @@ export class TypeOrmRoleRepository implements IRoleRepository {
     private readonly dataSource: DataSource,
   ) {}
 
-  async findAll(activeOrganizationId: string): Promise<Role[]> {
-    const entities = await this.roleRepo.find({
-      where: [{ isSystem: true }, { organizationId: activeOrganizationId }],
-      order: { isSystem: 'DESC', name: 'ASC' },
-    });
+  async findAll(activeOrganizationId?: string | null): Promise<Role[]> {
+    const entities = await this.roleRepo.find(
+      activeOrganizationId
+        ? {
+            where: { organizationId: activeOrganizationId },
+            order: { isDefault: 'DESC', name: 'ASC' },
+          }
+        : {
+            order: { organizationId: 'ASC', isDefault: 'DESC', name: 'ASC' },
+          },
+    );
     return entities.map(mapRole);
   }
 
@@ -72,7 +79,7 @@ export class TypeOrmRoleRepository implements IRoleRepository {
       displayName: dto.displayName,
       description: dto.description ?? null,
       color: dto.color ?? 'gray',
-      isSystem: false,
+      isDefault: false,
       organizationId: activeOrganizationId,
     });
     const saved = await this.roleRepo.save(entity);
@@ -80,18 +87,104 @@ export class TypeOrmRoleRepository implements IRoleRepository {
   }
 
   async update(id: string, dto: UpdateRoleDto): Promise<Role | null> {
-    const partial: Partial<RoleTypeOrmEntity> = {};
-    if (dto.displayName !== undefined) partial.displayName = dto.displayName;
-    if (dto.description !== undefined) partial.description = dto.description;
-    if (dto.color !== undefined) partial.color = dto.color;
+    return this.dataSource.transaction(async (manager) => {
+      const existing = await manager.findOne(RoleTypeOrmEntity, { where: { id } });
+      if (!existing) {
+        return null;
+      }
 
-    await this.roleRepo.update(id, partial);
-    const updated = await this.roleRepo.findOne({ where: { id } });
-    return updated ? mapRole(updated) : null;
+      const partial: Partial<RoleTypeOrmEntity> = {};
+      if (dto.name !== undefined) partial.name = dto.name;
+      if (dto.displayName !== undefined) partial.displayName = dto.displayName;
+      if (dto.description !== undefined) partial.description = dto.description;
+      if (dto.color !== undefined) partial.color = dto.color;
+
+      await manager.update(RoleTypeOrmEntity, id, partial);
+
+      if (dto.name && dto.name !== existing.name && existing.organizationId) {
+        // Cascade the rename to member and invitation rows within this org.
+        // user.role is platform-only (superadmin | null) and must NOT be updated.
+        await manager.query(
+          'UPDATE member SET role = $1 WHERE "organizationId" = $2 AND role = $3',
+          [dto.name, existing.organizationId, existing.name],
+        );
+        await manager.query(
+          'UPDATE invitation SET role = $1 WHERE "organizationId" = $2 AND role = $3',
+          [dto.name, existing.organizationId, existing.name],
+        );
+      }
+
+      const updated = await manager.findOne(RoleTypeOrmEntity, { where: { id } });
+      return updated ? mapRole(updated) : null;
+    });
   }
 
   async remove(id: string): Promise<void> {
-    await this.roleRepo.delete(id);
+    // Use a transaction with a row lock to eliminate the race condition between
+    // the usage check in RoleService.delete() and the actual deletion.
+    await this.dataSource.transaction(async (manager) => {
+      const role = await manager
+        .createQueryBuilder(RoleTypeOrmEntity, 'r')
+        .setLock('pessimistic_write')
+        .where('r.id = :id', { id })
+        .getOne();
+      if (!role) return;
+      await manager.delete(RoleTypeOrmEntity, id);
+    });
+  }
+
+  async getUsageSummary(roleId: string): Promise<RoleUsageSummary> {
+    const role = await this.roleRepo.findOne({ where: { id: roleId } });
+    if (!role) {
+      return { users: 0, members: 0, invitations: 0 };
+    }
+
+    if (!role.organizationId) {
+      const result = await this.dataSource.query<{ count: string }[]>(
+        'SELECT COUNT(*)::text as count FROM "user" WHERE role = $1',
+        [role.name],
+      );
+      return {
+        users: result[0] ? parseInt(result[0].count, 10) : 0,
+        members: 0,
+        invitations: 0,
+      };
+    }
+
+    const result = await this.dataSource.query<
+      Array<{ users: string; members: string; invitations: string }>
+    >(
+      `SELECT
+         (
+           SELECT COUNT(*)::text
+           FROM "user" u
+           WHERE u.role = $2
+             AND EXISTS (
+               SELECT 1
+               FROM member m
+               WHERE m."userId" = u.id
+                 AND m."organizationId" = $1
+                 AND m.role = $2
+             )
+         ) as users,
+         (
+           SELECT COUNT(*)::text
+           FROM member
+           WHERE "organizationId" = $1 AND role = $2
+         ) as members,
+         (
+           SELECT COUNT(*)::text
+           FROM invitation
+           WHERE "organizationId" = $1 AND role = $2
+         ) as invitations`,
+      [role.organizationId, role.name],
+    );
+
+    return {
+      users: result[0] ? parseInt(result[0].users, 10) : 0,
+      members: result[0] ? parseInt(result[0].members, 10) : 0,
+      invitations: result[0] ? parseInt(result[0].invitations, 10) : 0,
+    };
   }
 
   async getPermissions(roleId: string): Promise<Permission[]> {
@@ -123,14 +216,45 @@ export class TypeOrmRoleRepository implements IRoleRepository {
     });
   }
 
-  async hasPermission(roleName: string, resource: string, action: string): Promise<boolean> {
+  async hasPermission(
+    roleName: string,
+    resource: string,
+    action: string,
+    organizationId?: string | null,
+  ): Promise<boolean> {
+    // When an organizationId is provided, scope the look-up to that org's role row
+    // to avoid matching a same-named role in a different organization.
+    if (organizationId) {
+      const result = await this.dataSource.query<{ count: string }[]>(
+        `SELECT COUNT(*) as count FROM role_permissions rp
+         JOIN roles r ON r.id = rp.role_id
+         JOIN permissions p ON p.id = rp.permission_id
+         WHERE r.name = $1
+           AND r.organization_id = $2
+           AND p.resource = $3
+           AND p.action = $4`,
+        [roleName, organizationId, resource, action],
+      );
+      return result[0] ? parseInt(result[0].count, 10) > 0 : false;
+    }
+
+    // Global / platform role lookup (e.g. superadmin which has no org scope).
     const result = await this.dataSource.query<{ count: string }[]>(
       `SELECT COUNT(*) as count FROM role_permissions rp
        JOIN roles r ON r.id = rp.role_id
        JOIN permissions p ON p.id = rp.permission_id
-       WHERE r.name = $1 AND p.resource = $2 AND p.action = $3`,
+       WHERE r.name = $1 AND r.organization_id IS NULL
+         AND p.resource = $2 AND p.action = $3`,
       [roleName, resource, action],
     );
     return result[0] ? parseInt(result[0].count, 10) > 0 : false;
+  }
+
+  async getMemberRoleInOrg(userId: string, organizationId: string): Promise<string | null> {
+    const result = await this.dataSource.query<{ role: string }[]>(
+      `SELECT m.role FROM member m WHERE m."userId" = $1 AND m."organizationId" = $2 LIMIT 1`,
+      [userId, organizationId],
+    );
+    return result[0]?.role ?? null;
   }
 }

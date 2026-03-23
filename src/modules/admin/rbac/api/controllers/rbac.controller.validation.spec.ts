@@ -45,7 +45,7 @@ describe('RbacController validation', () => {
 
   it('rejects createRole when name is missing', async () => {
     await expect(
-      controller.createRole(session, { displayName: 'Editor' } as any),
+      controller.createRole(session, { displayName: 'Editor' } as any, undefined),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
@@ -53,18 +53,26 @@ describe('RbacController validation', () => {
 
   it('rejects createRole when displayName is missing', async () => {
     await expect(
-      controller.createRole(session, { name: 'editor' } as any),
+      controller.createRole(session, { name: 'editor' } as any, undefined),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
   });
 
-  it('rejects createRole when name is the reserved legacy user role', async () => {
+  it('rejects createRole when name is the reserved global superadmin role', async () => {
     await expect(
-      controller.createRole(session, { name: 'user', displayName: 'User' } as any),
+      controller.createRole(session, { name: 'superadmin', displayName: 'Superadmin' } as any, undefined),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
+  });
+
+  it('allows updateRole when only name is provided', async () => {
+    roleService.update.mockResolvedValue({ id: 'role-1', name: 'owner' } as any);
+
+    await expect(
+      controller.updateRole('role-1', { name: 'owner' }),
+    ).resolves.toEqual({ data: { id: 'role-1', name: 'owner' } });
   });
 
   it('rejects updateRole when no updatable fields are provided', async () => {
@@ -102,6 +110,7 @@ describe('RbacController validation', () => {
     const result = await controller.createRole(
       session,
       { name: 'editor', displayName: 'Editor' } as any,
+      undefined,
     );
 
     expect(result).toEqual({ data: { id: 'role-1', name: 'editor' } });

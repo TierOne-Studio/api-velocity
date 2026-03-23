@@ -10,6 +10,14 @@ export interface UserRow {
   banExpires: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  memberships?: UserMembershipRow[];
+}
+
+export interface UserMembershipRow {
+  organizationId: string;
+  organizationName: string;
+  roleName: string;
+  roleDisplayName: string;
 }
 
 export interface SessionRow {
@@ -28,7 +36,7 @@ export interface RoleMetaRow {
   display_name: string;
   description: string | null;
   color: string | null;
-  is_system: boolean;
+  is_default: boolean;
 }
 
 export interface OrgBasicRow {
@@ -58,8 +66,9 @@ export interface ListUsersParams {
   limit: number;
   offset: number;
   searchValue?: string;
+  organizationId?: string | null;
   activeOrganizationId: string | null;
-  platformRole: 'admin' | 'manager';
+  platformRole: 'superadmin' | 'admin' | 'manager' | 'member';
 }
 
 export const ADMIN_USER_REPOSITORY = 'ADMIN_USER_REPOSITORY';

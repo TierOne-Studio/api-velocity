@@ -15,9 +15,86 @@ import type {
   UpdateOrgFields,
 } from '../../../domain/repositories/admin-org.repository.interface';
 
+const MANAGER_ROLE_PERMISSIONS = [
+  ['organization', 'read'],
+  ['organization', 'update'],
+  ['organization', 'invite'],
+  ['role', 'read'],
+  ['session', 'read'],
+  ['session', 'revoke'],
+  ['user', 'create'],
+  ['user', 'read'],
+  ['user', 'update'],
+] as const;
+
+const MEMBER_ROLE_PERMISSIONS = [
+  ['organization', 'read'],
+] as const;
+
 @Injectable()
 export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
   constructor(private readonly db: DatabaseService) {}
+
+  private async seedDefaultRoles(
+    query: (sql: string, params?: unknown[]) => Promise<unknown>,
+    organizationId: string,
+  ): Promise<void> {
+    await query(
+      `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
+       VALUES
+         ('admin', 'Admin', 'Organization administrator with full access within their organization', 'red', true, $1),
+         ('manager', 'Manager', 'Organization manager with elevated operational access within their organization', 'blue', true, $1),
+         ('member', 'Member', 'Organization member with basic access within their organization', 'gray', true, $1)
+       ON CONFLICT (organization_id, name) WHERE organization_id IS NOT NULL DO UPDATE SET
+         display_name = EXCLUDED.display_name,
+         description = EXCLUDED.description,
+         color = EXCLUDED.color,
+         is_default = EXCLUDED.is_default,
+         updated_at = NOW()`,
+      [organizationId],
+    );
+
+    await query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT r.id, p.id
+       FROM roles r
+       CROSS JOIN permissions p
+       WHERE r.organization_id = $1
+         AND r.name = 'admin'
+       ON CONFLICT DO NOTHING`,
+      [organizationId],
+    );
+
+    await query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT r.id, p.id
+       FROM roles r
+       JOIN permissions p
+         ON (p.resource, p.action) IN (${MANAGER_ROLE_PERMISSIONS.map((_, index) => `($${index * 2 + 2}, $${index * 2 + 3})`).join(', ')})
+       WHERE r.organization_id = $1
+         AND r.name = 'manager'
+       ON CONFLICT DO NOTHING`,
+      [
+        organizationId,
+        ...MANAGER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [resource, action]),
+      ],
+    );
+
+    await query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT r.id, p.id
+       FROM roles r
+       JOIN permissions p
+         ON (p.resource, p.action) IN (${MEMBER_ROLE_PERMISSIONS.map((_, index) => `($${index * 2 + 2}, $${index * 2 + 3})`).join(', ')})
+       WHERE r.organization_id = $1
+         AND r.name = 'member'
+       ON CONFLICT DO NOTHING`,
+      [
+        organizationId,
+        ...MEMBER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [resource, action]),
+      ],
+    );
+  }
 
   async findAll(search?: string, limit = 20, offset = 0): Promise<OrgWithCountRow[]> {
     let whereClause = '';
@@ -40,6 +117,43 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     );
   }
 
+  async findAllForUser(
+    userId: string,
+    search?: string,
+    limit = 20,
+    offset = 0,
+  ): Promise<OrgWithCountRow[]> {
+    let whereClause = '';
+    const params: unknown[] = [userId];
+    if (search) {
+      whereClause = 'WHERE (o.name ILIKE $2 OR o.slug ILIKE $2)';
+      params.push(`%${search}%`);
+    }
+    const limitParam = params.length + 1;
+    const offsetParam = params.length + 2;
+    return this.db.query<OrgWithCountRow>(
+      `SELECT o.*, COUNT(DISTINCT m_all.id) as member_count
+       FROM organization o
+       JOIN member membership
+         ON membership."organizationId" = o.id
+        AND membership."userId" = $1
+       JOIN roles r
+         ON r.organization_id = o.id
+        AND r.name = membership.role
+       JOIN role_permissions rp ON rp.role_id = r.id
+       JOIN permissions p
+         ON p.id = rp.permission_id
+        AND p.resource = 'organization'
+        AND p.action = 'read'
+       LEFT JOIN member m_all ON m_all."organizationId" = o.id
+       ${whereClause}
+       GROUP BY o.id
+       ORDER BY o."createdAt" DESC
+       LIMIT $${limitParam} OFFSET $${offsetParam}`,
+      [...params, limit, offset],
+    );
+  }
+
   async countAll(search?: string): Promise<number> {
     let whereClause = '';
     const params: unknown[] = [];
@@ -52,6 +166,56 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
       params,
     );
     return parseInt(result?.count ?? '0', 10);
+  }
+
+  async countAllForUser(userId: string, search?: string): Promise<number> {
+    let whereClause = '';
+    const params: unknown[] = [userId];
+    if (search) {
+      whereClause = 'WHERE (o.name ILIKE $2 OR o.slug ILIKE $2)';
+      params.push(`%${search}%`);
+    }
+    const result = await this.db.queryOne<{ count: string }>(
+      `SELECT COUNT(DISTINCT o.id) as count
+       FROM organization o
+       JOIN member membership
+         ON membership."organizationId" = o.id
+        AND membership."userId" = $1
+       JOIN roles r
+         ON r.organization_id = o.id
+        AND r.name = membership.role
+       JOIN role_permissions rp ON rp.role_id = r.id
+       JOIN permissions p
+         ON p.id = rp.permission_id
+        AND p.resource = 'organization'
+        AND p.action = 'read'
+       ${whereClause}`,
+      params,
+    );
+    return parseInt(result?.count ?? '0', 10);
+  }
+
+  async canUserReadOrganization(userId: string, organizationId: string): Promise<boolean> {
+    const result = await this.db.queryOne<{ id: string }>(
+      `SELECT o.id
+       FROM organization o
+       JOIN member membership
+         ON membership."organizationId" = o.id
+        AND membership."userId" = $1
+       JOIN roles r
+         ON r.organization_id = o.id
+        AND r.name = membership.role
+       JOIN role_permissions rp ON rp.role_id = r.id
+       JOIN permissions p
+         ON p.id = rp.permission_id
+        AND p.resource = 'organization'
+        AND p.action = 'read'
+       WHERE o.id = $2
+       LIMIT 1`,
+      [userId, organizationId],
+    );
+
+    return !!result;
   }
 
   async findById(id: string): Promise<OrgWithCountRow | null> {
@@ -94,11 +258,15 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
         throw err;
       }
 
-      await query(
-        `INSERT INTO member (id, "organizationId", "userId", role, "createdAt")
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [params.memberId, params.id, params.actorId, params.actorRole],
-      );
+      if (params.memberId && params.actorRole) {
+        await query(
+          `INSERT INTO member (id, "organizationId", "userId", role, "createdAt")
+           VALUES ($1, $2, $3, $4, NOW())`,
+          [params.memberId, params.id, params.actorId, params.actorRole],
+        );
+      }
+
+      await this.seedDefaultRoles(query, params.id);
     });
   }
 
@@ -183,6 +351,7 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
          WHERE m."organizationId" = $1
            AND m."userId" = u.id
        )
+       AND COALESCE(u.role, '') NOT LIKE '%superadmin%'
        ${searchClause}
        ORDER BY u.name ASC, u.email ASC
        LIMIT $${limitParam}`,
@@ -214,12 +383,33 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     );
   }
 
-  async countAdmins(organizationId: string): Promise<number> {
+  async countMembersWithManageCapability(organizationId: string): Promise<number> {
     const result = await this.db.queryOne<{ count: string }>(
-      'SELECT COUNT(*)::text as count FROM member WHERE "organizationId" = $1 AND role = $2',
-      [organizationId, 'admin'],
+      `SELECT COUNT(DISTINCT m.id)::text as count
+       FROM member m
+       JOIN roles r ON r.organization_id = m."organizationId" AND r.name = m.role
+       JOIN role_permissions rp ON rp.role_id = r.id
+       JOIN permissions p ON p.id = rp.permission_id
+       WHERE m."organizationId" = $1
+         AND p.resource = 'organization' AND p.action = 'manage-members'`,
+      [organizationId],
     );
     return result ? parseInt(result.count, 10) : 0;
+  }
+
+  async roleGrantsManagePermission(roleName: string, organizationId: string): Promise<boolean> {
+    const result = await this.db.queryOne<{ has_manage: string }>(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM roles r
+         JOIN role_permissions rp ON rp.role_id = r.id
+         JOIN permissions p ON p.id = rp.permission_id
+         WHERE r.name = $1 AND r.organization_id = $2
+           AND p.resource = 'organization' AND p.action = 'manage-members'
+       )::text as has_manage`,
+      [roleName, organizationId],
+    );
+    return result?.has_manage === 'true';
   }
 
   async addMember(id: string, organizationId: string, userId: string, role: string): Promise<MemberRow> {
@@ -255,9 +445,9 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     return result.length > 0;
   }
 
-  async findUserById(userId: string): Promise<{ id: string } | null> {
-    return this.db.queryOne<{ id: string }>(
-      'SELECT id FROM "user" WHERE id = $1',
+  async findUserById(userId: string): Promise<{ id: string; role?: string | null } | null> {
+    return this.db.queryOne<{ id: string; role?: string | null }>(
+      'SELECT id, role FROM "user" WHERE id = $1',
       [userId],
     );
   }
@@ -315,9 +505,15 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     return result.length > 0;
   }
 
-  async getRoles(): Promise<RoleRow[]> {
+  async getRoles(organizationId: string | null): Promise<RoleRow[]> {
+    if (organizationId) {
+      return this.db.query<RoleRow>(
+        'SELECT name, display_name, description, color, is_default FROM roles WHERE organization_id = $1 ORDER BY is_default DESC, name ASC',
+        [organizationId],
+      );
+    }
     return this.db.query<RoleRow>(
-      'SELECT name, display_name, description, color, is_system FROM roles ORDER BY is_system DESC, name ASC',
+      'SELECT name, display_name, description, color, is_default FROM roles WHERE organization_id IS NULL ORDER BY is_default DESC, name ASC',
     );
   }
 }

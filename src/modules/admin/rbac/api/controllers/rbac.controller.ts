@@ -9,20 +9,21 @@ import {
   HttpException,
   HttpStatus,
   UseGuards,
+  ForbiddenException,
+  Query,
 } from '@nestjs/common';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
-import { RolesGuard, Roles, PermissionsGuard, RequirePermissions } from '../../../../../shared';
+import { PermissionsGuard, RequirePermissions } from '../../../../../shared';
 import { RoleService, PermissionService } from '../../application/services';
 import { CreateRoleDto, UpdateRoleDto, AssignPermissionsDto } from '../dto';
-import { getActiveOrganizationId } from '../../../utils/admin.utils';
+import { getActiveOrganizationId, getPlatformRole } from '../../../utils/admin.utils';
 
 /**
  * Controller for RBAC management endpoints
  */
 @Controller('api/rbac')
-@UseGuards(RolesGuard, PermissionsGuard)
-@Roles('admin', 'manager')
+@UseGuards(PermissionsGuard)
 export class RbacController {
   constructor(
     private readonly roleService: RoleService,
@@ -31,7 +32,7 @@ export class RbacController {
 
   private validateCreateRolePayload(dto: CreateRoleDto): void {
     const normalizedName = dto?.name?.trim().toLowerCase();
-    const reservedNames = new Set(['admin', 'manager', 'member', 'user']);
+    const reservedNames = new Set(['superadmin', 'user']);
 
     if (!normalizedName) {
       throw new HttpException('Role name is required', HttpStatus.BAD_REQUEST);
@@ -45,13 +46,24 @@ export class RbacController {
   }
 
   private validateUpdateRolePayload(dto: UpdateRoleDto): void {
+    const normalizedName = dto.name?.trim().toLowerCase();
+    const reservedNames = new Set(['superadmin', 'user']);
     const hasAnyField =
+      normalizedName !== undefined ||
       dto.displayName !== undefined ||
       dto.description !== undefined ||
       dto.color !== undefined;
 
     if (!hasAnyField) {
       throw new HttpException('At least one field is required to update a role', HttpStatus.BAD_REQUEST);
+    }
+
+    if (normalizedName !== undefined && !normalizedName) {
+      throw new HttpException('Role name is required', HttpStatus.BAD_REQUEST);
+    }
+
+    if (normalizedName && reservedNames.has(normalizedName)) {
+      throw new HttpException(`Role name ${normalizedName} is reserved`, HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -61,25 +73,71 @@ export class RbacController {
     }
   }
 
+  private resolveTargetOrganizationId(session: UserSession, organizationId?: string): string {
+    const platformRole = getPlatformRole(session);
+
+    if (platformRole === 'superadmin') {
+      if (!organizationId?.trim()) {
+        throw new HttpException('organizationId is required for superadmin role management', HttpStatus.BAD_REQUEST);
+      }
+
+      return organizationId.trim();
+    }
+
+    const activeOrganizationId = getActiveOrganizationId(session);
+    if (!activeOrganizationId) {
+      throw new HttpException('Active organization required', HttpStatus.FORBIDDEN);
+    }
+
+    return activeOrganizationId;
+  }
+
+  private resolveRoleListOrganizationId(session: UserSession, organizationId?: string): string | null {
+    const platformRole = getPlatformRole(session);
+
+    if (platformRole === 'superadmin') {
+      const trimmedOrganizationId = organizationId?.trim();
+      return trimmedOrganizationId ? trimmedOrganizationId : null;
+    }
+
+    const activeOrganizationId = getActiveOrganizationId(session);
+    if (!activeOrganizationId) {
+      throw new HttpException('Active organization required', HttpStatus.FORBIDDEN);
+    }
+
+    return activeOrganizationId;
+  }
+
   // ============ My Permissions ============
 
   /**
    * Get the current authenticated user's effective permissions.
-   * Admin users receive all permissions; others receive their DB role_permissions.
-   * Accessible by any authenticated admin/manager (class-level @Roles already enforces this).
+   * Superadmin users receive all permissions; others receive their active-org role permissions.
    */
   @Get('my-permissions')
   async getMyPermissions(@Session() session: UserSession) {
-    const userRole = session?.user?.role as string;
+    if (!session?.user) {
+      throw new ForbiddenException('Authentication required');
+    }
 
-    if (userRole === 'admin') {
+    const userRole = getPlatformRole(session);
+    const activeOrganizationId = getActiveOrganizationId(session);
+
+    if (userRole === 'superadmin') {
       const allPermissions = await this.permissionService.findAll();
       return {
         data: allPermissions.map((p) => `${p.resource}:${p.action}`),
       };
     }
 
-    const permissions = await this.roleService.getUserPermissions(userRole);
+    // user.role is NULL for non-superadmins after Phase 0 migration; resolve actual org membership role
+    let effectiveRole: string = userRole;
+    if (activeOrganizationId && session.user.id) {
+      const memberRole = await this.roleService.getUserActiveMemberRole(session.user.id, activeOrganizationId);
+      if (memberRole) effectiveRole = memberRole;
+    }
+
+    const permissions = await this.roleService.getUserPermissions(effectiveRole, activeOrganizationId);
     return {
       data: permissions.map((p) => `${p.resource}:${p.action}`),
     };
@@ -92,13 +150,12 @@ export class RbacController {
    */
   @Get('roles')
   @RequirePermissions('role:read')
-  async getRoles(@Session() session: UserSession) {
-    const activeOrganizationId = getActiveOrganizationId(session);
-    if (!activeOrganizationId) {
-      throw new HttpException('Active organization required', HttpStatus.FORBIDDEN);
-    }
-
-    const roles = await this.roleService.findAll(activeOrganizationId);
+  async getRoles(
+    @Session() session: UserSession,
+    @Query('organizationId') organizationId?: string,
+  ) {
+    const targetOrganizationId = this.resolveRoleListOrganizationId(session, organizationId);
+    const roles = await this.roleService.findAll(targetOrganizationId);
     return { data: roles };
   }
 
@@ -121,21 +178,22 @@ export class RbacController {
    */
   @Post('roles')
   @RequirePermissions('role:create')
-  async createRole(@Session() session: UserSession, @Body() dto: CreateRoleDto) {
+  async createRole(
+    @Session() session: UserSession,
+    @Body() dto: CreateRoleDto,
+    @Query('organizationId') organizationId?: string,
+  ) {
     this.validateCreateRolePayload(dto);
     dto.name = dto.name.trim().toLowerCase();
-    const activeOrganizationId = getActiveOrganizationId(session);
-    if (!activeOrganizationId) {
-      throw new HttpException('Active organization required', HttpStatus.FORBIDDEN);
-    }
+    const targetOrganizationId = this.resolveTargetOrganizationId(session, organizationId);
 
     // Check if role name already exists
-    const existing = await this.roleService.findByNameInOrganization(dto.name, activeOrganizationId);
+    const existing = await this.roleService.findByNameInOrganization(dto.name, targetOrganizationId);
     if (existing) {
       throw new HttpException('Role name already exists', HttpStatus.CONFLICT);
     }
 
-    const role = await this.roleService.create(dto, activeOrganizationId);
+    const role = await this.roleService.create(dto, targetOrganizationId);
     return { data: role };
   }
 
@@ -147,11 +205,23 @@ export class RbacController {
   async updateRole(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
     this.validateUpdateRolePayload(dto);
 
-    const role = await this.roleService.update(id, dto);
-    if (!role) {
-      throw new HttpException('Role not found', HttpStatus.NOT_FOUND);
+    try {
+      const role = await this.roleService.update(id, dto);
+      if (!role) {
+        throw new HttpException('Role not found', HttpStatus.NOT_FOUND);
+      }
+      return { data: role };
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === 'Cannot rename global role') {
+          throw new HttpException(error.message, HttpStatus.FORBIDDEN);
+        }
+        if (error.message === 'Role name already exists') {
+          throw new HttpException(error.message, HttpStatus.CONFLICT);
+        }
+      }
+      throw error;
     }
-    return { data: role };
   }
 
   /**
@@ -165,11 +235,14 @@ export class RbacController {
       return { success: true };
     } catch (error) {
       if (error instanceof Error) {
-        if (error.message === 'Cannot delete system role') {
+        if (error.message === 'Cannot delete global role') {
           throw new HttpException(error.message, HttpStatus.FORBIDDEN);
         }
         if (error.message === 'Role not found') {
           throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+        }
+        if (error.message === 'Role is still assigned and cannot be deleted') {
+          throw new HttpException(error.message, HttpStatus.CONFLICT);
         }
       }
       throw error;
@@ -226,8 +299,11 @@ export class RbacController {
    */
   @Get('users/:roleName/permissions')
   @RequirePermissions('role:read')
-  async getUserPermissions(@Param('roleName') roleName: string) {
-    const permissions = await this.roleService.getUserPermissions(roleName);
+  async getUserPermissions(@Session() session: UserSession, @Param('roleName') roleName: string) {
+    const permissions = await this.roleService.getUserPermissions(
+      roleName,
+      getActiveOrganizationId(session),
+    );
     return { data: permissions };
   }
 

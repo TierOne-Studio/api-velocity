@@ -13,17 +13,34 @@ import type {
 } from '../../../domain/repositories/admin-user.repository.interface';
 
 const USER_COLUMNS = `id, name, email, "emailVerified" as "emailVerified", role, image, banned, "banReason" as "banReason", "banExpires" as "banExpires", "createdAt" as "createdAt", "updatedAt" as "updatedAt"`;
+const USER_LIST_COLUMNS = `u.id, u.name, u.email, u."emailVerified" as "emailVerified", u.role, u.image, u.banned, u."banReason" as "banReason", u."banExpires" as "banExpires", u."createdAt" as "createdAt", u."updatedAt" as "updatedAt",
+       COALESCE((
+         SELECT json_agg(
+           json_build_object(
+             'organizationId', m."organizationId",
+             'organizationName', o.name,
+             'roleName', m.role,
+             'roleDisplayName', COALESCE(r.display_name, m.role)
+           )
+           ORDER BY o.name ASC, COALESCE(r.display_name, m.role) ASC
+         )
+         FROM member m
+         JOIN organization o ON o.id = m."organizationId"
+         LEFT JOIN roles r ON r.organization_id = m."organizationId" AND r.name = m.role
+         WHERE m."userId" = u.id
+       ), '[]'::json) as memberships`;
 
 @Injectable()
 export class AdminUserDatabaseRepository implements IAdminUserRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async findUserRole(userId: string): Promise<string | null> {
-    const row = await this.db.queryOne<{ role: string }>(
+    const row = await this.db.queryOne<{ role: string | null }>(
       'SELECT role FROM "user" WHERE id = $1',
       [userId],
     );
-    return row?.role ?? null;
+    if (!row) return null; // user not found
+    return row.role ?? 'member'; // null platform role → treat as member-level
   }
 
   async findUserById(userId: string): Promise<UserRow | null> {
@@ -137,7 +154,7 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
   }
 
   async listUsers(params: ListUsersParams): Promise<{ data: UserRow[]; total: number }> {
-    const { limit, offset, searchValue, platformRole, activeOrganizationId } = params;
+    const { limit, offset, searchValue, organizationId, platformRole, activeOrganizationId } = params;
     const where: string[] = [];
     const values: unknown[] = [];
 
@@ -146,7 +163,10 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
       where.push(`(u.name ILIKE $${values.length} OR u.email ILIKE $${values.length})`);
     }
 
-    if (platformRole === 'manager') {
+    if (platformRole === 'superadmin' && organizationId) {
+      values.push(organizationId);
+      where.push(`EXISTS (SELECT 1 FROM member m WHERE m."userId" = u.id AND m."organizationId" = $${values.length})`);
+    } else if (platformRole !== 'superadmin') {
       values.push(activeOrganizationId);
       where.push(`EXISTS (SELECT 1 FROM member m WHERE m."userId" = u.id AND m."organizationId" = $${values.length})`);
     }
@@ -160,7 +180,7 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
     const offsetParam = `$${values.length}`;
 
     const data = await this.db.query<UserRow>(
-      `SELECT u.id, u.name, u.email, u."emailVerified" as "emailVerified", u.role, u.image, u.banned, u."banReason" as "banReason", u."banExpires" as "banExpires", u."createdAt" as "createdAt", u."updatedAt" as "updatedAt"
+      `SELECT ${USER_LIST_COLUMNS}
        FROM "user" u ${whereSql}
        ORDER BY u."createdAt" DESC
        LIMIT ${limitParam} OFFSET ${offsetParam}`,
@@ -231,7 +251,7 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
 
   async listRoles(): Promise<RoleMetaRow[]> {
     return this.db.query<RoleMetaRow>(
-      'SELECT name, display_name, description, color, is_system FROM roles ORDER BY is_system DESC, name ASC',
+      'SELECT name, display_name, description, color, is_default FROM roles ORDER BY is_default DESC, name ASC',
     );
   }
 

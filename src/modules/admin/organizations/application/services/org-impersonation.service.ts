@@ -2,6 +2,7 @@ import { Injectable, ForbiddenException, NotFoundException, BadRequestException 
 import { DatabaseService } from '../../../../../shared/infrastructure/database/database.module';
 import { OrgMember } from '../../api/dto';
 import { randomUUID } from 'crypto';
+import type { PlatformRole } from '../../../utils/admin.utils';
 
 // Unified Role Model - roles that can impersonate within an organization
 // - 'admin': Global platform administrator (can impersonate anyone)
@@ -43,7 +44,7 @@ export class OrgImpersonationService {
   async startImpersonation(params: {
     actorUserId: string;
     targetUserId: string;
-    platformRole: 'admin' | 'manager';
+    platformRole: PlatformRole;
     activeOrganizationId: string | null;
     organizationId?: string;
   }): Promise<{ sessionToken: string }> {
@@ -68,12 +69,13 @@ export class OrgImpersonationService {
       throw new NotFoundException('Target user not found');
     }
 
-    if (platformRole === 'admin') {
-      if (target.role === 'admin') {
+    if (platformRole === 'superadmin' || platformRole === 'admin') {
+      if (platformRole === 'admin' && target.role === 'admin') {
         throw new ForbiddenException('You cannot impersonate another admin');
       }
 
-      let resolvedOrganizationId = organizationId;
+      let resolvedOrganizationId =
+        platformRole === 'admin' ? organizationId ?? activeOrganizationId ?? undefined : organizationId;
 
       if (resolvedOrganizationId) {
         const targetMembership = await this.db.queryOne<{ id: string }>(
@@ -92,14 +94,11 @@ export class OrgImpersonationService {
            ORDER BY "organizationId" ASC`,
           [targetUserId],
         );
-        const distinctOrganizationIds = [...new Set(memberships.map((membership) => membership.organizationId))];
+        const distinctOrganizationIds = [...new Set(memberships.map((membership) => membership.organizationId))]
+          .sort((left, right) => left.localeCompare(right));
 
         if (distinctOrganizationIds.length === 0) {
           throw new BadRequestException('Target user must belong to an organization');
-        }
-
-        if (distinctOrganizationIds.length > 1) {
-          throw new BadRequestException('organizationId is required when target belongs to multiple organizations');
         }
 
         resolvedOrganizationId = distinctOrganizationIds[0];
@@ -118,7 +117,7 @@ export class OrgImpersonationService {
     }
 
     if (target.role !== 'member') {
-      throw new ForbiddenException('Managers can only impersonate members');
+      throw new ForbiddenException('Organization-scoped actors can only impersonate members');
     }
 
     const targetMembership = await this.db.queryOne<{ id: string }>(

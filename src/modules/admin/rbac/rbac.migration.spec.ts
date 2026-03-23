@@ -42,7 +42,12 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true)   // rbac_004 already run
         .mockResolvedValueOnce(true)   // rbac_005 already run
         .mockResolvedValueOnce(true)   // rbac_006 already run
-        .mockResolvedValueOnce(true);  // rbac_007 already run
+        .mockResolvedValueOnce(true)   // rbac_007 already run
+        .mockResolvedValueOnce(true)   // rbac_008 already run
+        .mockResolvedValueOnce(true)   // rbac_009 already run
+        .mockResolvedValueOnce(true)   // rbac_010 already run
+        .mockResolvedValueOnce(true)   // rbac_011 already run
+        .mockResolvedValueOnce(true);  // rbac_012 already run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -62,7 +67,12 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false)   // rbac_004 NOT run
         .mockResolvedValueOnce(true)    // rbac_005 already run
         .mockResolvedValueOnce(true)    // rbac_006 already run
-        .mockResolvedValueOnce(false);  // rbac_007 NOT run
+        .mockResolvedValueOnce(false)   // rbac_007 NOT run
+        .mockResolvedValueOnce(false)   // rbac_008 NOT run
+        .mockResolvedValueOnce(false)   // rbac_009 NOT run
+        .mockResolvedValueOnce(false)   // rbac_010 NOT run
+        .mockResolvedValueOnce(false)   // rbac_011 NOT run
+        .mockResolvedValueOnce(false);  // rbac_012 NOT run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -75,8 +85,23 @@ describe('RbacMigrationService', () => {
       expect(dbService.recordMigration).toHaveBeenCalledWith(
         'rbac_007_add_role_organization_scope',
       );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_008_redesign_superadmin_org_roles',
+      );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_009_normalize_org_default_role_permissions',
+      );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_010_remove_superadmin_org_memberships',
+      );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_011_add_manage_members_permission',
+      );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_012_assign_admin_full_permissions',
+      );
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('4 new'),
+        expect.stringContaining('9 new'),
       );
       consoleSpy.mockRestore();
     });
@@ -101,6 +126,21 @@ describe('RbacMigrationService', () => {
       );
       expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
         'rbac_007_add_role_organization_scope',
+      );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_008_redesign_superadmin_org_roles',
+      );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_009_normalize_org_default_role_permissions',
+      );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_010_remove_superadmin_org_memberships',
+      );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_011_add_manage_members_permission',
+      );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_012_assign_admin_full_permissions',
       );
     });
   });
@@ -136,6 +176,130 @@ describe('RbacMigrationService', () => {
       expect(dbService.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE member SET role = \'manager\''));
       expect(dbService.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE member SET role = \'member\''));
       expect(dbService.query).toHaveBeenCalledWith(expect.stringContaining('ALTER COLUMN role SET DEFAULT \'member\''));
+    });
+  });
+
+  describe('redesignSuperadminAndOrganizationRoles', () => {
+    it('migrates global admins to superadmin and seeds org-scoped default roles', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT id FROM organization')) {
+          return [{ id: 'org-1' }, { id: 'org-2' }];
+        }
+        if (sql.includes('SELECT id FROM permissions')) {
+          return [{ id: 'perm-1' }, { id: 'perm-2' }];
+        }
+        return [];
+      });
+
+      await service.redesignSuperadminAndOrganizationRoles();
+
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE "user" SET role = \'superadmin\' WHERE role = \'admin\''),
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining("DELETE FROM roles WHERE organization_id IS NULL AND name IN ('admin', 'manager', 'member')"),
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT id FROM organization'),
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('VALUES ($1, $2, $3, $4, $5, NULL)'),
+        ['superadmin', 'Superadmin', expect.any(String), 'red', true],
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('VALUES ($1, $2, $3, $4, $5, $6)'),
+        ['admin', 'Admin', expect.any(String), 'red', true, 'org-1'],
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('VALUES ($1, $2, $3, $4, $5, $6)'),
+        ['manager', 'Manager', expect.any(String), 'blue', true, 'org-1'],
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('VALUES ($1, $2, $3, $4, $5, $6)'),
+        ['member', 'Member', expect.any(String), 'gray', true, 'org-1'],
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('RBAC superadmin/org role redesign seeded'));
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('normalizeOrganizationDefaultRolePermissions', () => {
+    it('replaces stale manager/member role permissions with the approved org defaults', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT id FROM organization')) {
+          return [{ id: 'org-1' }];
+        }
+        return [];
+      });
+
+      dbService.queryOne
+        .mockResolvedValueOnce({ id: 'manager-role-1' })
+        .mockResolvedValueOnce({ id: 'perm-org-read' })
+        .mockResolvedValueOnce({ id: 'perm-org-update' })
+        .mockResolvedValueOnce({ id: 'perm-org-invite' })
+        .mockResolvedValueOnce({ id: 'perm-role-read' })
+        .mockResolvedValueOnce({ id: 'perm-session-read' })
+        .mockResolvedValueOnce({ id: 'perm-session-revoke' })
+        .mockResolvedValueOnce({ id: 'perm-user-create' })
+        .mockResolvedValueOnce({ id: 'perm-user-read' })
+        .mockResolvedValueOnce({ id: 'perm-user-update' })
+        .mockResolvedValueOnce({ id: 'member-role-1' })
+        .mockResolvedValueOnce({ id: 'perm-member-org-read' });
+
+      await service.normalizeOrganizationDefaultRolePermissions();
+
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM role_permissions'),
+        [
+          'manager-role-1',
+          'organization',
+          'read',
+          'organization',
+          'update',
+          'organization',
+          'invite',
+          'role',
+          'read',
+          'session',
+          'read',
+          'session',
+          'revoke',
+          'user',
+          'create',
+          'user',
+          'read',
+          'user',
+          'update',
+        ],
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM role_permissions'),
+        ['member-role-1', 'organization', 'read'],
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Organization default role permissions normalized'),
+      );
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('removeSuperadminOrganizationMemberships', () => {
+    it('deletes all organization memberships for users whose role includes superadmin', async () => {
+      await service.removeSuperadminOrganizationMemberships();
+
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM member'),
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('FROM "user"'),
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining("LIKE '%superadmin%'"),
+      );
     });
   });
 

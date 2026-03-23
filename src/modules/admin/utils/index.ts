@@ -1,6 +1,5 @@
 export {
   getPlatformRole,
-  requireAdminOrManager,
   getActiveOrganizationId,
   requireActiveOrganizationIdForManager,
   getAllowedRoleNamesForCreator,

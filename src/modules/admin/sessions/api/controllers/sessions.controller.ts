@@ -10,16 +10,15 @@ import {
 } from '@nestjs/common';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
-import { RolesGuard, Roles, PermissionsGuard, RequirePermissions } from '../../../../../shared';
+import { PermissionsGuard, RequirePermissions } from '../../../../../shared';
 import { SessionsService } from '../../application/services/sessions.service';
 import {
-  requireAdminOrManager,
+  getPlatformRole,
   requireActiveOrganizationIdForManager,
 } from '../../../users/utils/admin.utils';
 
 @Controller('api/admin/users')
-@UseGuards(RolesGuard, PermissionsGuard)
-@Roles('admin', 'manager')
+@UseGuards(PermissionsGuard)
 export class SessionsController {
   constructor(private readonly sessionsService: SessionsService) {}
 
@@ -32,7 +31,7 @@ export class SessionsController {
   @Get(':userId/sessions')
   @RequirePermissions('session:read')
   async listSessions(@Session() session: UserSession, @Param('userId') userId: string) {
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
     return this.sessionsService.listUserSessions({
       userId,
@@ -46,7 +45,7 @@ export class SessionsController {
   async revokeSession(@Session() session: UserSession, @Body() body: { sessionToken: string }) {
     this.validateRevokeSessionPayload(body);
 
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
     return this.sessionsService.revokeSession({ sessionToken: body.sessionToken }, platformRole, activeOrgId);
   }
@@ -54,7 +53,7 @@ export class SessionsController {
   @Post(':userId/sessions/revoke-all')
   @RequirePermissions('session:revoke')
   async revokeAll(@Session() session: UserSession, @Param('userId') userId: string) {
-    const platformRole = requireAdminOrManager(session);
+    const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
     return this.sessionsService.revokeAllSessions({ userId }, platformRole, activeOrgId);
   }
