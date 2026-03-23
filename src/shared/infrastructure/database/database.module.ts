@@ -323,6 +323,7 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
             DO $$ BEGIN
               ALTER TABLE roles RENAME COLUMN is_system TO is_default;
             EXCEPTION WHEN undefined_column THEN NULL;
+                      WHEN undefined_table THEN NULL;
             END $$;
           `);
         },
