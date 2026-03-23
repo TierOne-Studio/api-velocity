@@ -118,7 +118,7 @@ export class AdminService {
         displayName: r.display_name,
         description: r.description ?? undefined,
         color: r.color ?? undefined,
-        isSystem: r.is_system,
+        isDefault: r.is_default,
       })),
       allowedRoleNames,
       organizations,

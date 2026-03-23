@@ -272,6 +272,61 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
           `);
         },
       },
+      {
+        name: '006_drop_role_check_constraints',
+        up: async () => {
+          // Remove the hardcoded admin|manager|member check constraints so that
+          // dynamic org-role names can be stored.
+          await this.query(`
+            ALTER TABLE member
+              DROP CONSTRAINT IF EXISTS member_role_allowed_values_chk
+          `);
+          await this.query(`
+            ALTER TABLE invitation
+              DROP CONSTRAINT IF EXISTS invitation_role_allowed_values_chk
+          `);
+          // Change user.role default from 'member' to NULL — org roles no longer
+          // live in user.role; only 'superadmin' will be written there.
+          await this.query(`
+            ALTER TABLE "user" ALTER COLUMN role SET DEFAULT NULL
+          `);
+        },
+      },
+      {
+        name: '007_restrict_user_role_to_platform',
+        up: async () => {
+          // Backfill: clear org-role values from user.role so only superadmins
+          // have a non-null value.
+          await this.query(`
+            UPDATE "user"
+            SET role = NULL, "updatedAt" = NOW()
+            WHERE role IS NOT NULL
+              AND role NOT IN ('superadmin')
+          `);
+          // Add a check constraint that enforces user.role to be superadmin or null.
+          await this.query(`
+            DO $$ BEGIN
+              ALTER TABLE "user"
+                ADD CONSTRAINT user_role_platform_only_chk
+                CHECK (role IS NULL OR role = 'superadmin') NOT VALID;
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$;
+          `);
+        },
+      },
+      {
+        name: '008_rename_is_system_to_is_default',
+        up: async () => {
+          // Rename the is_system column to is_default on the roles table.
+          // is_default = true means "seeded as a starter default"; purely informational.
+          await this.query(`
+            DO $$ BEGIN
+              ALTER TABLE roles RENAME COLUMN is_system TO is_default;
+            EXCEPTION WHEN undefined_column THEN NULL;
+            END $$;
+          `);
+        },
+      },
     ];
 
     // Run pending migrations

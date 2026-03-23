@@ -15,7 +15,7 @@ import {
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { PermissionsGuard, RequirePermissions } from '../../../../../shared';
-import { AdminOrganizationsService, filterAssignableRoles, getRoleLevel } from '../../application/services/admin-organizations.service';
+import { AdminOrganizationsService } from '../../application/services/admin-organizations.service';
 import { PaginationQuery, UpdateOrganizationDto } from '../../api/dto';
 import { getPlatformRole, type PlatformRole } from '../../../utils/admin.utils';
 
@@ -29,7 +29,6 @@ import { getPlatformRole, type PlatformRole } from '../../../utils/admin.utils';
 export class AdminOrganizationsController {
   constructor(private readonly orgService: AdminOrganizationsService) {}
 
-  private readonly allowedMemberRoles = ['admin', 'manager', 'member'] as const;
   private readonly slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
   private getSessionInfo(session: UserSession): { role: PlatformRole; activeOrgId: string | null } {
@@ -75,14 +74,14 @@ export class AdminOrganizationsController {
       throw new HttpException('userId is required', HttpStatus.BAD_REQUEST);
     }
 
-    if (!body?.role || !this.allowedMemberRoles.includes(body.role as (typeof this.allowedMemberRoles)[number])) {
-      throw new HttpException('invalid role', HttpStatus.BAD_REQUEST);
+    if (!body?.role?.trim()) {
+      throw new HttpException('role is required', HttpStatus.BAD_REQUEST);
     }
   }
 
   private validateUpdateMemberRolePayload(body: { role: string }): void {
-    if (!body?.role || !this.allowedMemberRoles.includes(body.role as (typeof this.allowedMemberRoles)[number])) {
-      throw new HttpException('invalid role', HttpStatus.BAD_REQUEST);
+    if (!body?.role?.trim()) {
+      throw new HttpException('role is required', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -108,8 +107,8 @@ export class AdminOrganizationsController {
       throw new HttpException('invalid email', HttpStatus.BAD_REQUEST);
     }
 
-    if (!body?.role || !this.allowedMemberRoles.includes(body.role as (typeof this.allowedMemberRoles)[number])) {
-      throw new HttpException('invalid role', HttpStatus.BAD_REQUEST);
+    if (!body?.role?.trim()) {
+      throw new HttpException('role is required', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -170,9 +169,13 @@ export class AdminOrganizationsController {
    */
   @Get('roles-metadata')
   @RequirePermissions('organization:read')
-  async getRolesMetadata(@Session() session: UserSession) {
-    const { role } = this.getSessionInfo(session);
-    return this.orgService.getRoles(role);
+  async getRolesMetadata(
+    @Session() session: UserSession,
+    @Query('organizationId') organizationId?: string,
+  ) {
+    const { role, activeOrgId } = this.getSessionInfo(session);
+    const targetOrgId = role === 'superadmin' && organizationId?.trim() ? organizationId.trim() : activeOrgId;
+    return this.orgService.getRoles(targetOrgId, role);
   }
 
   /**
@@ -275,7 +278,7 @@ export class AdminOrganizationsController {
   async createInvitation(
     @Session() session: UserSession,
     @Param('id') id: string,
-    @Body() body: { email: string; role: 'admin' | 'manager' | 'member' },
+    @Body() body: { email: string; role: string },
   ) {
     this.validateCreateInvitationPayload(body);
 
@@ -332,15 +335,6 @@ export class AdminOrganizationsController {
     this.requireActiveOrgForManager(role, activeOrgId);
     this.assertManagerCanAccessOrg(role, activeOrgId, id);
 
-    // Validate that the requester can assign the requested role
-    const requestedRoleLevel = getRoleLevel(body.role);
-    const requesterRoleLevel = getRoleLevel(role);
-    if (requestedRoleLevel > requesterRoleLevel) {
-      throw new ForbiddenException(
-        `Cannot assign role '${body.role}' — exceeds your permission level`,
-      );
-    }
-
     const org = await this.orgService.findById(id);
     if (!org) {
       throw new HttpException('Organization not found', HttpStatus.NOT_FOUND);
@@ -358,7 +352,7 @@ export class AdminOrganizationsController {
     @Session() session: UserSession,
     @Param('id') id: string,
     @Param('memberId') memberId: string,
-    @Body() body: { role: 'admin' | 'manager' | 'member' },
+    @Body() body: { role: string },
   ) {
     this.validateUpdateMemberRolePayload(body);
 

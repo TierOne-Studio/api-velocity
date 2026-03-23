@@ -36,7 +36,7 @@ export interface RoleMetaRow {
   display_name: string;
   description: string | null;
   color: string | null;
-  is_system: boolean;
+  is_default: boolean;
 }
 
 export interface OrgBasicRow {

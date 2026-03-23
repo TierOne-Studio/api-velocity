@@ -317,15 +317,32 @@ describe('AdminOrgDatabaseRepository', () => {
     });
   });
 
-  describe('countAdmins', () => {
+  describe('countMembersWithManageCapability', () => {
     it('returns 0 when queryOne returns null', async () => {
       mockQueryOne.mockResolvedValue(null);
-      expect(await repo.countAdmins('org-1')).toBe(0);
+      expect(await repo.countMembersWithManageCapability('org-1')).toBe(0);
     });
 
     it('parses count string', async () => {
       mockQueryOne.mockResolvedValue({ count: '5' });
-      expect(await repo.countAdmins('org-1')).toBe(5);
+      expect(await repo.countMembersWithManageCapability('org-1')).toBe(5);
+    });
+  });
+
+  describe('roleGrantsManagePermission', () => {
+    it('returns true when role has manage-members permission', async () => {
+      mockQueryOne.mockResolvedValue({ has_manage: 'true' });
+      expect(await repo.roleGrantsManagePermission('admin', 'org-1')).toBe(true);
+    });
+
+    it('returns false when role does not have manage-members permission', async () => {
+      mockQueryOne.mockResolvedValue({ has_manage: 'false' });
+      expect(await repo.roleGrantsManagePermission('member', 'org-1')).toBe(false);
+    });
+
+    it('returns false when queryOne returns null', async () => {
+      mockQueryOne.mockResolvedValue(null);
+      expect(await repo.roleGrantsManagePermission('unknown', 'org-1')).toBe(false);
     });
   });
 
@@ -474,10 +491,16 @@ describe('AdminOrgDatabaseRepository', () => {
   // ─── getRoles ───────────────────────────────────────────────────────────────
 
   describe('getRoles', () => {
-    it('returns all role rows', async () => {
-      const roles = [{ name: 'admin', display_name: 'Admin', is_system: true }];
+    it('returns org-scoped role rows when organizationId is provided', async () => {
+      const roles = [{ name: 'admin', display_name: 'Admin', is_default: true }];
       mockQuery.mockResolvedValue(roles);
-      expect(await repo.getRoles()).toEqual(roles);
+      expect(await repo.getRoles('org-1')).toEqual(roles);
+    });
+
+    it('returns global role rows when organizationId is null', async () => {
+      const roles = [{ name: 'superadmin', display_name: 'Superadmin', is_default: true }];
+      mockQuery.mockResolvedValue(roles);
+      expect(await repo.getRoles(null)).toEqual(roles);
     });
   });
 });

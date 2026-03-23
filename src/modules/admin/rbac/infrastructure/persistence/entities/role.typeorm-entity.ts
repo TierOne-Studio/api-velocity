@@ -26,8 +26,8 @@ export class RoleTypeOrmEntity {
   @Column({ length: 20, default: 'gray' })
   color: string;
 
-  @Column({ name: 'is_system', default: false })
-  isSystem: boolean;
+  @Column({ name: 'is_default', default: false })
+  isDefault: boolean;
 
   @Column({ name: 'organization_id', type: 'text', nullable: true })
   organizationId: string | null;

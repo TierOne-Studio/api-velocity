@@ -45,7 +45,9 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true)   // rbac_007 already run
         .mockResolvedValueOnce(true)   // rbac_008 already run
         .mockResolvedValueOnce(true)   // rbac_009 already run
-        .mockResolvedValueOnce(true);  // rbac_010 already run
+        .mockResolvedValueOnce(true)   // rbac_010 already run
+        .mockResolvedValueOnce(true)   // rbac_011 already run
+        .mockResolvedValueOnce(true);  // rbac_012 already run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -68,7 +70,9 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false)   // rbac_007 NOT run
         .mockResolvedValueOnce(false)   // rbac_008 NOT run
         .mockResolvedValueOnce(false)   // rbac_009 NOT run
-        .mockResolvedValueOnce(false);  // rbac_010 NOT run
+        .mockResolvedValueOnce(false)   // rbac_010 NOT run
+        .mockResolvedValueOnce(false)   // rbac_011 NOT run
+        .mockResolvedValueOnce(false);  // rbac_012 NOT run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -90,8 +94,14 @@ describe('RbacMigrationService', () => {
       expect(dbService.recordMigration).toHaveBeenCalledWith(
         'rbac_010_remove_superadmin_org_memberships',
       );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_011_add_manage_members_permission',
+      );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_012_assign_admin_full_permissions',
+      );
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('7 new'),
+        expect.stringContaining('9 new'),
       );
       consoleSpy.mockRestore();
     });
@@ -125,6 +135,12 @@ describe('RbacMigrationService', () => {
       );
       expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
         'rbac_010_remove_superadmin_org_memberships',
+      );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_011_add_manage_members_permission',
+      );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_012_assign_admin_full_permissions',
       );
     });
   });

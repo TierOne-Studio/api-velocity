@@ -47,7 +47,7 @@ describe('AdminOrganizationsController', () => {
 
       await controller.getRolesMetadata(managerSession);
 
-      expect(orgService.getRoles).toHaveBeenCalledWith('manager');
+      expect(orgService.getRoles).toHaveBeenCalledWith('org-1', 'manager');
     });
 
     it('passes admin platform role to service', async () => {
@@ -58,7 +58,7 @@ describe('AdminOrganizationsController', () => {
 
       await controller.getRolesMetadata(adminSession);
 
-      expect(orgService.getRoles).toHaveBeenCalledWith('admin');
+      expect(orgService.getRoles).toHaveBeenCalledWith('org-1', 'admin');
     });
   });
 
@@ -405,27 +405,12 @@ describe('AdminOrganizationsController', () => {
       ).rejects.toThrow('Organization not found');
     });
 
-    it('throws ForbiddenException when manager tries to assign admin role — covers role level branch', async () => {
-      const managerSession = {
-        user: { role: 'manager' }, session: { activeOrganizationId: 'org-1' },
-      } as unknown as UserSession;
-
-      await expect(
-        controller.addMember(managerSession, 'org-1', { userId: 'u-1', role: 'admin' }),
-      ).rejects.toThrow("Cannot assign role 'admin'");
-    });
-
     it('throws when userId is missing — covers !userId branch', async () => {
       await expect(
         controller.addMember(adminSession, 'org-1', { userId: '', role: 'member' }),
       ).rejects.toThrow('userId is required');
     });
 
-    it('throws when role is invalid — covers invalid role branch', async () => {
-      await expect(
-        controller.addMember(adminSession, 'org-1', { userId: 'u-1', role: 'superuser' }),
-      ).rejects.toThrow('invalid role');
-    });
   });
 
   describe('update', () => {
@@ -530,22 +515,5 @@ describe('AdminOrganizationsController', () => {
       ).rejects.toThrow('invalid email');
     });
 
-    it('throws when role is invalid', async () => {
-      await expect(
-        controller.createInvitation(adminSession, 'org-1', { email: 'a@b.com', role: 'superuser' as any }),
-      ).rejects.toThrow('invalid role');
-    });
-  });
-
-  describe('validateUpdateMemberRolePayload — branch coverage', () => {
-    const adminSession = {
-      user: { role: 'superadmin' }, session: { activeOrganizationId: null },
-    } as unknown as UserSession;
-
-    it('throws when role is invalid', async () => {
-      await expect(
-        controller.updateMemberRole(adminSession, 'org-1', 'm-1', { role: 'superuser' as any }),
-      ).rejects.toThrow('invalid role');
-    });
   });
 });

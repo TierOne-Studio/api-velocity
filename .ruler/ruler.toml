@@ -1,0 +1,54 @@
+# Default agents to run when --agents is not specified
+# Uses case-insensitive substring matching
+default_agents = ["copilot", "claude", "windsurf", "cursor", "codex"]
+
+# --- Global MCP Server Configuration ---
+[mcp]
+# Enable/disable MCP propagation globally (default: true)
+enabled = true
+# Global merge strategy: 'merge' or 'overwrite' (default: 'merge')
+merge_strategy = "merge"
+
+# Define shared MCP servers once under [mcp_servers.<name>].
+# Ruler will propagate the same MCP server set to every compatible agent,
+# unless you add an agent-specific [agents.<name>.mcp] override.
+#
+# Example:
+# [mcp_servers.filesystem]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "."]
+#
+# [mcp_servers.git]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-git", "--repository", "."]
+
+# --- Global .gitignore Configuration ---
+[gitignore]
+# Enable/disable automatic .gitignore updates (default: true)
+enabled = true
+
+[skills]
+enabled = true
+
+# --- Agent-Specific Configurations ---
+[agents.copilot]
+enabled = true
+output_path = ".github/copilot-instructions.md"
+
+[agents.claude]
+enabled = true
+output_path = "CLAUDE.md"
+
+# OpenAI Codex CLI agent and MCP config
+[agents.codex]
+enabled = true
+output_path = "AGENTS.md"
+output_path_config = ".codex/config.toml"
+
+[agents.cursor]
+enabled = true
+output_path = "AGENTS.md"
+
+[agents.windsurf]
+enabled = true
+output_path = "AGENTS.md"

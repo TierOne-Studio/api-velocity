@@ -8,7 +8,7 @@ import { RoleService } from '../../modules/admin/rbac/application/services';
 describe('PermissionsGuard', () => {
   let guard: PermissionsGuard;
   let reflector: Reflector;
-  let roleService: jest.Mocked<Pick<RoleService, 'getUserPermissions'>>;
+  let roleService: jest.Mocked<Pick<RoleService, 'getUserPermissions' | 'getUserActiveMemberRole'>>;
 
   const createMockExecutionContext = (session: unknown): ExecutionContext => {
     return {
@@ -30,6 +30,7 @@ describe('PermissionsGuard', () => {
   beforeEach(async () => {
     const mockRoleService = {
       getUserPermissions: jest.fn(),
+      getUserActiveMemberRole: jest.fn<() => Promise<string | null>>().mockResolvedValue(null),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -121,6 +122,20 @@ describe('PermissionsGuard', () => {
         session: { activeOrganizationId: 'org-1' },
       });
       await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('resolves org membership role when user.role is null (post-Phase0 users)', async () => {
+      roleService.getUserActiveMemberRole.mockResolvedValueOnce('admin');
+      roleService.getUserPermissions.mockResolvedValueOnce([
+        makePermission('user', 'read'),
+      ]);
+      const context = createMockExecutionContext({
+        user: { id: 'u-1', role: null },
+        session: { activeOrganizationId: 'org-1' },
+      });
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(roleService.getUserActiveMemberRole).toHaveBeenCalledWith('u-1', 'org-1');
+      expect(roleService.getUserPermissions).toHaveBeenCalledWith('admin', 'org-1');
     });
   });
 

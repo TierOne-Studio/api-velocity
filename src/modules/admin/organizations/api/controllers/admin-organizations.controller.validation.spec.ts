@@ -50,7 +50,11 @@ describe('AdminOrganizationsController validation', () => {
     });
   });
 
-  it('rejects addMember when role is invalid', async () => {
+  it('rejects addMember when role does not exist (service-layer validation)', async () => {
+    orgService.findById.mockResolvedValue({ id: 'org-1' } as never);
+    orgService.addMember.mockRejectedValue(
+      Object.assign(new Error('Role does not exist in this organization'), { status: HttpStatus.BAD_REQUEST }),
+    );
     await expect(
       controller.addMember(adminSession, 'org-1', {
         userId: 'user-1',
@@ -61,10 +65,13 @@ describe('AdminOrganizationsController validation', () => {
     });
   });
 
-  it('rejects updateMemberRole when role is invalid', async () => {
+  it('rejects updateMemberRole when role does not exist (service-layer validation)', async () => {
+    orgService.updateMemberRole.mockRejectedValue(
+      Object.assign(new Error('Role does not exist in this organization'), { status: HttpStatus.BAD_REQUEST }),
+    );
     await expect(
       controller.updateMemberRole(adminSession, 'org-1', 'member-1', {
-        role: 'owner' as 'admin' | 'manager' | 'member',
+        role: 'owner' as any,
       }),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,

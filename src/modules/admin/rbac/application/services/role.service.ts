@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from '@nestjs/common';
 import { Role, Permission } from '../../domain/entities/role.entity';
 import { CreateRoleDto, UpdateRoleDto } from '../../api/dto';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
@@ -54,7 +54,10 @@ export class RoleService {
       return null;
     }
 
+    const normalizedName = dto.name?.trim().toLowerCase();
+
     const hasAnyField =
+      normalizedName !== undefined ||
       dto.displayName !== undefined ||
       dto.description !== undefined ||
       dto.color !== undefined;
@@ -63,19 +66,39 @@ export class RoleService {
       return existing;
     }
 
-    return this.roleRepo.update(id, dto);
+    if (normalizedName && normalizedName !== existing.name) {
+      if (!existing.organizationId) {
+        throw new ForbiddenException('Cannot rename global role');
+      }
+
+      const duplicate = await this.roleRepo.findByNameInOrganization(normalizedName, existing.organizationId);
+      if (duplicate && duplicate.id !== existing.id) {
+        throw new ConflictException('Role name already exists');
+      }
+    }
+
+    return this.roleRepo.update(id, {
+      ...dto,
+      name: normalizedName,
+    });
   }
 
   /**
-   * Delete a role (only non-system roles)
+   * Delete an organization-scoped role when it is no longer referenced.
    */
   async delete(id: string): Promise<void> {
     const existing = await this.roleRepo.findById(id);
     if (!existing) {
       throw new NotFoundException('Role not found');
     }
-    if (existing.isSystem) {
-      throw new ForbiddenException('Cannot delete system role');
+
+    if (!existing.organizationId) {
+      throw new ForbiddenException('Cannot delete global role');
+    }
+
+    const usage = await this.roleRepo.getUsageSummary(id);
+    if (usage.users > 0 || usage.members > 0 || usage.invitations > 0) {
+      throw new ConflictException('Role is still assigned and cannot be deleted');
     }
 
     await this.roleRepo.remove(id);
@@ -114,7 +137,15 @@ export class RoleService {
   /**
    * Check if a role has a specific permission
    */
-  async hasPermission(roleName: string, resource: string, action: string): Promise<boolean> {
-    return this.roleRepo.hasPermission(roleName, resource, action);
+  async hasPermission(roleName: string, resource: string, action: string, organizationId?: string | null): Promise<boolean> {
+    return this.roleRepo.hasPermission(roleName, resource, action, organizationId);
+  }
+
+  /**
+   * Get the user's membership role in the given organization.
+   * Returns null when the user is not a member.
+   */
+  async getUserActiveMemberRole(userId: string, organizationId: string): Promise<string | null> {
+    return this.roleRepo.getMemberRoleInOrg(userId, organizationId);
   }
 }

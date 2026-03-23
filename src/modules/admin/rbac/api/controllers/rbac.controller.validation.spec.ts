@@ -59,12 +59,20 @@ describe('RbacController validation', () => {
     });
   });
 
-  it('rejects createRole when name is the reserved legacy user role', async () => {
+  it('rejects createRole when name is the reserved global superadmin role', async () => {
     await expect(
-      controller.createRole(session, { name: 'user', displayName: 'User' } as any, undefined),
+      controller.createRole(session, { name: 'superadmin', displayName: 'Superadmin' } as any, undefined),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
+  });
+
+  it('allows updateRole when only name is provided', async () => {
+    roleService.update.mockResolvedValue({ id: 'role-1', name: 'owner' } as any);
+
+    await expect(
+      controller.updateRole('role-1', { name: 'owner' }),
+    ).resolves.toEqual({ data: { id: 'role-1', name: 'owner' } });
   });
 
   it('rejects updateRole when no updatable fields are provided', async () => {

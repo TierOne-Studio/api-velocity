@@ -47,15 +47,20 @@ export class PermissionsGuard implements CanActivate {
     }
 
     const platformRole = getPlatformRole(session);
+    const activeOrganizationId = getActiveOrganizationId(session);
 
     if (platformRole === 'superadmin') {
       return true;
     }
 
-    const userPermissions = await this.getUserPermissions(
-      platformRole,
-      getActiveOrganizationId(session),
-    );
+    // user.role is NULL for non-superadmins after Phase 0 migration; resolve actual org membership role
+    let effectiveRole: string = platformRole;
+    if (activeOrganizationId && session.user?.id) {
+      const memberRole = await this.roleService.getUserActiveMemberRole(session.user.id, activeOrganizationId);
+      if (memberRole) effectiveRole = memberRole;
+    }
+
+    const userPermissions = await this.getUserPermissions(effectiveRole, activeOrganizationId);
 
     const hasAllPermissions = requiredPermissions.every((permission) =>
       userPermissions.includes(permission),

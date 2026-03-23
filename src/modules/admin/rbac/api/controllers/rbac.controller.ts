@@ -32,7 +32,7 @@ export class RbacController {
 
   private validateCreateRolePayload(dto: CreateRoleDto): void {
     const normalizedName = dto?.name?.trim().toLowerCase();
-    const reservedNames = new Set(['admin', 'manager', 'member', 'user']);
+    const reservedNames = new Set(['superadmin', 'user']);
 
     if (!normalizedName) {
       throw new HttpException('Role name is required', HttpStatus.BAD_REQUEST);
@@ -46,13 +46,24 @@ export class RbacController {
   }
 
   private validateUpdateRolePayload(dto: UpdateRoleDto): void {
+    const normalizedName = dto.name?.trim().toLowerCase();
+    const reservedNames = new Set(['superadmin', 'user']);
     const hasAnyField =
+      normalizedName !== undefined ||
       dto.displayName !== undefined ||
       dto.description !== undefined ||
       dto.color !== undefined;
 
     if (!hasAnyField) {
       throw new HttpException('At least one field is required to update a role', HttpStatus.BAD_REQUEST);
+    }
+
+    if (normalizedName !== undefined && !normalizedName) {
+      throw new HttpException('Role name is required', HttpStatus.BAD_REQUEST);
+    }
+
+    if (normalizedName && reservedNames.has(normalizedName)) {
+      throw new HttpException(`Role name ${normalizedName} is reserved`, HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -110,6 +121,7 @@ export class RbacController {
     }
 
     const userRole = getPlatformRole(session);
+    const activeOrganizationId = getActiveOrganizationId(session);
 
     if (userRole === 'superadmin') {
       const allPermissions = await this.permissionService.findAll();
@@ -118,10 +130,14 @@ export class RbacController {
       };
     }
 
-    const permissions = await this.roleService.getUserPermissions(
-      userRole,
-      getActiveOrganizationId(session),
-    );
+    // user.role is NULL for non-superadmins after Phase 0 migration; resolve actual org membership role
+    let effectiveRole: string = userRole;
+    if (activeOrganizationId && session.user.id) {
+      const memberRole = await this.roleService.getUserActiveMemberRole(session.user.id, activeOrganizationId);
+      if (memberRole) effectiveRole = memberRole;
+    }
+
+    const permissions = await this.roleService.getUserPermissions(effectiveRole, activeOrganizationId);
     return {
       data: permissions.map((p) => `${p.resource}:${p.action}`),
     };
@@ -189,11 +205,23 @@ export class RbacController {
   async updateRole(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
     this.validateUpdateRolePayload(dto);
 
-    const role = await this.roleService.update(id, dto);
-    if (!role) {
-      throw new HttpException('Role not found', HttpStatus.NOT_FOUND);
+    try {
+      const role = await this.roleService.update(id, dto);
+      if (!role) {
+        throw new HttpException('Role not found', HttpStatus.NOT_FOUND);
+      }
+      return { data: role };
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === 'Cannot rename global role') {
+          throw new HttpException(error.message, HttpStatus.FORBIDDEN);
+        }
+        if (error.message === 'Role name already exists') {
+          throw new HttpException(error.message, HttpStatus.CONFLICT);
+        }
+      }
+      throw error;
     }
-    return { data: role };
   }
 
   /**
@@ -207,11 +235,14 @@ export class RbacController {
       return { success: true };
     } catch (error) {
       if (error instanceof Error) {
-        if (error.message === 'Cannot delete system role') {
+        if (error.message === 'Cannot delete global role') {
           throw new HttpException(error.message, HttpStatus.FORBIDDEN);
         }
         if (error.message === 'Role not found') {
           throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+        }
+        if (error.message === 'Role is still assigned and cannot be deleted') {
+          throw new HttpException(error.message, HttpStatus.CONFLICT);
         }
       }
       throw error;

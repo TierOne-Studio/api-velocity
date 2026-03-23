@@ -7,6 +7,7 @@ export interface Role {
   displayName: string;
   description: string | null;
   color: string;
+  isDefault: boolean;
   isSystem: boolean;
   organizationId: string | null;
   createdAt: Date;
@@ -47,7 +48,7 @@ export interface RoleRow {
   display_name: string;
   description: string | null;
   color: string;
-  is_system: boolean;
+  is_default: boolean;
   organization_id: string | null;
   created_at: Date;
   updated_at: Date;
@@ -70,7 +71,8 @@ export function rowToRole(row: RoleRow): Role {
     displayName: row.display_name,
     description: row.description,
     color: row.color,
-    isSystem: row.is_system,
+    isDefault: row.is_default,
+    isSystem: !row.organization_id,
     organizationId: row.organization_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

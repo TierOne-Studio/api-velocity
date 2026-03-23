@@ -35,11 +35,12 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async findUserRole(userId: string): Promise<string | null> {
-    const row = await this.db.queryOne<{ role: string }>(
+    const row = await this.db.queryOne<{ role: string | null }>(
       'SELECT role FROM "user" WHERE id = $1',
       [userId],
     );
-    return row?.role ?? null;
+    if (!row) return null; // user not found
+    return row.role ?? 'member'; // null platform role → treat as member-level
   }
 
   async findUserById(userId: string): Promise<UserRow | null> {
@@ -250,7 +251,7 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
 
   async listRoles(): Promise<RoleMetaRow[]> {
     return this.db.query<RoleMetaRow>(
-      'SELECT name, display_name, description, color, is_system FROM roles ORDER BY is_system DESC, name ASC',
+      'SELECT name, display_name, description, color, is_default FROM roles ORDER BY is_default DESC, name ASC',
     );
   }
 

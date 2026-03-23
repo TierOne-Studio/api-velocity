@@ -24,16 +24,26 @@ const mockPermRepo = {
   findBy: mockPermFindBy,
 };
 
+const mockQueryBuilder = {
+  setLock: jest.fn<any>().mockReturnThis(),
+  where: jest.fn<any>().mockReturnThis(),
+  getOne: jest.fn<any>(),
+};
+
 const mockTransactionManager = {
   findOne: jest.fn<any>(),
   findBy: jest.fn<any>(),
+  query: jest.fn<any>(),
+  update: jest.fn<any>(),
   save: jest.fn<any>(),
+  delete: jest.fn<any>(),
+  createQueryBuilder: jest.fn<any>().mockReturnValue(mockQueryBuilder),
 };
 
 const mockDataSource = {
   transaction: jest.fn<any>().mockImplementation(
-    async (fn: (manager: typeof mockTransactionManager) => Promise<void>) => {
-      await fn(mockTransactionManager);
+    async (fn: (manager: typeof mockTransactionManager) => Promise<unknown>) => {
+      return fn(mockTransactionManager);
     },
   ),
   query: jest.fn<any>(),
@@ -48,7 +58,7 @@ describe('TypeOrmRoleRepository', () => {
     displayName: 'Admin',
     description: 'Admin role',
     color: 'red',
-    isSystem: true,
+    isDefault: true,
     organizationId: 'org-1',
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-01-01'),
@@ -60,7 +70,8 @@ describe('TypeOrmRoleRepository', () => {
     displayName: 'Admin',
     description: 'Admin role',
     color: 'red',
-    isSystem: true,
+    isDefault: true,
+    isSystem: false,
     organizationId: 'org-1',
     createdAt: roleEntity.createdAt,
     updatedAt: roleEntity.updatedAt,
@@ -68,10 +79,13 @@ describe('TypeOrmRoleRepository', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockQueryBuilder.setLock.mockReturnThis();
+    mockQueryBuilder.where.mockReturnThis();
+    mockTransactionManager.createQueryBuilder.mockReturnValue(mockQueryBuilder);
     repo = new TypeOrmRoleRepository(mockRoleRepo as any, mockPermRepo as any, mockDataSource as any);
     mockDataSource.transaction.mockImplementation(
-      async (fn: (manager: typeof mockTransactionManager) => Promise<void>) => {
-        await fn(mockTransactionManager);
+      async (fn: (manager: typeof mockTransactionManager) => Promise<unknown>) => {
+        return fn(mockTransactionManager);
       },
     );
   });
@@ -84,7 +98,7 @@ describe('TypeOrmRoleRepository', () => {
       expect(await repo.findAll('org-1')).toEqual([roleMapped]);
       expect(mockRoleFind).toHaveBeenCalledWith({
         where: { organizationId: 'org-1' },
-        order: { isSystem: 'DESC', name: 'ASC' },
+        order: { isDefault: 'DESC', name: 'ASC' },
       });
     });
 
@@ -92,7 +106,7 @@ describe('TypeOrmRoleRepository', () => {
       mockRoleFind.mockResolvedValue([roleEntity]);
       expect(await repo.findAll(null)).toEqual([roleMapped]);
       expect(mockRoleFind).toHaveBeenCalledWith({
-        order: { organizationId: 'ASC', isSystem: 'DESC', name: 'ASC' },
+        order: { organizationId: 'ASC', isDefault: 'DESC', name: 'ASC' },
       });
     });
 
@@ -154,36 +168,79 @@ describe('TypeOrmRoleRepository', () => {
 
   describe('update', () => {
     it('applies partial fields and returns mapped role', async () => {
-      mockRoleUpdate.mockResolvedValue(undefined);
-      mockRoleFindOne.mockResolvedValue(roleEntity);
+      mockTransactionManager.findOne.mockResolvedValue(roleEntity);
+      mockTransactionManager.update.mockResolvedValue(undefined);
+      mockTransactionManager.findOne.mockResolvedValueOnce(roleEntity).mockResolvedValueOnce(roleEntity);
       const result = await repo.update('r-1', { displayName: 'Super Admin', color: 'blue' });
       expect(result).toEqual(roleMapped);
-      expect(mockRoleUpdate).toHaveBeenCalledWith('r-1', expect.objectContaining({ displayName: 'Super Admin', color: 'blue' }));
+      expect(mockTransactionManager.update).toHaveBeenCalledWith(
+        expect.anything(),
+        'r-1',
+        expect.objectContaining({ displayName: 'Super Admin', color: 'blue' }),
+      );
     });
 
     it('returns null when role not found after update', async () => {
-      mockRoleUpdate.mockResolvedValue(undefined);
-      mockRoleFindOne.mockResolvedValue(null);
+      mockTransactionManager.findOne.mockResolvedValue(null);
       expect(await repo.update('nope', { displayName: 'X' })).toBeNull();
     });
 
     it('skips undefined fields in partial', async () => {
-      mockRoleUpdate.mockResolvedValue(undefined);
-      mockRoleFindOne.mockResolvedValue(roleEntity);
+      mockTransactionManager.findOne.mockResolvedValueOnce(roleEntity).mockResolvedValueOnce(roleEntity);
+      mockTransactionManager.update.mockResolvedValue(undefined);
       await repo.update('r-1', { description: 'new desc' });
-      const [, partial] = (mockRoleUpdate as jest.Mock).mock.calls[0] as [string, object];
+      const [, , partial] = (mockTransactionManager.update as jest.Mock).mock.calls[0] as [unknown, string, object];
       expect(partial).not.toHaveProperty('displayName');
       expect(partial).not.toHaveProperty('color');
+    });
+
+    it('propagates a role rename to member and invitation rows only (not user)', async () => {
+      mockTransactionManager.findOne
+        .mockResolvedValueOnce(roleEntity)
+        .mockResolvedValueOnce({ ...roleEntity, name: 'owner' });
+      mockTransactionManager.update.mockResolvedValue(undefined);
+      mockTransactionManager.query.mockResolvedValue(undefined);
+
+      const result = await repo.update('r-1', { name: 'owner' });
+
+      expect(result).toEqual({ ...roleMapped, name: 'owner' });
+      expect(mockTransactionManager.query).toHaveBeenCalledTimes(2);
+      expect((mockTransactionManager.query as jest.Mock).mock.calls[0][0]).toContain('UPDATE member SET role = $1');
+      expect((mockTransactionManager.query as jest.Mock).mock.calls[1][0]).toContain('UPDATE invitation SET role = $1');
     });
   });
 
   // ─── remove ──────────────────────────────────────────────────────────────────
 
   describe('remove', () => {
-    it('calls delete with role id', async () => {
-      mockRoleDelete.mockResolvedValue(undefined);
+    it('deletes role via transaction with pessimistic lock', async () => {
+      mockQueryBuilder.getOne.mockResolvedValue({ id: 'r-1', name: 'admin' });
+      mockTransactionManager.delete.mockResolvedValue(undefined);
       await repo.remove('r-1');
-      expect(mockRoleDelete).toHaveBeenCalledWith('r-1');
+      expect(mockTransactionManager.createQueryBuilder).toHaveBeenCalled();
+      expect(mockQueryBuilder.setLock).toHaveBeenCalledWith('pessimistic_write');
+      expect(mockTransactionManager.delete).toHaveBeenCalledWith(expect.anything(), 'r-1');
+    });
+
+    it('does nothing when role is not found', async () => {
+      mockQueryBuilder.getOne.mockResolvedValue(null);
+      await repo.remove('ghost');
+      expect(mockTransactionManager.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getUsageSummary', () => {
+    it('returns zeroes when role is missing', async () => {
+      mockRoleFindOne.mockResolvedValue(null);
+
+      await expect(repo.getUsageSummary('missing')).resolves.toEqual({ users: 0, members: 0, invitations: 0 });
+    });
+
+    it('returns organization-scoped usage counts', async () => {
+      mockRoleFindOne.mockResolvedValue(roleEntity);
+      mockDataSource.query.mockResolvedValue([{ users: '1', members: '2', invitations: '3' }]);
+
+      await expect(repo.getUsageSummary('r-1')).resolves.toEqual({ users: 1, members: 2, invitations: 3 });
     });
   });
 
@@ -256,6 +313,20 @@ describe('TypeOrmRoleRepository', () => {
     it('returns false when result is empty', async () => {
       mockDataSource.query.mockResolvedValue([]);
       expect(await repo.hasPermission('member', 'users', 'delete')).toBe(false);
+    });
+  });
+
+  // ─── getMemberRoleInOrg ───────────────────────────────────────────────────────
+
+  describe('getMemberRoleInOrg', () => {
+    it('returns the member role when found', async () => {
+      mockDataSource.query.mockResolvedValue([{ role: 'admin' }]);
+      expect(await repo.getMemberRoleInOrg('u-1', 'org-1')).toBe('admin');
+    });
+
+    it('returns null when no membership found', async () => {
+      mockDataSource.query.mockResolvedValue([]);
+      expect(await repo.getMemberRoleInOrg('u-ghost', 'org-1')).toBeNull();
     });
   });
 });

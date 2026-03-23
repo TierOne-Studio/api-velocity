@@ -31,6 +31,11 @@ describe('AdminUserDatabaseRepository', () => {
       mockQueryOne.mockResolvedValue(null);
       expect(await repo.findUserRole('ghost')).toBeNull();
     });
+
+    it('returns member when user exists with null platform role', async () => {
+      mockQueryOne.mockResolvedValue({ role: null });
+      expect(await repo.findUserRole('u-2')).toBe('member');
+    });
   });
 
   // ─── findUserById ────────────────────────────────────────────────────────────
@@ -432,7 +437,7 @@ describe('AdminUserDatabaseRepository', () => {
 
   describe('listRoles', () => {
     it('returns role rows', async () => {
-      const rows = [{ name: 'admin', display_name: 'Admin', is_system: true }];
+      const rows = [{ name: 'admin', display_name: 'Admin', is_default: true }];
       mockQuery.mockResolvedValue(rows);
       expect(await repo.listRoles()).toEqual(rows);
     });

@@ -1,6 +1,29 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '../../../shared/infrastructure/database/database.module';
 
+const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
+  { resource: 'organization', action: 'read' },
+  { resource: 'organization', action: 'update' },
+  { resource: 'organization', action: 'delete' },
+  { resource: 'organization', action: 'invite' },
+  { resource: 'organization', action: 'manage-members' },
+  { resource: 'role', action: 'read' },
+  { resource: 'role', action: 'create' },
+  { resource: 'role', action: 'update' },
+  { resource: 'role', action: 'delete' },
+  { resource: 'role', action: 'assign' },
+  { resource: 'session', action: 'read' },
+  { resource: 'session', action: 'revoke' },
+  { resource: 'user', action: 'create' },
+  { resource: 'user', action: 'read' },
+  { resource: 'user', action: 'update' },
+  { resource: 'user', action: 'delete' },
+  { resource: 'user', action: 'ban' },
+  { resource: 'user', action: 'impersonate' },
+  { resource: 'user', action: 'set-role' },
+  { resource: 'user', action: 'set-password' },
+] as const;
+
 const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
   { resource: 'organization', action: 'read' },
   { resource: 'organization', action: 'update' },
@@ -64,6 +87,14 @@ export class RbacMigrationService implements OnModuleInit {
         name: 'rbac_010_remove_superadmin_org_memberships',
         up: () => this.removeSuperadminOrganizationMemberships(),
       },
+      {
+        name: 'rbac_011_add_manage_members_permission',
+        up: () => this.addManageMembersPermission(),
+      },
+      {
+        name: 'rbac_012_assign_admin_full_permissions',
+        up: () => this.assignAdminFullPermissions(),
+      },
     ];
 
     let pendingCount = 0;
@@ -96,7 +127,7 @@ export class RbacMigrationService implements OnModuleInit {
         display_name VARCHAR(100) NOT NULL,
         description TEXT,
         color VARCHAR(20) DEFAULT 'gray',
-        is_system BOOLEAN DEFAULT false,
+        is_default BOOLEAN DEFAULT false,
         organization_id TEXT REFERENCES organization(id) ON DELETE CASCADE,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
@@ -221,35 +252,35 @@ export class RbacMigrationService implements OnModuleInit {
         displayName: 'Admin',
         description: 'Global platform administrator with full access to all organizations and settings',
         color: 'red',
-        isSystem: true,
+        isDefault: true,
       },
       {
         name: 'manager',
         displayName: 'Manager',
         description: 'Organization manager with full access within their assigned organization',
         color: 'blue',
-        isSystem: true,
+        isDefault: true,
       },
       {
         name: 'member',
         displayName: 'Member',
         description: 'Organization member with basic access within their assigned organization',
         color: 'gray',
-        isSystem: true,
+        isDefault: true,
       },
     ];
 
     for (const role of roles) {
       await this.db.query(
-        `INSERT INTO roles (name, display_name, description, color, is_system, organization_id)
+        `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
          VALUES ($1, $2, $3, $4, $5, NULL)
          ON CONFLICT (name) WHERE organization_id IS NULL DO UPDATE SET
            display_name = EXCLUDED.display_name,
            description = EXCLUDED.description,
            color = EXCLUDED.color,
-           is_system = EXCLUDED.is_system,
+           is_default = EXCLUDED.is_default,
            updated_at = NOW()`,
-        [role.name, role.displayName, role.description, role.color, role.isSystem],
+        [role.name, role.displayName, role.description, role.color, role.isDefault],
       );
     }
 
@@ -544,13 +575,13 @@ export class RbacMigrationService implements OnModuleInit {
     );
 
     await this.db.query(
-      `INSERT INTO roles (name, display_name, description, color, is_system, organization_id)
+      `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
        VALUES ($1, $2, $3, $4, $5, NULL)
        ON CONFLICT (name) WHERE organization_id IS NULL DO UPDATE SET
          display_name = EXCLUDED.display_name,
          description = EXCLUDED.description,
          color = EXCLUDED.color,
-         is_system = EXCLUDED.is_system,
+         is_default = EXCLUDED.is_default,
          updated_at = NOW()`,
       [
         'superadmin',
@@ -603,13 +634,13 @@ export class RbacMigrationService implements OnModuleInit {
 
       for (const [name, displayName, description, color] of defaultRoles) {
         await this.db.query(
-          `INSERT INTO roles (name, display_name, description, color, is_system, organization_id)
+          `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
            VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (organization_id, name) WHERE organization_id IS NOT NULL DO UPDATE SET
              display_name = EXCLUDED.display_name,
              description = EXCLUDED.description,
              color = EXCLUDED.color,
-             is_system = EXCLUDED.is_system,
+             is_default = EXCLUDED.is_default,
              updated_at = NOW()`,
           [name, displayName, description, color, true, organization.id],
         );
@@ -683,5 +714,68 @@ export class RbacMigrationService implements OnModuleInit {
         WHERE COALESCE(role, '') LIKE '%superadmin%'
       )
     `);
+  }
+
+  /**
+   * Add the organization:manage-members permission and assign it to all existing
+   * org-scoped admin roles. This is the capability that drives org-lockout invariants.
+   */
+  async addManageMembersPermission(): Promise<void> {
+    await this.db.query(
+      `INSERT INTO permissions (resource, action, description)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (resource, action) DO NOTHING`,
+      ['organization', 'manage-members', 'Manage organization members and roles'],
+    );
+
+    // Assign to global superadmin role
+    const superadminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
+    );
+    const manageMembersPerm = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM permissions WHERE resource = 'organization' AND action = 'manage-members'`,
+    );
+
+    if (superadminRole && manageMembersPerm) {
+      await this.db.query(
+        `INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [superadminRole.id, manageMembersPerm.id],
+      );
+    }
+
+    // Assign to all existing org-scoped admin roles
+    if (manageMembersPerm) {
+      await this.db.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT r.id, $1
+         FROM roles r
+         WHERE r.organization_id IS NOT NULL
+           AND r.name = 'admin'
+         ON CONFLICT DO NOTHING`,
+        [manageMembersPerm.id],
+      );
+    }
+
+    console.log('✅ organization:manage-members permission added and assigned to org admin roles');
+  }
+
+  /**
+   * Assign the full ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS set to all existing
+   * org-scoped admin roles so they are consistent with the new spec.
+   */
+  async assignAdminFullPermissions(): Promise<void> {
+    const organizations = await this.db.query<{ id: string }>(`SELECT id FROM organization`);
+
+    for (const org of organizations) {
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [org.id],
+      );
+      if (adminRole) {
+        await this.syncRolePermissions(adminRole.id, ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS);
+      }
+    }
+
+    console.log('✅ Org admin roles updated with full permission set');
   }
 }

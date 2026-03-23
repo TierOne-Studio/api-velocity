@@ -40,7 +40,7 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     organizationId: string,
   ): Promise<void> {
     await query(
-      `INSERT INTO roles (name, display_name, description, color, is_system, organization_id)
+      `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
        VALUES
          ('admin', 'Admin', 'Organization administrator with full access within their organization', 'red', true, $1),
          ('manager', 'Manager', 'Organization manager with elevated operational access within their organization', 'blue', true, $1),
@@ -49,7 +49,7 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
          display_name = EXCLUDED.display_name,
          description = EXCLUDED.description,
          color = EXCLUDED.color,
-         is_system = EXCLUDED.is_system,
+         is_default = EXCLUDED.is_default,
          updated_at = NOW()`,
       [organizationId],
     );
@@ -383,12 +383,33 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     );
   }
 
-  async countAdmins(organizationId: string): Promise<number> {
+  async countMembersWithManageCapability(organizationId: string): Promise<number> {
     const result = await this.db.queryOne<{ count: string }>(
-      'SELECT COUNT(*)::text as count FROM member WHERE "organizationId" = $1 AND role = $2',
-      [organizationId, 'admin'],
+      `SELECT COUNT(DISTINCT m.id)::text as count
+       FROM member m
+       JOIN roles r ON r.organization_id = m."organizationId" AND r.name = m.role
+       JOIN role_permissions rp ON rp.role_id = r.id
+       JOIN permissions p ON p.id = rp.permission_id
+       WHERE m."organizationId" = $1
+         AND p.resource = 'organization' AND p.action = 'manage-members'`,
+      [organizationId],
     );
     return result ? parseInt(result.count, 10) : 0;
+  }
+
+  async roleGrantsManagePermission(roleName: string, organizationId: string): Promise<boolean> {
+    const result = await this.db.queryOne<{ has_manage: string }>(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM roles r
+         JOIN role_permissions rp ON rp.role_id = r.id
+         JOIN permissions p ON p.id = rp.permission_id
+         WHERE r.name = $1 AND r.organization_id = $2
+           AND p.resource = 'organization' AND p.action = 'manage-members'
+       )::text as has_manage`,
+      [roleName, organizationId],
+    );
+    return result?.has_manage === 'true';
   }
 
   async addMember(id: string, organizationId: string, userId: string, role: string): Promise<MemberRow> {
@@ -484,9 +505,15 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     return result.length > 0;
   }
 
-  async getRoles(): Promise<RoleRow[]> {
+  async getRoles(organizationId: string | null): Promise<RoleRow[]> {
+    if (organizationId) {
+      return this.db.query<RoleRow>(
+        'SELECT name, display_name, description, color, is_default FROM roles WHERE organization_id = $1 ORDER BY is_default DESC, name ASC',
+        [organizationId],
+      );
+    }
     return this.db.query<RoleRow>(
-      'SELECT name, display_name, description, color, is_system FROM roles ORDER BY is_system DESC, name ASC',
+      'SELECT name, display_name, description, color, is_default FROM roles WHERE organization_id IS NULL ORDER BY is_default DESC, name ASC',
     );
   }
 }

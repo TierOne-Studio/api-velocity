@@ -50,7 +50,8 @@ describe('AdminOrganizationsService', () => {
       findMemberById: jest.fn(),
       findMemberByUserId: jest.fn(),
       findMemberByEmail: jest.fn(),
-      countAdmins: jest.fn(),
+      countMembersWithManageCapability: jest.fn(),
+      roleGrantsManagePermission: jest.fn(),
       addMember: jest.fn(),
       updateMemberRole: jest.fn(),
       removeMember: jest.fn(),
@@ -263,9 +264,16 @@ describe('AdminOrganizationsService', () => {
   });
 
   describe('createInvitation', () => {
+    const orgRoles = [
+      { name: 'admin', display_name: 'Admin', description: null, color: 'red', is_default: true },
+      { name: 'manager', display_name: 'Manager', description: null, color: 'blue', is_default: true },
+      { name: 'member', display_name: 'Member', description: null, color: 'gray', is_default: true },
+    ];
+
     it('should create invitation and send email for admin actor', async () => {
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findBasicById.mockResolvedValue({ id: 'org-1', name: 'Test Org', slug: 'test-org' });
       orgRepo.findMemberByEmail.mockResolvedValue(null);
       orgRepo.findPendingInvitation.mockResolvedValue(null);
@@ -306,19 +314,22 @@ describe('AdminOrganizationsService', () => {
       );
     });
 
-    it('should block manager from inviting admin role', async () => {
+    it('should throw BadRequestException when role does not exist in organization', async () => {
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
+
       await expect(
         service.createInvitation(
           'org-1',
           'invitee@example.com',
+          'owner',
           'admin',
-          'manager',
-          { id: 'actor-2', email: 'manager@example.com', name: 'Manager User' },
+          { id: 'actor-1', email: 'admin@example.com', name: 'Admin' },
         ),
-      ).rejects.toThrow('Role not allowed');
+      ).rejects.toThrow('Role does not exist in this organization');
     });
 
     it('should throw NotFoundException when organization does not exist', async () => {
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findBasicById.mockResolvedValue(null);
 
       await expect(
@@ -333,6 +344,7 @@ describe('AdminOrganizationsService', () => {
     });
 
     it('should throw BadRequestException when invitee is already a member', async () => {
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findBasicById.mockResolvedValue({ id: 'org-1', name: 'Test Org', slug: 'test-org' });
       orgRepo.findMemberByEmail.mockResolvedValue({ id: 'member-1' });
 
@@ -348,6 +360,7 @@ describe('AdminOrganizationsService', () => {
     });
 
     it('should throw ConflictException when pending invitation already exists', async () => {
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findBasicById.mockResolvedValue({ id: 'org-1', name: 'Test Org', slug: 'test-org' });
       orgRepo.findMemberByEmail.mockResolvedValue(null);
       orgRepo.findPendingInvitation.mockResolvedValue({ id: 'inv-existing' });
@@ -364,6 +377,7 @@ describe('AdminOrganizationsService', () => {
     });
 
     it('should throw InternalServerErrorException when repo returns null invitation', async () => {
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findBasicById.mockResolvedValue({ id: 'org-1', name: 'Test Org', slug: 'test-org' });
       orgRepo.findMemberByEmail.mockResolvedValue(null);
       orgRepo.findPendingInvitation.mockResolvedValue(null);
@@ -382,6 +396,7 @@ describe('AdminOrganizationsService', () => {
 
     it('should swallow email send errors and still return invitation', async () => {
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findBasicById.mockResolvedValue({ id: 'org-1', name: 'Test Org', slug: 'test-org' });
       orgRepo.findMemberByEmail.mockResolvedValue(null);
       orgRepo.findPendingInvitation.mockResolvedValue(null);
@@ -458,6 +473,10 @@ describe('AdminOrganizationsService', () => {
       role: 'member',
       createdAt: new Date(),
     };
+    const orgRoles = [
+      { name: 'admin', display_name: 'Admin', description: null, color: 'red', is_default: true },
+      { name: 'member', display_name: 'Member', description: null, color: 'gray', is_default: true },
+    ];
 
     it('should throw NotFoundException when organization does not exist', async () => {
       orgRepo.findById.mockResolvedValueOnce(null);
@@ -468,6 +487,7 @@ describe('AdminOrganizationsService', () => {
 
     it('should add an existing user as a member', async () => {
       orgRepo.findById.mockResolvedValueOnce(mockOrganization);
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findUserById.mockResolvedValue({ id: 'user-2', role: 'member' });
       orgRepo.findMemberByUserId.mockResolvedValue(null);
       orgRepo.addMember.mockResolvedValue(mockMemberResult);
@@ -486,6 +506,7 @@ describe('AdminOrganizationsService', () => {
 
     it('should throw NotFoundException when user does not exist', async () => {
       orgRepo.findById.mockResolvedValueOnce(mockOrganization);
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findUserById.mockResolvedValue(null);
 
       await expect(service.addMember('org-1', 'ghost-user', 'member')).rejects.toThrow('User not found');
@@ -493,6 +514,7 @@ describe('AdminOrganizationsService', () => {
 
     it('should throw ConflictException when user is already a member', async () => {
       orgRepo.findById.mockResolvedValueOnce(mockOrganization);
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findUserById.mockResolvedValue({ id: 'user-2', role: 'member' });
       orgRepo.findMemberByUserId.mockResolvedValue({ id: 'existing-member' });
 
@@ -503,6 +525,7 @@ describe('AdminOrganizationsService', () => {
 
     it('should reject adding a superadmin as a member', async () => {
       orgRepo.findById.mockResolvedValueOnce(mockOrganization);
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findUserById.mockResolvedValue({ id: 'user-2', role: 'superadmin' });
 
       await expect(service.addMember('org-1', 'user-2', 'member')).rejects.toThrow(
@@ -692,8 +715,16 @@ describe('AdminOrganizationsService', () => {
   });
 
   describe('updateMemberRole', () => {
+    const orgRoles = [
+      { name: 'admin', display_name: 'Admin', description: null, color: 'red', is_default: true },
+      { name: 'manager', display_name: 'Manager', description: null, color: 'blue', is_default: true },
+      { name: 'member', display_name: 'Member', description: null, color: 'gray', is_default: true },
+    ];
+
     it('should update member role for admin actor', async () => {
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'member', userId: 'user-1' });
+      orgRepo.roleGrantsManagePermission.mockResolvedValue(false);
       orgRepo.updateMemberRole.mockResolvedValue({ id: 'member-1', role: 'manager', userId: 'user-1', organizationId: 'org-1', createdAt: new Date() });
 
       const result = await service.updateMemberRole('org-1', 'member-1', 'manager', 'admin');
@@ -702,21 +733,16 @@ describe('AdminOrganizationsService', () => {
       expect(orgRepo.updateMemberRole).toHaveBeenCalledWith('member-1', 'org-1', 'manager');
     });
 
-    it('should block manager from assigning admin role (role not in allowedRoleNames)', async () => {
-      await expect(service.updateMemberRole('org-1', 'member-1', 'admin', 'manager')).rejects.toThrow(
-        'Role not allowed',
-      );
-    });
+    it('should throw BadRequestException when new role does not exist in organization', async () => {
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
 
-    it('should block manager from changing another manager role', async () => {
-      orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'manager', userId: 'user-1' });
-
-      await expect(service.updateMemberRole('org-1', 'member-1', 'member', 'manager')).rejects.toThrow(
-        'Organization-scoped actors can only change member roles',
+      await expect(service.updateMemberRole('org-1', 'member-1', 'owner', 'admin')).rejects.toThrow(
+        'Role does not exist in this organization',
       );
     });
 
     it('should throw NotFoundException when member does not exist', async () => {
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findMemberById.mockResolvedValue(null);
 
       await expect(
@@ -724,34 +750,47 @@ describe('AdminOrganizationsService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('should block downgrading last admin in organization', async () => {
+    it('should block downgrading the last member with manage-members permission', async () => {
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'admin', userId: 'user-1' });
-      orgRepo.countAdmins.mockResolvedValue(1);
+      orgRepo.roleGrantsManagePermission.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      orgRepo.countMembersWithManageCapability.mockResolvedValue(1);
 
-      await expect(service.updateMemberRole('org-1', 'member-1', 'manager', 'admin')).rejects.toThrow(
-        'Cannot change role of the last organization admin',
+      await expect(service.updateMemberRole('org-1', 'member-1', 'member', 'admin')).rejects.toThrow(
+        'Cannot change role of the last member with organization manage-members permission',
       );
     });
 
-    it('should allow superadmin to downgrade the last organization admin', async () => {
+    it('should allow changing role when new role also has manage-members', async () => {
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
+      orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'admin', userId: 'user-1' });
+      orgRepo.roleGrantsManagePermission.mockResolvedValue(true);
+      orgRepo.countMembersWithManageCapability.mockResolvedValue(1);
+      orgRepo.updateMemberRole.mockResolvedValue({
+        id: 'member-1', role: 'manager', userId: 'user-1', organizationId: 'org-1', createdAt: new Date(),
+      });
+
+      const result = await service.updateMemberRole('org-1', 'member-1', 'manager', 'admin');
+      expect(result.role).toBe('manager');
+    });
+
+    it('should allow superadmin to downgrade the last manage-members holder', async () => {
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'admin', userId: 'user-1' });
       orgRepo.updateMemberRole.mockResolvedValue({
-        id: 'member-1',
-        role: 'manager',
-        userId: 'user-1',
-        organizationId: 'org-1',
-        createdAt: new Date(),
+        id: 'member-1', role: 'manager', userId: 'user-1', organizationId: 'org-1', createdAt: new Date(),
       });
 
       const result = await service.updateMemberRole('org-1', 'member-1', 'manager', 'superadmin');
 
       expect(result.role).toBe('manager');
-      expect(orgRepo.countAdmins).not.toHaveBeenCalled();
-      expect(orgRepo.updateMemberRole).toHaveBeenCalledWith('member-1', 'org-1', 'manager');
+      expect(orgRepo.roleGrantsManagePermission).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when updateMemberRole returns null', async () => {
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'member', userId: 'user-1' });
+      orgRepo.roleGrantsManagePermission.mockResolvedValue(false);
       orgRepo.updateMemberRole.mockResolvedValue(null);
 
       await expect(
@@ -761,8 +800,9 @@ describe('AdminOrganizationsService', () => {
   });
 
   describe('removeMember', () => {
-    it('should remove member for admin actor', async () => {
+    it('should remove member whose role has no manage-members permission', async () => {
       orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'member', userId: 'user-1' });
+      orgRepo.roleGrantsManagePermission.mockResolvedValue(false);
       orgRepo.removeMember.mockResolvedValue(true);
 
       const result = await service.removeMember('org-1', 'member-1', 'admin');
@@ -771,136 +811,83 @@ describe('AdminOrganizationsService', () => {
       expect(orgRepo.removeMember).toHaveBeenCalledWith('member-1', 'org-1');
     });
 
-    it('should block manager from removing non-member roles', async () => {
-      orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'manager', userId: 'user-1' });
+    it('should block removing the last member with manage-members permission', async () => {
+      orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'admin', userId: 'user-1' });
+      orgRepo.roleGrantsManagePermission.mockResolvedValue(true);
+      orgRepo.countMembersWithManageCapability.mockResolvedValue(1);
 
-      await expect(service.removeMember('org-1', 'member-1', 'manager')).rejects.toThrow(
-        'Organization-scoped actors can only remove members',
+      await expect(service.removeMember('org-1', 'member-1', 'admin')).rejects.toThrow(
+        'Cannot remove the last member with organization manage-members permission',
       );
     });
 
-    it('should block removing last admin in organization', async () => {
+    it('should allow removing a manage-members holder when others remain', async () => {
       orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'admin', userId: 'user-1' });
-      orgRepo.countAdmins.mockResolvedValue(1);
+      orgRepo.roleGrantsManagePermission.mockResolvedValue(true);
+      orgRepo.countMembersWithManageCapability.mockResolvedValue(2);
+      orgRepo.removeMember.mockResolvedValue(true);
 
-      await expect(service.removeMember('org-1', 'member-1', 'admin')).rejects.toThrow(
-        'Cannot remove the last organization admin',
-      );
+      const result = await service.removeMember('org-1', 'member-1', 'admin');
+      expect(result.success).toBe(true);
     });
   });
 
   describe('getRoles', () => {
     const mockRoles = [
-      { name: 'admin', display_name: 'Admin', description: 'Platform admin', color: '#ff0000', is_system: true },
-      { name: 'manager', display_name: 'Manager', description: 'Org manager', color: '#00ff00', is_system: true },
-      { name: 'member', display_name: 'Member', description: 'Regular user', color: '#0000ff', is_system: true },
+      { name: 'admin', display_name: 'Admin', description: 'Org admin', color: '#ff0000', is_default: true },
+      { name: 'manager', display_name: 'Manager', description: 'Org manager', color: '#00ff00', is_default: true },
+      { name: 'member', display_name: 'Member', description: 'Regular user', color: '#0000ff', is_default: true },
     ];
 
-    it('should return all roles from database', async () => {
+    it('should return roles for an organization', async () => {
       orgRepo.getRoles.mockResolvedValue(mockRoles);
 
-      const result = await service.getRoles();
+      const result = await service.getRoles('org-1');
 
       expect(result.roles).toHaveLength(3);
       expect(result.roles[0].name).toBe('admin');
       expect(result.roles[0].displayName).toBe('Admin');
-      expect(result.roles[0].description).toBe('Platform admin');
+      expect(result.roles[0].description).toBe('Org admin');
       expect(result.roles[0].color).toBe('#ff0000');
-      expect(result.roles[0].isSystem).toBe(true);
+      expect(result.roles[0].isDefault).toBe(true);
+      expect(orgRepo.getRoles).toHaveBeenCalledWith('org-1');
     });
 
-    it('should return all assignableRoles when no requesterRole provided', async () => {
+    it('should return all org roles as assignableRoles', async () => {
       orgRepo.getRoles.mockResolvedValue(mockRoles);
 
-      const result = await service.getRoles();
+      const result = await service.getRoles('org-1');
 
       expect(result.assignableRoles).toEqual(['admin', 'manager', 'member']);
     });
 
-    it('should filter assignableRoles for manager (only manager + member)', async () => {
+    it('should return global roles when organizationId is null', async () => {
       orgRepo.getRoles.mockResolvedValue(mockRoles);
 
-      const result = await service.getRoles('manager');
+      const result = await service.getRoles(null);
 
-      expect(result.assignableRoles).toEqual(['manager', 'member']);
-      expect(result.assignableRoles).not.toContain('admin');
-    });
-
-    it('should return all assignableRoles for admin', async () => {
-      orgRepo.getRoles.mockResolvedValue(mockRoles);
-
-      const result = await service.getRoles('admin');
-
-      expect(result.assignableRoles).toEqual(['admin', 'manager', 'member']);
-    });
-
-    it('should filter assignableRoles for member (only member)', async () => {
-      orgRepo.getRoles.mockResolvedValue(mockRoles);
-
-      const result = await service.getRoles('member');
-
-      expect(result.assignableRoles).toEqual(['member']);
-    });
-
-    it('should still return all roles metadata regardless of requesterRole', async () => {
-      orgRepo.getRoles.mockResolvedValue(mockRoles);
-
-      const result = await service.getRoles('manager');
-
-      // All roles visible for display, but assignableRoles is filtered
+      expect(orgRepo.getRoles).toHaveBeenCalledWith(null);
       expect(result.roles).toHaveLength(3);
-      expect(result.assignableRoles).toHaveLength(2);
-    });
-
-    it('deduplicates role metadata and assignableRoles when multiple rows share the same role name', async () => {
-      orgRepo.getRoles.mockResolvedValue([
-        { name: 'admin', display_name: 'Admin', description: 'Admin A', color: '#ff0000', is_system: true },
-        { name: 'member', display_name: 'Member', description: 'Member A', color: '#0000ff', is_system: true },
-        { name: 'member', display_name: 'Member', description: 'Member B', color: '#0000ff', is_system: false },
-        { name: 'manager', display_name: 'Manager', description: 'Manager', color: '#00ff00', is_system: true },
-      ]);
-
-      const result = await service.getRoles('superadmin');
-
-      expect(result.roles.map((role) => role.name)).toEqual(['admin', 'member', 'manager']);
-      expect(result.assignableRoles).toEqual(['admin', 'member', 'manager']);
     });
 
     it('should handle empty roles table', async () => {
       orgRepo.getRoles.mockResolvedValue([]);
 
-      const result = await service.getRoles();
+      const result = await service.getRoles('org-1');
 
       expect(result.roles).toHaveLength(0);
       expect(result.assignableRoles).toEqual([]);
     });
 
-    it('should call getRoles on the repository', async () => {
-      orgRepo.getRoles.mockResolvedValue([]);
-
-      await service.getRoles();
-
-      expect(orgRepo.getRoles).toHaveBeenCalled();
-    });
-
-    it('should filter assignableRoles for manager', async () => {
-      orgRepo.getRoles.mockResolvedValue(mockRoles);
-
-      const result = await service.getRoles('manager');
-
-      expect(result.assignableRoles).toEqual(['manager', 'member']);
-    });
-
-    it('should not allow assigning owner role for admin', async () => {
+    it('should return custom roles alongside default ones', async () => {
       orgRepo.getRoles.mockResolvedValue([
         ...mockRoles,
-        { name: 'owner', display_name: 'Owner', description: 'Organization owner', color: '#ffaa00', is_system: true },
+        { name: 'owner', display_name: 'Owner', description: 'Organization owner', color: '#ffaa00', is_default: false },
       ]);
 
-      const result = await service.getRoles('admin');
+      const result = await service.getRoles('org-1');
 
-      expect(result.assignableRoles).toEqual(expect.arrayContaining(['admin', 'manager', 'member']));
-      expect(result.assignableRoles).not.toContain('owner');
+      expect(result.assignableRoles).toEqual(expect.arrayContaining(['admin', 'manager', 'member', 'owner']));
     });
   });
 });

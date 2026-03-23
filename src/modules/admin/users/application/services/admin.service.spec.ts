@@ -25,9 +25,9 @@ describe('AdminService', () => {
   let userRepo: jest.Mocked<IAdminUserRepository>;
 
   const mockRoles = [
-    { name: 'admin', display_name: 'Admin', description: 'Platform admin', color: '#ff0000', is_system: true },
-    { name: 'manager', display_name: 'Manager', description: 'Org manager', color: '#00ff00', is_system: true },
-    { name: 'member', display_name: 'Member', description: 'Regular user', color: '#0000ff', is_system: true },
+    { name: 'admin', display_name: 'Admin', description: 'Platform admin', color: '#ff0000', is_default: true },
+    { name: 'manager', display_name: 'Manager', description: 'Org manager', color: '#00ff00', is_default: true },
+    { name: 'member', display_name: 'Member', description: 'Regular user', color: '#0000ff', is_default: true },
   ];
 
   const mockOrganizations = [
@@ -823,6 +823,24 @@ describe('AdminService', () => {
         activeOrganizationId: 'org-1',
       });
 
+      expect(result.actions.update).toBe(true);
+      expect(result.actions.setRole).toBe(true);
+      expect(result.actions.ban).toBe(true);
+      expect(result.actions.remove).toBe(true);
+      expect(result.actions.impersonate).toBe(true);
+    });
+
+    it('superadmin can act on user with null platform role (post-migration users)', async () => {
+      userRepo.findUserRole.mockResolvedValueOnce('member'); // null role → 'member' via repo fallback
+
+      const result = await service.getUserCapabilities({
+        actorUserId: 'superadmin-1',
+        targetUserId: 'regular-user-1',
+        platformRole: 'superadmin',
+        activeOrganizationId: null,
+      });
+
+      expect(result.isSelf).toBe(false);
       expect(result.actions.update).toBe(true);
       expect(result.actions.setRole).toBe(true);
       expect(result.actions.ban).toBe(true);
