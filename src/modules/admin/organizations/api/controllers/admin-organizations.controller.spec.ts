@@ -515,5 +515,42 @@ describe('AdminOrganizationsController', () => {
       ).rejects.toThrow('invalid email');
     });
 
+    it('throws when role is missing after valid email (line 111)', async () => {
+      await expect(
+        controller.createInvitation(adminSession, 'org-1', { email: 'valid@example.com', role: '' }),
+      ).rejects.toThrow('role is required');
+    });
+  });
+
+  describe('validateAddMemberPayload — branch coverage', () => {
+    const adminSession = {
+      user: { id: 'a-1', email: 'a@a.com', name: 'A', role: 'superadmin' },
+      session: { activeOrganizationId: null },
+    } as unknown as UserSession;
+
+    it('throws when userId is missing', async () => {
+      await expect(
+        controller.addMember(adminSession, 'org-1', { userId: '', role: 'member' }),
+      ).rejects.toThrow('userId is required');
+    });
+
+    it('throws when role is missing after valid userId (line 78)', async () => {
+      await expect(
+        controller.addMember(adminSession, 'org-1', { userId: 'u-1', role: '' }),
+      ).rejects.toThrow('role is required');
+    });
+  });
+
+  describe('validateUpdateMemberRolePayload — branch coverage', () => {
+    const adminSession = {
+      user: { id: 'a-1', email: 'a@a.com', name: 'A', role: 'admin' },
+      session: { activeOrganizationId: 'org-1' },
+    } as unknown as UserSession;
+
+    it('throws when role is empty (line 84)', async () => {
+      await expect(
+        controller.updateMemberRole(adminSession, 'org-1', 'member-1', { role: '' }),
+      ).rejects.toThrow('role is required');
+    });
   });
 });

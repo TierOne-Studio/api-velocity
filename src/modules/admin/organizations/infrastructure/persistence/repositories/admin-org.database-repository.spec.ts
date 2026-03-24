@@ -415,6 +415,16 @@ describe('AdminOrgDatabaseRepository', () => {
       expect(params).toEqual(['org-1', 25]);
     });
 
+    it('works when called with no params argument (uses defaults for limit=25, line 326-328)', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      const result = await (repo as any).listMemberCandidates('org-1');
+
+      expect(Array.isArray(result)).toBe(true);
+      const [, params] = mockQuery.mock.calls[0];
+      expect(params).toEqual(['org-1', 25]);
+    });
+
     it('filters out superadmin users from candidate queries', async () => {
       mockQuery.mockResolvedValue([]);
 
@@ -465,6 +475,16 @@ describe('AdminOrgDatabaseRepository', () => {
       mockQueryOne.mockResolvedValue(inv);
       const result = await repo.createInvitation('inv-1', 'org-1', 'a@b.com', 'member', inv.expiresAt, 'u-1');
       expect(result).toEqual(inv);
+    });
+
+    it('throws InternalServerErrorException when invitation cannot be retrieved after insert (line 486)', async () => {
+      const { InternalServerErrorException } = await import('@nestjs/common');
+      mockQuery.mockResolvedValue(undefined);
+      mockQueryOne.mockResolvedValue(null);  // invitation not found after insert
+
+      await expect(
+        repo.createInvitation('inv-fail', 'org-1', 'fail@b.com', 'member', new Date(), 'u-1'),
+      ).rejects.toThrow(InternalServerErrorException);
     });
   });
 

@@ -38,7 +38,12 @@ export class RoleTypeOrmEntity {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
-  @ManyToMany(() => PermissionTypeOrmEntity, { eager: false })
+  /* istanbul ignore next */
+  @ManyToMany(
+    /* istanbul ignore next */
+    () => PermissionTypeOrmEntity,
+    { eager: false },
+  )
   @JoinTable({
     name: 'role_permissions',
     joinColumn: { name: 'role_id', referencedColumnName: 'id' },

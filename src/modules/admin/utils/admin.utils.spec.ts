@@ -27,6 +27,10 @@ describe('admin.utils', () => {
     it('should allow manager to create manager/member', () => {
       expect(getAllowedRoleNamesForCreator('manager')).toEqual(['manager', 'member']);
     });
+
+    it('should return only member for member platform role', () => {
+      expect(getAllowedRoleNamesForCreator('member')).toEqual(['member']);
+    });
   });
 
   describe('getPlatformRole', () => {
@@ -58,6 +62,10 @@ describe('admin.utils', () => {
       expect(getPlatformRole({ user: { role: ['manager', 'member'] } } as any)).toBe(
         'manager',
       );
+    });
+
+    it('should handle role arrays — falls back to member when no superadmin/admin/manager (line 12)', () => {
+      expect(getPlatformRole({ user: { role: ['member', 'viewer'] } } as any)).toBe('member');
     });
 
     it('should return member for role string member', () => {

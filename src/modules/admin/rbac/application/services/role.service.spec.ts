@@ -101,6 +101,26 @@ describe('RoleService', () => {
     });
   });
 
+  describe('findByNameInOrganization', () => {
+    it('should return role when found in the specified organization', async () => {
+      mockRoleRepo.findByNameInOrganization.mockResolvedValue(makeDomainRole({ organizationId: 'org-1' }));
+
+      const result = await service.findByNameInOrganization('admin', 'org-1');
+
+      expect(result).not.toBeNull();
+      expect(result?.name).toBe('admin');
+      expect(mockRoleRepo.findByNameInOrganization).toHaveBeenCalledWith('admin', 'org-1');
+    });
+
+    it('should return null when role not found in the specified organization', async () => {
+      mockRoleRepo.findByNameInOrganization.mockResolvedValue(null);
+
+      const result = await service.findByNameInOrganization('ghost', 'org-1');
+
+      expect(result).toBeNull();
+    });
+  });
+
   describe('create', () => {
     it('should create a new role for the active organization', async () => {
       const createDto = { name: 'editor', displayName: 'Editor', description: 'Can edit content', color: 'blue' };

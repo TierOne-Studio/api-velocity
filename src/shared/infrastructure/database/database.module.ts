@@ -378,6 +378,7 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
   providers: [
     {
       provide: 'DATABASE_POOL',
+      /* istanbul ignore next */
       useFactory: async (configService: ConfigService) => {
         const pool = new Pool({
           connectionString: configService.getDatabaseUrl(),

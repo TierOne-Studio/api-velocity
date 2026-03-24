@@ -562,4 +562,64 @@ describe('RbacController handler bodies', () => {
       expect(result).toEqual({ data: { hasPermission: false } });
     });
   });
+
+  // ============ validateUpdateRolePayload edge cases ============
+
+  describe('updateRole payload validation', () => {
+    it('throws 400 when name is provided but consists only of whitespace (line 62)', async () => {
+      await expect(controller.updateRole('r-1', { name: '   ' })).rejects.toThrow('Role name is required');
+    });
+
+    it('throws 400 when name is a reserved word — superadmin (line 66)', async () => {
+      await expect(controller.updateRole('r-1', { name: 'superadmin' })).rejects.toThrow('reserved');
+    });
+
+    it('throws 400 when name is a reserved word — user (line 66)', async () => {
+      await expect(controller.updateRole('r-1', { name: 'user' })).rejects.toThrow('reserved');
+    });
+  });
+
+  // ============ resolveTargetOrganizationId edge cases ============
+
+  describe('createRole resolveTargetOrganizationId edge cases', () => {
+    it('throws 400 when superadmin does not supply organizationId (line 81)', async () => {
+      await expect(
+        controller.createRole(
+          { user: { role: 'superadmin' }, session: {} } as any,
+          { name: 'editor', displayName: 'Editor' },
+          undefined,  // no organizationId
+        ),
+      ).rejects.toThrow('organizationId is required');
+    });
+  });
+
+  // ============ resolveRoleListOrganizationId edge cases ============
+
+  describe('getRoles resolveRoleListOrganizationId edge cases', () => {
+    it('throws 403 when non-superadmin has no active organization (line 105)', async () => {
+      await expect(
+        controller.getRoles(
+          { user: { role: 'admin' }, session: {} } as any,
+          undefined,
+        ),
+      ).rejects.toThrow('Active organization required');
+    });
+  });
+
+  // ============ getMyPermissions edge cases ============
+
+  describe('getMyPermissions edge cases', () => {
+    it('throws ForbiddenException when session has no user (line 120)', async () => {
+      await expect(controller.getMyPermissions({} as any)).rejects.toThrow('Authentication required');
+    });
+
+    it('returns empty data array when non-superadmin has no active organization', async () => {
+      const result = await controller.getMyPermissions({
+        user: { id: 'user-1', role: 'admin' },
+        session: {},
+      } as any);
+
+      expect(result).toEqual({ data: [] });
+    });
+  });
 });

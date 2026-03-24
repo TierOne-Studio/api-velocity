@@ -180,9 +180,19 @@ describe('TypeOrmRoleRepository', () => {
       );
     });
 
-    it('returns null when role not found after update', async () => {
+    it('returns null when role not found on initial lookup', async () => {
       mockTransactionManager.findOne.mockResolvedValue(null);
       expect(await repo.update('nope', { displayName: 'X' })).toBeNull();
+    });
+
+    it('returns null when role disappears after update (second findOne returns null)', async () => {
+      mockTransactionManager.findOne
+        .mockResolvedValueOnce(roleEntity)  // initial lookup: role exists
+        .mockResolvedValueOnce(null);        // post-update lookup: role gone
+      mockTransactionManager.update.mockResolvedValue(undefined);
+
+      const result = await repo.update('r-1', { displayName: 'X' });
+      expect(result).toBeNull();
     });
 
     it('skips undefined fields in partial', async () => {
@@ -242,6 +252,13 @@ describe('TypeOrmRoleRepository', () => {
 
       await expect(repo.getUsageSummary('r-1')).resolves.toEqual({ users: 1, members: 2, invitations: 3 });
     });
+
+    it('returns zeroes for org-scoped role when the database query returns an empty array', async () => {
+      mockRoleFindOne.mockResolvedValue(roleEntity);
+      mockDataSource.query.mockResolvedValue([]);
+
+      await expect(repo.getUsageSummary('r-1')).resolves.toEqual({ users: 0, members: 0, invitations: 0 });
+    });
   });
 
   // ─── getPermissions ──────────────────────────────────────────────────────────
@@ -297,22 +314,86 @@ describe('TypeOrmRoleRepository', () => {
     });
   });
 
+  // ─── findByNameInOrganization ────────────────────────────────────────────────
+
+  describe('findByNameInOrganization', () => {
+    it('returns mapped role when found', async () => {
+      mockRoleFindOne.mockResolvedValue(roleEntity);
+      const result = await repo.findByNameInOrganization('admin', 'org-1');
+      expect(result).toEqual(roleMapped);
+      expect(mockRoleFindOne).toHaveBeenCalledWith({
+        where: { name: 'admin', organizationId: 'org-1' },
+      });
+    });
+
+    it('returns null when not found', async () => {
+      mockRoleFindOne.mockResolvedValue(null);
+      const result = await repo.findByNameInOrganization('ghost', 'org-1');
+      expect(result).toBeNull();
+    });
+  });
+
+  // ─── getUsageSummary (system role) ───────────────────────────────────────────
+
+  describe('getUsageSummary (system / global role)', () => {
+    it('returns user count for system role (no organizationId)', async () => {
+      mockRoleFindOne.mockResolvedValue({ ...roleEntity, organizationId: null });
+      mockDataSource.query.mockResolvedValue([{ count: '5' }]);
+
+      const result = await repo.getUsageSummary('r-1');
+
+      expect(result).toEqual({ users: 5, members: 0, invitations: 0 });
+      expect(mockDataSource.query).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT COUNT(*)::text as count FROM "user"'),
+        ['admin'],
+      );
+    });
+
+    it('returns zero user count when system role query returns empty result', async () => {
+      mockRoleFindOne.mockResolvedValue({ ...roleEntity, organizationId: null });
+      mockDataSource.query.mockResolvedValue([]);
+
+      const result = await repo.getUsageSummary('r-1');
+
+      expect(result).toEqual({ users: 0, members: 0, invitations: 0 });
+    });
+  });
+
   // ─── hasPermission ───────────────────────────────────────────────────────────
 
   describe('hasPermission', () => {
-    it('returns true when count > 0', async () => {
+    it('returns true when count > 0 (global role)', async () => {
       mockDataSource.query.mockResolvedValue([{ count: '1' }]);
       expect(await repo.hasPermission('admin', 'users', 'read')).toBe(true);
     });
 
-    it('returns false when count is 0', async () => {
+    it('returns false when count is 0 (global role)', async () => {
       mockDataSource.query.mockResolvedValue([{ count: '0' }]);
       expect(await repo.hasPermission('member', 'users', 'delete')).toBe(false);
     });
 
-    it('returns false when result is empty', async () => {
+    it('returns false when result is empty (global role)', async () => {
       mockDataSource.query.mockResolvedValue([]);
       expect(await repo.hasPermission('member', 'users', 'delete')).toBe(false);
+    });
+
+    it('returns true when count > 0 and organizationId is provided', async () => {
+      mockDataSource.query.mockResolvedValue([{ count: '1' }]);
+      expect(await repo.hasPermission('admin', 'users', 'read', 'org-1')).toBe(true);
+      expect(mockDataSource.query).toHaveBeenCalledWith(
+        expect.stringContaining('AND r.organization_id = $2'),
+        ['admin', 'org-1', 'users', 'read'],
+      );
+    });
+
+    it('returns false when count is 0 and organizationId is provided', async () => {
+      mockDataSource.query.mockResolvedValue([{ count: '0' }]);
+      expect(await repo.hasPermission('member', 'users', 'delete', 'org-1')).toBe(false);
+    });
+
+    it('returns false when result is empty and organizationId is provided', async () => {
+      mockDataSource.query.mockResolvedValue([]);
+      expect(await repo.hasPermission('member', 'users', 'delete', 'org-1')).toBe(false);
     });
   });
 

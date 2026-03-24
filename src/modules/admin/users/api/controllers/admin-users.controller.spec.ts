@@ -188,6 +188,16 @@ describe('AdminUsersController', () => {
     });
   });
 
+  it('normalizes non-array userIds body to empty array in getBatchCapabilities (line 154)', async () => {
+    adminService.getBatchCapabilities.mockResolvedValue({} as never);
+
+    await controller.getBatchCapabilities(baseSession, { userIds: 'not-an-array' as any });
+
+    expect(adminService.getBatchCapabilities).toHaveBeenCalledWith(
+      expect.objectContaining({ userIds: [] }),
+    );
+  });
+
   it('passes actor context to getUserCapabilities', async () => {
     adminService.getUserCapabilities.mockResolvedValue({
       targetUserId: 'target-1',
@@ -268,6 +278,17 @@ describe('AdminUsersController', () => {
 
       expect(adminService.listUsers).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 10, offset: 0, searchValue: undefined }),
+      );
+    });
+
+    it('uses default limit=10 and offset=0 when not supplied (lines 123-124)', async () => {
+      adminService.listUsers.mockResolvedValue({ users: [], total: 0 } as never);
+
+      // Call without explicit limit/offset to trigger default parameter branches
+      await (controller as any).list(baseSession);
+
+      expect(adminService.listUsers).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 10, offset: 0 }),
       );
     });
 
