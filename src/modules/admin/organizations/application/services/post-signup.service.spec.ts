@@ -1,9 +1,10 @@
+import { jest } from '@jest/globals';
 import { PostSignupService } from './post-signup.service';
 import { DatabaseService } from '../../../../../shared/infrastructure/database/database.module';
 
 describe('PostSignupService', () => {
   let service: PostSignupService;
-  let db: jest.Mocked<Pick<DatabaseService, 'queryOne' | 'query'>>;
+  let db: { queryOne: ReturnType<typeof jest.fn>; query: ReturnType<typeof jest.fn> };
 
   beforeEach(() => {
     db = {
@@ -41,29 +42,29 @@ describe('PostSignupService', () => {
     expect(db.query).not.toHaveBeenCalled();
   });
 
-  it('skips insertion when the user is already a member of the default org', async () => {
+  it('uses WHERE NOT EXISTS to guard against duplicate membership', async () => {
     process.env.DEFAULT_ORGANIZATION_SLUG = 'my-org';
-    db.queryOne
-      .mockResolvedValueOnce({ id: 'org-1' })           // org found
-      .mockResolvedValueOnce({ id: 'existing-member' }); // already a member
+    db.queryOne.mockResolvedValueOnce({ id: 'org-1' }); // org found
+    db.query.mockResolvedValueOnce([]);
 
     await service.addUserToDefaultOrg('user-1');
 
-    expect(db.query).not.toHaveBeenCalled();
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('WHERE NOT EXISTS'),
+      expect.arrayContaining([expect.any(String), 'org-1', 'user-1', 'member']),
+    );
   });
 
   it('inserts a member row when user is new to the default org', async () => {
     process.env.DEFAULT_ORGANIZATION_SLUG = 'my-org';
-    db.queryOne
-      .mockResolvedValueOnce({ id: 'org-1' }) // org found
-      .mockResolvedValueOnce(null);            // not yet a member
+    db.queryOne.mockResolvedValueOnce({ id: 'org-1' }); // org found
     db.query.mockResolvedValueOnce([]);
 
     await service.addUserToDefaultOrg('user-1');
 
     expect(db.query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO member'),
-      expect.arrayContaining(['org-1', 'user-1', 'member']),
+      expect.arrayContaining([expect.any(String), 'org-1', 'user-1', 'member']),
     );
   });
 });
