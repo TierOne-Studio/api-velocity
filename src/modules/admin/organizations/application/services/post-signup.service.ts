@@ -6,7 +6,9 @@ import { DatabaseService } from '../../../../../shared/infrastructure/database/d
  *
  * When DEFAULT_ORGANIZATION_SLUG is set, every new user is automatically
  * added as a `member` of that organization immediately after account creation.
- * If the env var is absent the service is a no-op, making the feature opt-in.
+ * When the env var is absent, the service falls back to the slug "default" and
+ * will attempt to onboard users into that organization if it exists; otherwise
+ * it logs a warning and performs no membership changes.
  *
  * The hook is wired via setPostSignupCallback() in AppModule.onModuleInit()
  * so that this service stays inside NestJS DI while auth.ts (Better Auth)
