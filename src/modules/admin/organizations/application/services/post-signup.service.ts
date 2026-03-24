@@ -30,7 +30,7 @@ export class PostSignupService {
       return;
     }
 
-    const memberId = generateId();
+    const memberId = crypto.randomUUID();
     await this.db.query(
       `INSERT INTO member (id, "organizationId", "userId", role)
        SELECT $1, $2, $3, $4
@@ -45,11 +45,3 @@ export class PostSignupService {
   }
 }
 
-function generateId(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < 32; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
