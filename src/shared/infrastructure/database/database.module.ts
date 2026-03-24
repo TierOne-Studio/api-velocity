@@ -112,7 +112,7 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
               image TEXT,
               "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
               "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-              role TEXT DEFAULT 'member',
+              role TEXT DEFAULT NULL,
               banned BOOLEAN DEFAULT false,
               "banReason" TEXT,
               "banExpires" TIMESTAMP WITH TIME ZONE
@@ -309,6 +309,26 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
               ALTER TABLE "user"
                 ADD CONSTRAINT user_role_platform_only_chk
                 CHECK (role IS NULL OR role = 'superadmin') NOT VALID;
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$;
+          `);
+        },
+      },
+      {
+        name: '009_drop_user_role_check_constraint',
+        up: async () => {
+          // Replace the legacy user_role_platform_only_chk constraint from 007 with
+          // a new CHECK that matches the intended allowed platform roles.
+          // This keeps Better Auth free to write valid platform roles while the DB
+          // still enforces that only known platform roles (or NULL) are stored.
+          await this.query(`
+            ALTER TABLE "user" DROP CONSTRAINT IF EXISTS user_role_platform_only_chk
+          `);
+          await this.query(`
+            DO $$ BEGIN
+              ALTER TABLE "user"
+                ADD CONSTRAINT user_role_platform_only_chk
+                CHECK (role IS NULL OR role IN ('admin', 'manager', 'member', 'superadmin')) NOT VALID;
             EXCEPTION WHEN duplicate_object THEN NULL;
             END $$;
           `);

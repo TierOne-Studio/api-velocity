@@ -16,6 +16,8 @@ describe('RbacMigrationService', () => {
       queryOne: jest.fn<() => Promise<unknown | null>>().mockResolvedValue(null),
       hasMigrationRun: jest.fn<() => Promise<boolean>>().mockResolvedValue(false),
       recordMigration: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      transaction: jest.fn().mockImplementation((cb: (q: any) => Promise<void>) =>
+        cb(jest.fn<() => Promise<unknown[]>>().mockResolvedValue([]))),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -47,7 +49,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true)   // rbac_009 already run
         .mockResolvedValueOnce(true)   // rbac_010 already run
         .mockResolvedValueOnce(true)   // rbac_011 already run
-        .mockResolvedValueOnce(true);  // rbac_012 already run
+        .mockResolvedValueOnce(true)   // rbac_012 already run
+        .mockResolvedValueOnce(true);  // rbac_013 already run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -72,7 +75,15 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false)   // rbac_009 NOT run
         .mockResolvedValueOnce(false)   // rbac_010 NOT run
         .mockResolvedValueOnce(false)   // rbac_011 NOT run
-        .mockResolvedValueOnce(false);  // rbac_012 NOT run
+        .mockResolvedValueOnce(false)   // rbac_012 NOT run
+        .mockResolvedValueOnce(false);  // rbac_013 NOT run
+
+      // rbac_013 calls seedDefaultOrganization → UPSERT returns new org id.
+      // Use mockImplementation so it isn't consumed by earlier migrations that also call queryOne.
+      dbService.queryOne.mockImplementation(async (sql: string) => {
+        if (sql.includes('INSERT INTO organization')) return { id: 'seeded-org-id' };
+        return null;
+      });
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -100,8 +111,11 @@ describe('RbacMigrationService', () => {
       expect(dbService.recordMigration).toHaveBeenCalledWith(
         'rbac_012_assign_admin_full_permissions',
       );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_013_seed_default_organization',
+      );
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('9 new'),
+        expect.stringContaining('10 new'),
       );
       consoleSpy.mockRestore();
     });
@@ -142,6 +156,60 @@ describe('RbacMigrationService', () => {
       expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
         'rbac_012_assign_admin_full_permissions',
       );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_013_seed_default_organization',
+      );
+    });
+  });
+
+  describe('seedDefaultOrganization', () => {
+    afterEach(() => {
+      delete process.env.DEFAULT_ORGANIZATION_SLUG;
+    });
+
+    it('does nothing when the default org already exists', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      // UPSERT returns null (conflict — row already exists); fallback SELECT returns existing id
+      dbService.queryOne
+        .mockResolvedValueOnce(null)                     // INSERT ... ON CONFLICT DO NOTHING RETURNING → nothing inserted
+        .mockResolvedValueOnce({ id: 'existing-org' });  // fallback SELECT
+
+      await service.seedDefaultOrganization();
+
+      expect(dbService.transaction).not.toHaveBeenCalled();
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('already exists'));
+      consoleSpy.mockRestore();
+    });
+
+    it('creates the org and seeds roles when the slug does not exist (uses DEFAULT_ORGANIZATION_SLUG)', async () => {
+      process.env.DEFAULT_ORGANIZATION_SLUG = 'acme';
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      // UPSERT succeeds — new row inserted and returned
+      dbService.queryOne.mockResolvedValueOnce({ id: 'new-org-id' });
+
+      await service.seedDefaultOrganization();
+
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO organization'),
+        expect.arrayContaining(['acme']),
+      );
+      expect(dbService.transaction).toHaveBeenCalled();
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('created with default roles'));
+      consoleSpy.mockRestore();
+    });
+
+    it("falls back to slug 'default' when DEFAULT_ORGANIZATION_SLUG is not set", async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      // UPSERT succeeds with the default slug
+      dbService.queryOne.mockResolvedValueOnce({ id: 'new-org-id' });
+
+      await service.seedDefaultOrganization();
+
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO organization'),
+        expect.arrayContaining(['default']),
+      );
+      consoleSpy.mockRestore();
     });
   });
 

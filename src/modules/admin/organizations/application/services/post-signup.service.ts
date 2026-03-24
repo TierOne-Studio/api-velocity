@@ -1,0 +1,47 @@
+import { Injectable } from '@nestjs/common';
+import { DatabaseService } from '../../../../../shared/infrastructure/database/database.module';
+
+/**
+ * Handles post-signup side-effects for self-serve onboarding.
+ *
+ * When DEFAULT_ORGANIZATION_SLUG is set, every new user is automatically
+ * added as a `member` of that organization immediately after account creation.
+ * When the env var is absent, the service falls back to the slug "default" and
+ * will attempt to onboard users into that organization if it exists; otherwise
+ * it logs a warning and performs no membership changes.
+ *
+ * The hook is wired via setPostSignupCallback() in AppModule.onModuleInit()
+ * so that this service stays inside NestJS DI while auth.ts (Better Auth)
+ * calls it through a lightweight module-level callback.
+ */
+@Injectable()
+export class PostSignupService {
+  constructor(private readonly db: DatabaseService) {}
+
+  async addUserToDefaultOrg(userId: string): Promise<void> {
+    const slug = process.env.DEFAULT_ORGANIZATION_SLUG || 'default';
+
+    const org = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM organization WHERE slug = $1`,
+      [slug],
+    );
+    if (!org) {
+      console.warn(`[PostSignup] Default org slug "${slug}" not found — skipping onboarding`);
+      return;
+    }
+
+    const memberId = crypto.randomUUID();
+    await this.db.query(
+      `INSERT INTO member (id, "organizationId", "userId", role)
+       SELECT $1, $2, $3, $4
+       WHERE NOT EXISTS (
+         SELECT 1
+         FROM member
+         WHERE "organizationId" = $2 AND "userId" = $3
+       )`,
+      [memberId, org.id, userId, 'member'],
+    );
+    console.log(`[PostSignup] Added user ${userId} as member to org ${org.id}`);
+  }
+}
+

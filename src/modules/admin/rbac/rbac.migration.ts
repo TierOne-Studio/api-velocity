@@ -1,4 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { DatabaseService } from '../../../shared/infrastructure/database/database.module';
 
 const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
@@ -94,6 +95,10 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_012_assign_admin_full_permissions',
         up: () => this.assignAdminFullPermissions(),
+      },
+      {
+        name: 'rbac_013_seed_default_organization',
+        up: () => this.seedDefaultOrganization(),
       },
     ];
 
@@ -763,6 +768,84 @@ export class RbacMigrationService implements OnModuleInit {
    * Assign the full ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS set to all existing
    * org-scoped admin roles so they are consistent with the new spec.
    */
+  /**
+   * Ensure a default organization exists.
+   * Uses DEFAULT_ORGANIZATION_SLUG env var, falling back to 'default'.
+   * Idempotent: does nothing when the org already exists.
+   * Creates admin / manager / member roles with their standard permissions.
+   */
+  async seedDefaultOrganization(): Promise<void> {
+    const slug = process.env.DEFAULT_ORGANIZATION_SLUG || 'default';
+    const name = slug.charAt(0).toUpperCase() + slug.slice(1);
+
+    // Atomic upsert: safe under concurrent multi-instance startup.
+    // ON CONFLICT DO NOTHING + RETURNING returns the new row; the follow-up
+    // SELECT covers the case where a concurrent node already inserted it.
+    const inserted = await this.db.queryOne<{ id: string }>(
+      `INSERT INTO organization (id, name, slug, "createdAt")
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (slug) DO NOTHING
+       RETURNING id`,
+      [randomUUID(), name, slug],
+    );
+
+    const orgId = inserted
+      ? inserted.id
+      : (await this.db.queryOne<{ id: string }>(`SELECT id FROM organization WHERE slug = $1`, [slug]))!.id;
+
+    if (!inserted) {
+      console.log(`✅ Default organization "${slug}" already exists`);
+      return;
+    }
+
+    // Seed roles and permissions atomically using orgId from the UPSERT above
+    const managerTuples = ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS
+      .map((p) => `('${p.resource}','${p.action}')`)
+      .join(', ');
+    await this.db.transaction(async (query) => {
+      await query(
+        `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
+         VALUES
+           ('admin',   'Admin',   'Organization administrator with full access within their organization',              'red',  true, $1),
+           ('manager', 'Manager', 'Organization manager with elevated operational access within their organization',   'blue', true, $1),
+           ('member',  'Member',  'Organization member with basic access within their organization',                   'gray', true, $1)
+         ON CONFLICT (organization_id, name) WHERE organization_id IS NOT NULL DO NOTHING`,
+        [orgId],
+      );
+
+      // Admin gets all permissions
+      await query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT r.id, p.id
+         FROM roles r CROSS JOIN permissions p
+         WHERE r.organization_id = $1 AND r.name = 'admin'
+         ON CONFLICT DO NOTHING`,
+        [orgId],
+      );
+
+      // Manager gets org-operational permissions (single round-trip via tuple IN list)
+      await query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT r.id, p.id
+         FROM roles r JOIN permissions p ON (p.resource, p.action) IN (${managerTuples})
+         WHERE r.organization_id = $1 AND r.name = 'manager'
+         ON CONFLICT DO NOTHING`,
+        [orgId],
+      );
+
+      // Member gets read-only org access
+      await query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT r.id, p.id FROM roles r JOIN permissions p ON p.resource = 'organization' AND p.action = 'read'
+         WHERE r.organization_id = $1 AND r.name = 'member'
+         ON CONFLICT DO NOTHING`,
+        [orgId],
+      );
+    });
+
+    console.log(`✅ Default organization "${slug}" (id: ${orgId}) created with default roles`);
+  }
+
   async assignAdminFullPermissions(): Promise<void> {
     const organizations = await this.db.query<{ id: string }>(`SELECT id FROM organization`);
 

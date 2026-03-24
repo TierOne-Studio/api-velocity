@@ -78,7 +78,8 @@ describe('DatabaseService - Migration Tracking', () => {
         .mockResolvedValueOnce({ rows: [{ name: '005' }] }) // hasMigrationRun check 5
         .mockResolvedValueOnce({ rows: [{ name: '006' }] }) // hasMigrationRun check 6
         .mockResolvedValueOnce({ rows: [{ name: '007' }] }) // hasMigrationRun check 7
-        .mockResolvedValueOnce({ rows: [{ name: '008' }] }); // hasMigrationRun check 8
+        .mockResolvedValueOnce({ rows: [{ name: '009' }] }) // hasMigrationRun check 8 (009_drop)
+        .mockResolvedValueOnce({ rows: [{ name: '008' }] }); // hasMigrationRun check 9 (008_rename)
 
       await service.runMigrations();
 
@@ -87,7 +88,7 @@ describe('DatabaseService - Migration Tracking', () => {
     });
 
     it('should skip already-run migrations', async () => {
-      // All migrations already run
+      // All migrations already run (9 migrations: 001-007, 009, 008 in array order)
       mockPool.query
         .mockResolvedValueOnce({ rows: [] }) // CREATE TABLE
         .mockResolvedValueOnce({ rows: [{ name: '001' }] })
@@ -97,7 +98,8 @@ describe('DatabaseService - Migration Tracking', () => {
         .mockResolvedValueOnce({ rows: [{ name: '005' }] })
         .mockResolvedValueOnce({ rows: [{ name: '006' }] })
         .mockResolvedValueOnce({ rows: [{ name: '007' }] })
-        .mockResolvedValueOnce({ rows: [{ name: '008' }] });
+        .mockResolvedValueOnce({ rows: [{ name: '009' }] }) // 009_drop_user_role_check_constraint
+        .mockResolvedValueOnce({ rows: [{ name: '008' }] }); // 008_rename_is_system_to_is_default
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runMigrations();
@@ -204,7 +206,7 @@ describe('DatabaseService - Migration Tracking', () => {
   });
 
   describe('runMigrations — all pending', () => {
-    it('should run all 8 migrations when none have run, covering all SQL bodies', async () => {
+    it('should run all 9 migrations when none have run', async () => {
       // CREATE TABLE _migrations
       mockPool.query
         .mockResolvedValueOnce({ rows: [] })  // CREATE TABLE _migrations
@@ -248,7 +250,7 @@ describe('DatabaseService - Migration Tracking', () => {
 
       // Should log completed with count
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('8 new'),
+        expect.stringContaining('9 new'),
       );
       consoleSpy.mockRestore();
     });
