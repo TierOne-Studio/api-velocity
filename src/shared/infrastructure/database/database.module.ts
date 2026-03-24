@@ -317,13 +317,20 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
       {
         name: '009_drop_user_role_check_constraint',
         up: async () => {
-          // Drop the user_role_platform_only_chk constraint that was added in 007.
-          // Better Auth always explicitly sets user.role at signup (defaulting to 'user'
-          // or 'member') and does not support inserting NULL, so the constraint blocks
-          // every new account creation. Role integrity is enforced at the application
-          // layer (checking role === 'superadmin') rather than at the DB level.
+          // Replace the legacy user_role_platform_only_chk constraint from 007 with
+          // a new CHECK that matches the intended allowed platform roles.
+          // This keeps Better Auth free to write valid platform roles while the DB
+          // still enforces that only known platform roles (or NULL) are stored.
           await this.query(`
             ALTER TABLE "user" DROP CONSTRAINT IF EXISTS user_role_platform_only_chk
+          `);
+          await this.query(`
+            DO $$ BEGIN
+              ALTER TABLE "user"
+                ADD CONSTRAINT user_role_platform_only_chk
+                CHECK (role IS NULL OR role IN ('admin', 'manager', 'member', 'superadmin')) NOT VALID;
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$;
           `);
         },
       },
