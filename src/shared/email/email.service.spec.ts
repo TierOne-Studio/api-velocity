@@ -310,6 +310,7 @@ describe('EmailService', () => {
 
   describe('maskEmail edge cases', () => {
     it('masks a short local-part (2 chars or fewer) with triple stars', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       const configService = createConfigServiceMock({
         getResendApiKey: jest.fn(() => ''),
         isTestMode: jest.fn(() => false),
@@ -317,10 +318,16 @@ describe('EmailService', () => {
       const service = new EmailService(configService);
 
       await service.sendEmail({ to: 'ab@example.com', subject: 'Short', html: '<p>Hi</p>' });
-      // sendEmail resolves (no API key path). If maskEmail didn't throw we're good.
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[EmailService] sendEmail called:'),
+        expect.objectContaining({ to: '***@example.com' }),
+      );
+      consoleSpy.mockRestore();
     });
 
-    it('handles email addresses without @ gracefully', async () => {
+    it('handles email addresses without @ gracefully by masking to <invalid>', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       const configService = createConfigServiceMock({
         getResendApiKey: jest.fn(() => ''),
         isTestMode: jest.fn(() => false),
@@ -328,8 +335,13 @@ describe('EmailService', () => {
       });
       const service = new EmailService(configService);
 
-      // sendEmail will call maskEmail('not-an-email') which should return '<invalid>'
       await service.sendEmail({ to: 'not-an-email', subject: 'No at', html: '<p>Hi</p>' });
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[EmailService] sendEmail called:'),
+        expect.objectContaining({ to: '<invalid>' }),
+      );
+      consoleSpy.mockRestore();
     });
   });
 

@@ -473,7 +473,7 @@ describe('OrgImpersonationService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('should throw ForbiddenException when org-scoped actor tries to impersonate a non-member role', async () => {
+    it('should throw ForbiddenException when org-scoped actor tries to impersonate a user with elevated role', async () => {
       dbService.queryOne.mockResolvedValueOnce({ role: 'admin' }); // target has admin role, not member
 
       await expect(
