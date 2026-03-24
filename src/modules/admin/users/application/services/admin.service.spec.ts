@@ -23,7 +23,7 @@ import { ConfigService } from '../../../../../shared/config/config.service';
 describe('AdminService', () => {
   let service: AdminService;
   let userRepo: jest.Mocked<IAdminUserRepository>;
-  let emailService: { sendEmailVerification: jest.Mock; sendPasswordResetEmail: jest.Mock; sendOrganizationInvitation: jest.Mock };
+  let emailService: jest.Mocked<EmailService>;
 
   const mockRoles = [
     { name: 'admin', display_name: 'Admin', description: 'Platform admin', color: '#ff0000', is_default: true },
