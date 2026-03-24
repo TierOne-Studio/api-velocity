@@ -206,7 +206,7 @@ describe('DatabaseService - Migration Tracking', () => {
   });
 
   describe('runMigrations — all pending', () => {
-    it('should run all 9 migrations when none have run, covering all SQL bodies', async () => {
+    it('should run all 9 migrations when none have run', async () => {
       // CREATE TABLE _migrations
       mockPool.query
         .mockResolvedValueOnce({ rows: [] })  // CREATE TABLE _migrations
