@@ -28,16 +28,15 @@ export class PostSignupService {
       return;
     }
 
-    const existing = await this.db.queryOne<{ id: string }>(
-      `SELECT id FROM member WHERE "userId" = $1 AND "organizationId" = $2`,
-      [userId, org.id],
-    );
-    if (existing) return;
-
     const memberId = generateId();
     await this.db.query(
       `INSERT INTO member (id, "organizationId", "userId", role)
-       VALUES ($1, $2, $3, $4)`,
+       SELECT $1, $2, $3, $4
+       WHERE NOT EXISTS (
+         SELECT 1
+         FROM member
+         WHERE "organizationId" = $2 AND "userId" = $3
+       )`,
       [memberId, org.id, userId, 'member'],
     );
     console.log(`[PostSignup] Added user ${userId} as member to org ${org.id}`);
