@@ -123,6 +123,16 @@ describe('AdminOrganizationsService', () => {
       expect(result.data).toHaveLength(0);
       expect(result.totalPages).toBe(0);
     });
+
+    it('uses page=1 and limit=20 defaults when page and limit are not supplied (lines 185-186)', async () => {
+      orgRepo.countAll.mockResolvedValue(0);
+      orgRepo.findAll.mockResolvedValue([]);
+
+      const result = await service.findAll({});
+
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(20);
+    });
   });
 
   describe('findAllForUser', () => {
@@ -148,6 +158,16 @@ describe('AdminOrganizationsService', () => {
 
       expect(orgRepo.countAllForUser).toHaveBeenCalledWith('user-99', 'acme');
       expect(orgRepo.findAllForUser).toHaveBeenCalledWith('user-99', 'acme', 20, 0);
+    });
+
+    it('uses page=1 and limit=20 defaults when page and limit are not supplied (lines 200-201)', async () => {
+      orgRepo.countAllForUser.mockResolvedValue(0);
+      orgRepo.findAllForUser.mockResolvedValue([]);
+
+      const result = await service.findAllForUser('user-1', {});
+
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(20);
     });
   });
 
@@ -260,6 +280,21 @@ describe('AdminOrganizationsService', () => {
       expect(orgRepo.createOrg).toHaveBeenCalledWith(
         expect.objectContaining({ actorRole: 'admin' }),
       );
+    });
+
+    it('should serialize metadata to JSON when metadata is provided (line 160)', async () => {
+      orgRepo.createOrg.mockResolvedValue(undefined);
+      orgRepo.findById.mockResolvedValue({ id: 'org-meta', name: 'Meta Org', slug: 'meta-org', logo: null, metadata: '{"plan":"pro"}', createdAt: new Date(), member_count: '0' });
+
+      const created = await service.create(
+        { name: 'Meta Org', slug: 'meta-org', metadata: { plan: 'pro' } },
+        { id: 'admin-1', platformRole: 'admin' },
+      );
+
+      expect(orgRepo.createOrg).toHaveBeenCalledWith(
+        expect.objectContaining({ metadataJson: '{"plan":"pro"}' }),
+      );
+      expect(created.name).toBe('Meta Org');
     });
   });
 
@@ -567,6 +602,18 @@ describe('AdminOrganizationsService', () => {
       );
       expect(orgRepo.findUserById).not.toHaveBeenCalled();
     });
+
+    it('should add a user whose role field is null (covers isSuperadminUserRole null branch, line 97)', async () => {
+      orgRepo.findById.mockResolvedValueOnce(mockOrganization);
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
+      orgRepo.findUserById.mockResolvedValue({ id: 'user-3', role: null });
+      orgRepo.findMemberByUserId.mockResolvedValue(null);
+      orgRepo.addMember.mockResolvedValue({ ...mockMemberResult, userId: 'user-3' });
+
+      const result = await service.addMember('org-1', 'user-3', 'member');
+
+      expect(result.userId).toBe('user-3');
+    });
   });
 
   describe('canUserReadOrganization', () => {
@@ -705,6 +752,34 @@ describe('AdminOrganizationsService', () => {
       orgRepo.findById.mockResolvedValueOnce(mockOrganization);
 
       await expect(service.update('org-1', { slug: 'invalid slug!' })).rejects.toThrow(BadRequestException);
+    });
+
+    it('should update logo when logo is provided (line 249)', async () => {
+      orgRepo.findById.mockResolvedValueOnce(mockOrganization);
+      orgRepo.updateOrg.mockResolvedValueOnce({ ...mockOrganization, logo: 'https://cdn.example.com/logo.png' });
+
+      const result = await service.update('org-1', { logo: 'https://cdn.example.com/logo.png' });
+
+      expect(orgRepo.updateOrg).toHaveBeenCalledWith('org-1', expect.objectContaining({ logo: 'https://cdn.example.com/logo.png' }));
+      expect(result?.logo).toBe('https://cdn.example.com/logo.png');
+    });
+
+    it('should serialize metadata to JSON when metadata is provided (line 250)', async () => {
+      orgRepo.findById.mockResolvedValueOnce(mockOrganization);
+      orgRepo.updateOrg.mockResolvedValueOnce({ ...mockOrganization, metadata: '{"plan":"pro"}' });
+
+      await service.update('org-1', { metadata: { plan: 'pro' } });
+
+      expect(orgRepo.updateOrg).toHaveBeenCalledWith('org-1', expect.objectContaining({ metadataJson: '{"plan":"pro"}' }));
+    });
+
+    it('should return null when updateOrg returns null (line 255)', async () => {
+      orgRepo.findById.mockResolvedValueOnce(mockOrganization);
+      orgRepo.updateOrg.mockResolvedValueOnce(null);
+
+      const result = await service.update('org-1', { name: 'New Name' });
+
+      expect(result).toBeNull();
     });
   });
 
@@ -862,6 +937,21 @@ describe('AdminOrganizationsService', () => {
 
       const result = await service.removeMember('org-1', 'member-1', 'admin');
       expect(result.success).toBe(true);
+    });
+
+    it('should throw NotFoundException when member is not found (line 478)', async () => {
+      orgRepo.findMemberById.mockResolvedValue(null);
+
+      await expect(service.removeMember('org-1', 'ghost-member', 'admin')).rejects.toThrow('Member not found');
+      expect(orgRepo.roleGrantsManagePermission).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when removeMember returns false (line 486)', async () => {
+      orgRepo.findMemberById.mockResolvedValue({ id: 'member-1', role: 'member', userId: 'user-1' });
+      orgRepo.roleGrantsManagePermission.mockResolvedValue(false);
+      orgRepo.removeMember.mockResolvedValue(false);
+
+      await expect(service.removeMember('org-1', 'member-1', 'admin')).rejects.toThrow('Member not found');
     });
   });
 

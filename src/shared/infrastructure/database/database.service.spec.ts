@@ -272,4 +272,23 @@ describe('DatabaseService - Migration Tracking', () => {
       consoleSpy.mockRestore();
     });
   });
+
+  describe('onModuleInit', () => {
+    it('calls runMigrations on module init', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      await service.onModuleInit();
+
+      consoleSpy.mockRestore();
+      expect(mockPool.query).toHaveBeenCalled();
+    });
+  });
+
+  describe('onModuleDestroy', () => {
+    it('ends the pool on module destroy', async () => {
+      await service.onModuleDestroy();
+      expect(mockPool.end).toHaveBeenCalled();
+    });
+  });
 });

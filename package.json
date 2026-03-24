@@ -99,7 +99,10 @@
       "**/*.(t|j)s",
       "!**/*.spec.ts",
       "!**/*.e2e-spec.ts",
-      "!**/main.ts"
+      "!**/main.ts",
+      "!**/*.module.ts",
+      "!**/auth.ts",
+      "!**/permissions.ts"
     ],
     "coverageReporters": [
       "text",

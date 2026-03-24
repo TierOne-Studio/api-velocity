@@ -180,9 +180,19 @@ describe('TypeOrmRoleRepository', () => {
       );
     });
 
-    it('returns null when role not found after update', async () => {
+    it('returns null when role not found on initial lookup', async () => {
       mockTransactionManager.findOne.mockResolvedValue(null);
       expect(await repo.update('nope', { displayName: 'X' })).toBeNull();
+    });
+
+    it('returns null when role disappears after update (second findOne returns null)', async () => {
+      mockTransactionManager.findOne
+        .mockResolvedValueOnce(roleEntity)  // initial lookup: role exists
+        .mockResolvedValueOnce(null);        // post-update lookup: role gone
+      mockTransactionManager.update.mockResolvedValue(undefined);
+
+      const result = await repo.update('r-1', { displayName: 'X' });
+      expect(result).toBeNull();
     });
 
     it('skips undefined fields in partial', async () => {
@@ -241,6 +251,13 @@ describe('TypeOrmRoleRepository', () => {
       mockDataSource.query.mockResolvedValue([{ users: '1', members: '2', invitations: '3' }]);
 
       await expect(repo.getUsageSummary('r-1')).resolves.toEqual({ users: 1, members: 2, invitations: 3 });
+    });
+
+    it('returns zeroes for org-scoped role when the database query returns an empty array', async () => {
+      mockRoleFindOne.mockResolvedValue(roleEntity);
+      mockDataSource.query.mockResolvedValue([]);
+
+      await expect(repo.getUsageSummary('r-1')).resolves.toEqual({ users: 0, members: 0, invitations: 0 });
     });
   });
 

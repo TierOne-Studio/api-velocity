@@ -178,6 +178,21 @@ describe('AdminService', () => {
       await expect(service.setUserRole({ userId: 'user-1', role: 'manager' }, 'manager', null)).rejects.toThrow(ForbiddenException);
     });
 
+    it('allows manager to set role when user is in the active org (covers assertUserInManagerOrg path, line 170)', async () => {
+      userRepo.findUserRole.mockResolvedValueOnce('member');
+      userRepo.findMemberInOrg.mockResolvedValueOnce({ id: 'm-1' });
+      userRepo.setUserRole.mockResolvedValueOnce({ ...mockUser, role: 'member' });
+
+      const result = await service.setUserRole(
+        { userId: 'target-1', role: 'member' },
+        'manager',
+        'org-1',
+        'actor-manager',
+      );
+
+      expect(result!.role).toBe('member');
+    });
+
     it('should throw ForbiddenException when user tries to change own role', async () => {
       await expect(
         service.setUserRole(
@@ -434,6 +449,12 @@ describe('AdminService', () => {
 
       expect(result!.name).toBe('Updated Name');
     });
+
+    it('throws ForbiddenException when non-superadmin has no active organization (line 143)', async () => {
+      await expect(
+        service.updateUser({ userId: 'user-1', name: 'X' }, 'admin', null),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   describe('banUser', () => {
@@ -446,6 +467,12 @@ describe('AdminService', () => {
       );
       expect(result.success).toBe(true);
     });
+
+    it('throws ForbiddenException when non-superadmin has no active organization (line 207)', async () => {
+      await expect(
+        service.banUser({ userId: 'user-1', banReason: 'test' }, 'admin', null),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   describe('unbanUser', () => {
@@ -453,6 +480,12 @@ describe('AdminService', () => {
       userRepo.unbanUser.mockResolvedValueOnce(undefined);
       const result = await service.unbanUser({ userId: 'user-1' }, 'superadmin', null);
       expect(result.success).toBe(true);
+    });
+
+    it('throws ForbiddenException when non-superadmin has no active organization (line 229)', async () => {
+      await expect(
+        service.unbanUser({ userId: 'user-2' }, 'admin', null),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -466,6 +499,12 @@ describe('AdminService', () => {
       );
       expect(result.status).toBe(true);
     });
+
+    it('throws ForbiddenException when non-superadmin has no active organization (line 251)', async () => {
+      await expect(
+        service.setUserPassword({ userId: 'user-1', newPassword: 'NewPass123!' }, 'admin', null),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   describe('removeUser', () => {
@@ -473,6 +512,12 @@ describe('AdminService', () => {
       userRepo.removeUser.mockResolvedValueOnce(undefined);
       const result = await service.removeUser({ userId: 'user-1' }, 'superadmin', null);
       expect(result.success).toBe(true);
+    });
+
+    it('throws ForbiddenException when non-superadmin has no active organization (line 274)', async () => {
+      await expect(
+        service.removeUser({ userId: 'user-1' }, 'admin', null),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 

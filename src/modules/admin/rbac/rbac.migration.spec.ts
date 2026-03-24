@@ -35,6 +35,18 @@ describe('RbacMigrationService', () => {
     expect(service).toBeDefined();
   });
 
+  describe('onModuleInit', () => {
+    it('calls runTrackedMigrations on module init', async () => {
+      dbService.hasMigrationRun.mockResolvedValue(true);
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      await service.onModuleInit();
+
+      consoleSpy.mockRestore();
+      expect(dbService.hasMigrationRun).toHaveBeenCalled();
+    });
+  });
+
   describe('runTrackedMigrations', () => {
     it('should skip migrations that have already run', async () => {
       dbService.hasMigrationRun
@@ -633,6 +645,49 @@ describe('RbacMigrationService', () => {
       expect(dbService.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO role_permissions'),
         ['admin-id', 'p-1'],
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('RBAC superadmin/org role redesign seeded'));
+      consoleSpy.mockRestore();
+    });
+
+    it('calls syncRolePermissions for member role when member role is found', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT id FROM organization')) return [{ id: 'org-1' }];
+        if (sql.includes('SELECT id FROM permissions')) return [{ id: 'p-1' }];
+        return [];
+      });
+
+      // Build all 14 queryOne calls in sequence:
+      // 1: superadmin role
+      // 2: org-1 admin role
+      // 3: org-1 manager role
+      // 4-12: syncRolePermissions for manager (9 perm lookups → null)
+      // 13: org-1 member role ← LINE 682 TRIGGER
+      // 14: syncRolePermissions for member (1 perm lookup → null)
+      dbService.queryOne
+        .mockResolvedValueOnce({ id: 'superadmin-id' }) // 1: superadmin
+        .mockResolvedValueOnce({ id: 'admin-id' })      // 2: org admin
+        .mockResolvedValueOnce({ id: 'manager-id' })    // 3: org manager
+        .mockResolvedValueOnce(null)  // 4: manager perm 1 (org:read)
+        .mockResolvedValueOnce(null)  // 5: manager perm 2 (org:update)
+        .mockResolvedValueOnce(null)  // 6: manager perm 3 (org:invite)
+        .mockResolvedValueOnce(null)  // 7: manager perm 4 (role:read)
+        .mockResolvedValueOnce(null)  // 8: manager perm 5 (session:read)
+        .mockResolvedValueOnce(null)  // 9: manager perm 6 (session:revoke)
+        .mockResolvedValueOnce(null)  // 10: manager perm 7 (user:create)
+        .mockResolvedValueOnce(null)  // 11: manager perm 8 (user:read)
+        .mockResolvedValueOnce(null)  // 12: manager perm 9 (user:update)
+        .mockResolvedValueOnce({ id: 'member-id' }) // 13: org member role ← line 682
+        .mockResolvedValueOnce(null);               // 14: member perm 1 (org:read)
+
+      await service.redesignSuperadminAndOrganizationRoles();
+
+      // Verify the member role lookup was executed
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining("name = 'member'"),
+        ['org-1'],
       );
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('RBAC superadmin/org role redesign seeded'));
       consoleSpy.mockRestore();

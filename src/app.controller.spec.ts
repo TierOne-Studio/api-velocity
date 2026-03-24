@@ -39,6 +39,13 @@ describe('AppController', () => {
     });
   });
 
+  describe('getProfile', () => {
+    it('should return the session object directly', () => {
+      const session = { user: { id: 'user-1', email: 'user@test.com', role: 'admin' } };
+      expect(appController.getProfile(session as any)).toBe(session);
+    });
+  });
+
   /**
    * PR#6 - Health check endpoint
    */
