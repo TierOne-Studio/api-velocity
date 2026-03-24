@@ -112,7 +112,7 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
               image TEXT,
               "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
               "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-              role TEXT DEFAULT 'member',
+              role TEXT DEFAULT NULL,
               banned BOOLEAN DEFAULT false,
               "banReason" TEXT,
               "banExpires" TIMESTAMP WITH TIME ZONE
@@ -311,6 +311,19 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
                 CHECK (role IS NULL OR role = 'superadmin') NOT VALID;
             EXCEPTION WHEN duplicate_object THEN NULL;
             END $$;
+          `);
+        },
+      },
+      {
+        name: '009_drop_user_role_check_constraint',
+        up: async () => {
+          // Drop the user_role_platform_only_chk constraint that was added in 007.
+          // Better Auth always explicitly sets user.role at signup (defaulting to 'user'
+          // or 'member') and does not support inserting NULL, so the constraint blocks
+          // every new account creation. Role integrity is enforced at the application
+          // layer (checking role === 'superadmin') rather than at the DB level.
+          await this.query(`
+            ALTER TABLE "user" DROP CONSTRAINT IF EXISTS user_role_platform_only_chk
           `);
         },
       },

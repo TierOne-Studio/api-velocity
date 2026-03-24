@@ -130,9 +130,15 @@ export class RbacController {
       };
     }
 
+    // Non-superadmins derive permissions solely from their org membership role.
+    // Without an active org there is no membership context → return empty.
+    if (!activeOrganizationId) {
+      return { data: [] };
+    }
+
     // user.role is NULL for non-superadmins after Phase 0 migration; resolve actual org membership role
     let effectiveRole: string = userRole;
-    if (activeOrganizationId && session.user.id) {
+    if (session.user.id) {
       const memberRole = await this.roleService.getUserActiveMemberRole(session.user.id, activeOrganizationId);
       if (memberRole) effectiveRole = memberRole;
     }

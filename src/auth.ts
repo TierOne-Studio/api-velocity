@@ -19,6 +19,14 @@ export function setEmailService(service: EmailService): void {
     emailServiceInstance = service;
 }
 
+// Post-signup callback - will be set by the module
+type PostSignupCallback = (userId: string) => Promise<void>;
+let postSignupCallback: PostSignupCallback | null = null;
+
+export function setPostSignupCallback(callback: PostSignupCallback): void {
+    postSignupCallback = callback;
+}
+
 export async function closeAuthDatabasePool(): Promise<void> {
     if (isAuthDatabasePoolClosed) {
         return;
@@ -75,6 +83,21 @@ export const auth = betterAuth({
         },
     },
     
+    // Post-signup hook — adds new users to the default org (self-serve onboarding)
+    databaseHooks: {
+        user: {
+            create: {
+                after: async (user) => {
+                    if (postSignupCallback) {
+                        await postSignupCallback(user.id).catch((err) =>
+                            console.error('[Auth] post-signup hook failed:', err),
+                        );
+                    }
+                },
+            },
+        },
+    },
+
     // Email Verification Configuration
     emailVerification: {
         sendOnSignUp: !isTestMode,

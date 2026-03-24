@@ -44,7 +44,12 @@ describe('Auth Configuration - Token Expiry (PR#7)', () => {
     expect(authSource).toContain('roles,');
   });
 
-  it('should configure Better Auth admin plugin to default new users to member', () => {
+  it("should configure Better Auth admin plugin to default new users to 'member'", () => {
     expect(authSource).toContain("defaultRole: 'member'");
+  });
+
+  it('should configure a databaseHooks user.create.after hook for post-signup logic', () => {
+    expect(authSource).toContain('databaseHooks');
+    expect(authSource).toContain('postSignupCallback');
   });
 });

@@ -47,7 +47,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true)   // rbac_009 already run
         .mockResolvedValueOnce(true)   // rbac_010 already run
         .mockResolvedValueOnce(true)   // rbac_011 already run
-        .mockResolvedValueOnce(true);  // rbac_012 already run
+        .mockResolvedValueOnce(true)   // rbac_012 already run
+        .mockResolvedValueOnce(true);  // rbac_013 already run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -72,7 +73,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false)   // rbac_009 NOT run
         .mockResolvedValueOnce(false)   // rbac_010 NOT run
         .mockResolvedValueOnce(false)   // rbac_011 NOT run
-        .mockResolvedValueOnce(false);  // rbac_012 NOT run
+        .mockResolvedValueOnce(false)   // rbac_012 NOT run
+        .mockResolvedValueOnce(false);  // rbac_013 NOT run
 
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       await service.runTrackedMigrations();
@@ -100,8 +102,11 @@ describe('RbacMigrationService', () => {
       expect(dbService.recordMigration).toHaveBeenCalledWith(
         'rbac_012_assign_admin_full_permissions',
       );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_013_seed_default_organization',
+      );
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('9 new'),
+        expect.stringContaining('10 new'),
       );
       consoleSpy.mockRestore();
     });
@@ -142,6 +147,65 @@ describe('RbacMigrationService', () => {
       expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
         'rbac_012_assign_admin_full_permissions',
       );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_013_seed_default_organization',
+      );
+    });
+  });
+
+  describe('seedDefaultOrganization', () => {
+    afterEach(() => {
+      delete process.env.DEFAULT_ORGANIZATION_SLUG;
+    });
+
+    it('does nothing when the default org already exists', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      dbService.queryOne.mockResolvedValueOnce({ id: 'existing-org' });
+
+      await service.seedDefaultOrganization();
+
+      expect(dbService.query).not.toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO organization'),
+        expect.anything(),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('already exists'));
+      consoleSpy.mockRestore();
+    });
+
+    it('creates the org and seeds roles when the slug does not exist (uses DEFAULT_ORGANIZATION_SLUG)', async () => {
+      process.env.DEFAULT_ORGANIZATION_SLUG = 'acme';
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      dbService.queryOne.mockResolvedValueOnce(null); // org not found
+
+      await service.seedDefaultOrganization();
+
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT id FROM organization WHERE slug'),
+        ['acme'],
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO organization'),
+        expect.arrayContaining(['acme']),
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO roles'),
+        expect.arrayContaining([expect.any(String)]),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('created with default roles'));
+      consoleSpy.mockRestore();
+    });
+
+    it("falls back to slug 'default' when DEFAULT_ORGANIZATION_SLUG is not set", async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      dbService.queryOne.mockResolvedValueOnce(null); // org not found
+
+      await service.seedDefaultOrganization();
+
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT id FROM organization WHERE slug'),
+        ['default'],
+      );
+      consoleSpy.mockRestore();
     });
   });
 

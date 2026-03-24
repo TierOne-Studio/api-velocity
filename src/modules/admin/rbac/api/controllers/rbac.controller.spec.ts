@@ -97,15 +97,13 @@ describe('RbacController metadata', () => {
   });
 
   it('returns empty permissions for org-scoped users without active organization in getMyPermissions', async () => {
-    roleService.getUserPermissions.mockResolvedValue([]);
-
     const result = await controller.getMyPermissions({
       user: { role: 'admin' },
       session: {},
     } as any);
 
     expect(result).toEqual({ data: [] });
-    expect(roleService.getUserPermissions).toHaveBeenCalledWith('admin', null);
+    expect(roleService.getUserPermissions).not.toHaveBeenCalled();
   });
 
   it('resolves org membership role when user.role is null (post-Phase0 users)', async () => {
