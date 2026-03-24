@@ -786,51 +786,52 @@ export class RbacMigrationService implements OnModuleInit {
       return;
     }
 
-    const orgId = generateMigrationId();
-    await this.db.query(
-      `INSERT INTO organization (id, name, slug, "createdAt")
-       VALUES ($1, $2, $3, NOW())`,
-      [orgId, name, slug],
-    );
-
-    // Seed admin / manager / member roles
-    await this.db.query(
-      `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
-       VALUES
-         ('admin',   'Admin',   'Organization administrator with full access within their organization',              'red',  true, $1),
-         ('manager', 'Manager', 'Organization manager with elevated operational access within their organization',   'blue', true, $1),
-         ('member',  'Member',  'Organization member with basic access within their organization',                   'gray', true, $1)
-       ON CONFLICT (organization_id, name) WHERE organization_id IS NOT NULL DO NOTHING`,
-      [orgId],
-    );
-
-    // Admin gets all permissions
-    await this.db.query(
-      `INSERT INTO role_permissions (role_id, permission_id)
-       SELECT r.id, p.id
-       FROM roles r CROSS JOIN permissions p
-       WHERE r.organization_id = $1 AND r.name = 'admin'
-       ON CONFLICT DO NOTHING`,
-      [orgId],
-    );
-
-    // Manager gets org-operational permissions
-    const managerPerms: [string, string][] = [
-      ['organization', 'read'],  ['organization', 'update'], ['organization', 'invite'],
-      ['role', 'read'],
-      ['session', 'read'],       ['session', 'revoke'],
-      ['user', 'create'],        ['user', 'read'],           ['user', 'update'],
-    ];
-    for (const [resource, action] of managerPerms) {
-      await this.db.query(
-        `INSERT INTO role_permissions (role_id, permission_id)
-         SELECT r.id, p.id FROM roles r JOIN permissions p ON p.resource = $2 AND p.action = $3
-         WHERE r.organization_id = $1 AND r.name = 'manager'
-         ON CONFLICT DO NOTHING`,
-        [orgId, resource, action],
+    await this.db.transaction(async (tx) => {
+      const orgId = generateMigrationId();
+      await tx.query(
+        `INSERT INTO organization (id, name, slug, "createdAt")
+         VALUES ($1, $2, $3, NOW())`,
+        [orgId, name, slug],
       );
-    }
 
+      // Seed admin / manager / member roles
+      await tx.query(
+        `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
+         VALUES
+           ('admin',   'Admin',   'Organization administrator with full access within their organization',              'red',  true, $1),
+           ('manager', 'Manager', 'Organization manager with elevated operational access within their organization',   'blue', true, $1),
+           ('member',  'Member',  'Organization member with basic access within their organization',                   'gray', true, $1)
+         ON CONFLICT (organization_id, name) WHERE organization_id IS NOT NULL DO NOTHING`,
+        [orgId],
+      );
+
+      // Admin gets all permissions
+      await tx.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT r.id, p.id
+         FROM roles r CROSS JOIN permissions p
+         WHERE r.organization_id = $1 AND r.name = 'admin'
+         ON CONFLICT DO NOTHING`,
+        [orgId],
+      );
+
+      // Manager gets org-operational permissions
+      const managerPerms: [string, string][] = [
+        ['organization', 'read'],  ['organization', 'update'], ['organization', 'invite'],
+        ['role', 'read'],
+        ['session', 'read'],       ['session', 'revoke'],
+        ['user', 'create'],        ['user', 'read'],           ['user', 'update'],
+      ];
+      for (const [resource, action] of managerPerms) {
+        await tx.query(
+          `INSERT INTO role_permissions (role_id, permission_id)
+           SELECT r.id, p.id FROM roles r JOIN permissions p ON p.resource = $2 AND p.action = $3
+           WHERE r.organization_id = $1 AND r.name = 'manager'
+           ON CONFLICT DO NOTHING`,
+          [orgId, resource, action],
+        );
+      }
+    });
     // Member gets read-only org access
     await this.db.query(
       `INSERT INTO role_permissions (role_id, permission_id)
