@@ -778,25 +778,32 @@ export class RbacMigrationService implements OnModuleInit {
     const slug = process.env.DEFAULT_ORGANIZATION_SLUG || 'default';
     const name = slug.charAt(0).toUpperCase() + slug.slice(1);
 
-    const existing = await this.db.queryOne<{ id: string }>(
-      `SELECT id FROM organization WHERE slug = $1`,
-      [slug],
+    // Atomic upsert: safe under concurrent multi-instance startup.
+    // ON CONFLICT DO NOTHING + RETURNING returns the new row; the follow-up
+    // SELECT covers the case where a concurrent node already inserted it.
+    const inserted = await this.db.queryOne<{ id: string }>(
+      `INSERT INTO organization (id, name, slug, "createdAt")
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (slug) DO NOTHING
+       RETURNING id`,
+      [randomUUID(), name, slug],
     );
-    if (existing) {
+
+    const orgId = inserted
+      ? inserted.id
+      : (await this.db.queryOne<{ id: string }>(`SELECT id FROM organization WHERE slug = $1`, [slug]))!.id;
+
+    if (!inserted) {
       console.log(`✅ Default organization "${slug}" already exists`);
       return;
     }
 
-    await this.db.transaction(async (tx) => {
-      const orgId = randomUUID();
-      await tx.query(
-        `INSERT INTO organization (id, name, slug, "createdAt")
-         VALUES ($1, $2, $3, NOW())`,
-        [orgId, name, slug],
-      );
-
-      // Seed admin / manager / member roles
-      await tx.query(
+    // Seed roles and permissions atomically using orgId from the UPSERT above
+    const managerTuples = ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS
+      .map((p) => `('${p.resource}','${p.action}')`)
+      .join(', ');
+    await this.db.transaction(async (query) => {
+      await query(
         `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
          VALUES
            ('admin',   'Admin',   'Organization administrator with full access within their organization',              'red',  true, $1),
@@ -807,7 +814,7 @@ export class RbacMigrationService implements OnModuleInit {
       );
 
       // Admin gets all permissions
-      await tx.query(
+      await query(
         `INSERT INTO role_permissions (role_id, permission_id)
          SELECT r.id, p.id
          FROM roles r CROSS JOIN permissions p
@@ -816,31 +823,25 @@ export class RbacMigrationService implements OnModuleInit {
         [orgId],
       );
 
-      // Manager gets org-operational permissions
-      const managerPerms: [string, string][] = [
-        ['organization', 'read'],  ['organization', 'update'], ['organization', 'invite'],
-        ['role', 'read'],
-        ['session', 'read'],       ['session', 'revoke'],
-        ['user', 'create'],        ['user', 'read'],           ['user', 'update'],
-      ];
-      for (const [resource, action] of managerPerms) {
-        await tx.query(
-          `INSERT INTO role_permissions (role_id, permission_id)
-           SELECT r.id, p.id FROM roles r JOIN permissions p ON p.resource = $2 AND p.action = $3
-           WHERE r.organization_id = $1 AND r.name = 'manager'
-           ON CONFLICT DO NOTHING`,
-          [orgId, resource, action],
-        );
-      }
+      // Manager gets org-operational permissions (single round-trip via tuple IN list)
+      await query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT r.id, p.id
+         FROM roles r JOIN permissions p ON (p.resource, p.action) IN (${managerTuples})
+         WHERE r.organization_id = $1 AND r.name = 'manager'
+         ON CONFLICT DO NOTHING`,
+        [orgId],
+      );
+
+      // Member gets read-only org access
+      await query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT r.id, p.id FROM roles r JOIN permissions p ON p.resource = 'organization' AND p.action = 'read'
+         WHERE r.organization_id = $1 AND r.name = 'member'
+         ON CONFLICT DO NOTHING`,
+        [orgId],
+      );
     });
-    // Member gets read-only org access
-    await this.db.query(
-      `INSERT INTO role_permissions (role_id, permission_id)
-       SELECT r.id, p.id FROM roles r JOIN permissions p ON p.resource = 'organization' AND p.action = 'read'
-       WHERE r.organization_id = $1 AND r.name = 'member'
-       ON CONFLICT DO NOTHING`,
-      [orgId],
-    );
 
     console.log(`✅ Default organization "${slug}" (id: ${orgId}) created with default roles`);
   }
