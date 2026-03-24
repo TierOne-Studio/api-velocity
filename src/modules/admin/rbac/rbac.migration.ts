@@ -1,4 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { DatabaseService } from '../../../shared/infrastructure/database/database.module';
 
 const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
@@ -787,7 +788,7 @@ export class RbacMigrationService implements OnModuleInit {
     }
 
     await this.db.transaction(async (tx) => {
-      const orgId = generateMigrationId();
+      const orgId = randomUUID();
       await tx.query(
         `INSERT INTO organization (id, name, slug, "createdAt")
          VALUES ($1, $2, $3, NOW())`,
@@ -859,13 +860,4 @@ export class RbacMigrationService implements OnModuleInit {
 
     console.log('✅ Org admin roles updated with full permission set');
   }
-}
-
-function generateMigrationId(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < 32; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
 }
