@@ -535,4 +535,244 @@ describe('RbacMigrationService', () => {
       );
     });
   });
+
+  describe('backfillRolePermissions', () => {
+    it('should assign permissions to admin, manager, and member when all roles and permissions exist', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      // All permissions list returned for admin
+      dbService.query.mockResolvedValue([{ id: 'all-perm-1' }, { id: 'all-perm-2' }]);
+
+      dbService.queryOne
+        .mockResolvedValueOnce({ id: 'admin-id' })    // admin role lookup
+        .mockResolvedValueOnce({ id: 'manager-id' })  // manager role lookup
+        .mockResolvedValueOnce({ id: 'perm-1' })      // manager perm 1
+        .mockResolvedValueOnce({ id: 'perm-2' })      // manager perm 2
+        .mockResolvedValueOnce({ id: 'perm-3' })      // manager perm 3
+        .mockResolvedValueOnce({ id: 'perm-4' })      // manager perm 4
+        .mockResolvedValueOnce({ id: 'perm-5' })      // manager perm 5
+        .mockResolvedValueOnce({ id: 'perm-6' })      // manager perm 6
+        .mockResolvedValueOnce({ id: 'perm-7' })      // manager perm 7
+        .mockResolvedValueOnce({ id: 'perm-8' })      // manager perm 8
+        .mockResolvedValueOnce({ id: 'perm-9' })      // manager perm 9
+        .mockResolvedValueOnce({ id: 'perm-10' })     // manager perm 10
+        .mockResolvedValueOnce({ id: 'member-id' })   // member role lookup
+        .mockResolvedValueOnce({ id: 'perm-11' })     // member perm 1
+        .mockResolvedValueOnce({ id: 'perm-12' })     // member perm 2
+        .mockResolvedValueOnce({ id: 'perm-13' });    // member perm 3
+
+      await service.backfillRolePermissions();
+
+      expect(dbService.queryOne).toHaveBeenCalledWith(`SELECT id FROM roles WHERE name = 'admin'`);
+      expect(dbService.queryOne).toHaveBeenCalledWith(`SELECT id FROM roles WHERE name = 'manager'`);
+      expect(dbService.queryOne).toHaveBeenCalledWith(`SELECT id FROM roles WHERE name = 'member'`);
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO role_permissions'),
+        ['admin-id', 'all-perm-1'],
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('role_permissions backfill complete'));
+      consoleSpy.mockRestore();
+    });
+
+    it('should skip inserts when no roles are found', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      dbService.queryOne.mockResolvedValue(null);
+
+      await service.backfillRolePermissions();
+
+      expect(dbService.query).not.toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO role_permissions'),
+        expect.anything(),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('role_permissions backfill complete'));
+      consoleSpy.mockRestore();
+    });
+
+    it('should skip permission inserts when permission lookup returns null for manager', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      dbService.query.mockResolvedValue([{ id: 'all-perm-1' }]);
+
+      dbService.queryOne
+        .mockResolvedValueOnce({ id: 'admin-id' })  // admin role found
+        .mockResolvedValueOnce({ id: 'mgr-id' })    // manager role found
+        .mockResolvedValue(null);                    // all permission lookups return null
+
+      await service.backfillRolePermissions();
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('role_permissions backfill complete'));
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('redesignSuperadminAndOrganizationRoles (with roles found)', () => {
+    it('assigns permissions to superadmin, org admin, manager, and member when all roles exist', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT id FROM organization')) return [{ id: 'org-1' }];
+        if (sql.includes('SELECT id FROM permissions')) return [{ id: 'p-1' }];
+        return [];
+      });
+
+      // superadminRole, then per org: adminRole, managerRole (sync perms), memberRole (sync perms)
+      dbService.queryOne
+        .mockResolvedValueOnce({ id: 'superadmin-id' }) // superadmin role
+        .mockResolvedValueOnce({ id: 'admin-id' })      // org admin role
+        .mockResolvedValueOnce({ id: 'manager-id' })    // org manager role
+        // syncRolePermissions for manager (9 perms) — return null for each so no insert
+        .mockResolvedValue(null);
+
+      await service.redesignSuperadminAndOrganizationRoles();
+
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO role_permissions'),
+        ['superadmin-id', 'p-1'],
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO role_permissions'),
+        ['admin-id', 'p-1'],
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('RBAC superadmin/org role redesign seeded'));
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('addManageMembersPermission', () => {
+    it('assigns manage-members permission to superadmin and org admin roles when both exist', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      dbService.queryOne
+        .mockResolvedValueOnce({ id: 'superadmin-id' })     // superadmin role
+        .mockResolvedValueOnce({ id: 'manage-members-id' }); // manage-members permission
+
+      await service.addManageMembersPermission();
+
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO role_permissions'),
+        ['superadmin-id', 'manage-members-id'],
+      );
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO role_permissions'),
+        expect.arrayContaining(['manage-members-id']),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('organization:manage-members permission added'),
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('skips superadmin assignment when superadmin role not found but still assigns org admins', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      dbService.queryOne
+        .mockResolvedValueOnce(null)                         // superadmin role not found
+        .mockResolvedValueOnce({ id: 'manage-members-id' }); // manage-members permission found
+
+      await service.addManageMembersPermission();
+
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO role_permissions'),
+        expect.arrayContaining(['manage-members-id']),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('organization:manage-members permission added'),
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('skips all permission assignments when manage-members permission not found', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      dbService.queryOne
+        .mockResolvedValueOnce({ id: 'superadmin-id' }) // superadmin role found
+        .mockResolvedValueOnce(null);                    // manage-members permission not found
+
+      await service.addManageMembersPermission();
+
+      expect(dbService.query).not.toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO role_permissions'),
+        expect.anything(),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('organization:manage-members permission added'),
+      );
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('assignAdminFullPermissions', () => {
+    it('calls syncRolePermissions for each org admin role found', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT id FROM organization')) return [{ id: 'org-1' }, { id: 'org-2' }];
+        return [];
+      });
+
+      dbService.queryOne
+        .mockResolvedValueOnce({ id: 'admin-id-1' }) // admin role for org-1
+        .mockResolvedValue(null);                     // no admin for org-2, and permission lookups null
+
+      await service.assignAdminFullPermissions();
+
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining("name = 'admin'"),
+        ['org-1'],
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Org admin roles updated with full permission set'),
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('does nothing when no organizations exist', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      dbService.query.mockResolvedValueOnce([]);
+
+      await service.assignAdminFullPermissions();
+
+      expect(dbService.queryOne).not.toHaveBeenCalled();
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Org admin roles updated with full permission set'),
+      );
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('runTrackedMigrations (migrations rbac_001, rbac_005, rbac_006)', () => {
+    it('runs createRbacTables, backfillRolePermissions, and assignAllPermissionsToAdmin when not yet applied', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      // Only rbac_001, rbac_005, and rbac_006 are pending; all others already ran
+      dbService.hasMigrationRun
+        .mockResolvedValueOnce(false)  // rbac_001 NOT run
+        .mockResolvedValueOnce(true)   // rbac_002 already run
+        .mockResolvedValueOnce(true)   // rbac_003 already run
+        .mockResolvedValueOnce(true)   // rbac_004 already run
+        .mockResolvedValueOnce(false)  // rbac_005 NOT run
+        .mockResolvedValueOnce(false)  // rbac_006 NOT run
+        .mockResolvedValueOnce(true)   // rbac_007 already run
+        .mockResolvedValueOnce(true)   // rbac_008 already run
+        .mockResolvedValueOnce(true)   // rbac_009 already run
+        .mockResolvedValueOnce(true)   // rbac_010 already run
+        .mockResolvedValueOnce(true)   // rbac_011 already run
+        .mockResolvedValueOnce(true)   // rbac_012 already run
+        .mockResolvedValueOnce(true);  // rbac_013 already run
+
+      // Needed by backfillRolePermissions and assignAllPermissionsToAdmin
+      dbService.queryOne.mockResolvedValue(null);
+      dbService.query.mockResolvedValue([]);
+
+      await service.runTrackedMigrations();
+
+      expect(dbService.recordMigration).toHaveBeenCalledWith('rbac_001_create_tables');
+      expect(dbService.recordMigration).toHaveBeenCalledWith('rbac_005_backfill_role_permissions');
+      expect(dbService.recordMigration).toHaveBeenCalledWith('rbac_006_assign_all_permissions_to_admin');
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('3 new'));
+      consoleSpy.mockRestore();
+    });
+  });
 });

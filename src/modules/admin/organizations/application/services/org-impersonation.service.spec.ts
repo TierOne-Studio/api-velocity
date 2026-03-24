@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { OrgImpersonationService } from './org-impersonation.service';
 import { DatabaseService } from '../../../../../shared/infrastructure/database/database.module';
 
@@ -396,6 +396,94 @@ describe('OrgImpersonationService', () => {
       dbService.queryOne.mockResolvedValue({ id: 'session-1', impersonatedBy: null });
 
       await expect(service.stopImpersonation('token-123')).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('startImpersonation (additional branch coverage)', () => {
+    it('should throw NotFoundException when target user is not found in the database', async () => {
+      dbService.queryOne.mockResolvedValueOnce(null); // target user not found
+
+      await expect(
+        (service as any).startImpersonation({
+          actorUserId: 'admin-1',
+          targetUserId: 'ghost-user',
+          platformRole: 'admin',
+          activeOrganizationId: null,
+          organizationId: 'org-1',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw ForbiddenException when superadmin target has no membership in the specified org', async () => {
+      dbService.queryOne
+        .mockResolvedValueOnce({ role: 'member' }) // target user found
+        .mockResolvedValueOnce(null);              // no membership in specified org
+
+      await expect(
+        (service as any).startImpersonation({
+          actorUserId: 'superadmin-1',
+          targetUserId: 'user-1',
+          platformRole: 'superadmin',
+          activeOrganizationId: null,
+          organizationId: 'org-1',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should throw BadRequestException when target user has no organization memberships', async () => {
+      dbService.queryOne.mockResolvedValueOnce({ role: 'member' }); // target user found
+      dbService.query.mockResolvedValueOnce([]);                     // no memberships
+
+      await expect(
+        (service as any).startImpersonation({
+          actorUserId: 'superadmin-1',
+          targetUserId: 'user-1',
+          platformRole: 'superadmin',
+          activeOrganizationId: null,
+          // organizationId not provided
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw ForbiddenException when org-scoped actor has no active organization', async () => {
+      dbService.queryOne.mockResolvedValueOnce({ role: 'member' }); // target user found
+
+      await expect(
+        (service as any).startImpersonation({
+          actorUserId: 'manager-1',
+          targetUserId: 'user-1',
+          platformRole: 'manager',
+          activeOrganizationId: null,
+          // no organizationId → managerOrganizationId = null
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should throw ForbiddenException when organizationId differs from activeOrganizationId', async () => {
+      dbService.queryOne.mockResolvedValueOnce({ role: 'member' }); // target user found
+
+      await expect(
+        (service as any).startImpersonation({
+          actorUserId: 'manager-1',
+          targetUserId: 'user-1',
+          platformRole: 'manager',
+          activeOrganizationId: 'org-1',
+          organizationId: 'org-2', // mismatched with activeOrganizationId
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should throw ForbiddenException when org-scoped actor tries to impersonate a non-member role', async () => {
+      dbService.queryOne.mockResolvedValueOnce({ role: 'admin' }); // target has admin role, not member
+
+      await expect(
+        (service as any).startImpersonation({
+          actorUserId: 'manager-1',
+          targetUserId: 'admin-2',
+          platformRole: 'manager',
+          activeOrganizationId: 'org-1',
+        }),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });

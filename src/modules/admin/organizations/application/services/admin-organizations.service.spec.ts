@@ -465,6 +465,29 @@ describe('AdminOrganizationsService', () => {
     });
   });
 
+  describe('deleteInvitation', () => {
+    it('should resolve without error when invitation is successfully deleted', async () => {
+      orgRepo.deleteInvitation.mockResolvedValueOnce(true);
+
+      await expect(service.deleteInvitation('org-1', 'inv-1')).resolves.toBeUndefined();
+      expect(orgRepo.findInvitationById).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when invitation does not exist at all', async () => {
+      orgRepo.deleteInvitation.mockResolvedValueOnce(false);
+      orgRepo.findInvitationById.mockResolvedValueOnce(null);
+
+      await expect(service.deleteInvitation('org-1', 'inv-ghost')).rejects.toThrow('Invitation not found');
+    });
+
+    it('should resolve without error when deletion returns false but invitation belongs to another org', async () => {
+      orgRepo.deleteInvitation.mockResolvedValueOnce(false);
+      orgRepo.findInvitationById.mockResolvedValueOnce({ id: 'inv-other' });
+
+      await expect(service.deleteInvitation('org-1', 'inv-other')).resolves.toBeUndefined();
+    });
+  });
+
   describe('addMember', () => {
     const mockMemberResult = {
       id: 'member-new',
@@ -533,6 +556,16 @@ describe('AdminOrganizationsService', () => {
       );
       expect(orgRepo.findMemberByUserId).not.toHaveBeenCalled();
       expect(orgRepo.addMember).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when specified role does not exist in the organization', async () => {
+      orgRepo.findById.mockResolvedValueOnce(mockOrganization);
+      orgRepo.getRoles.mockResolvedValue(orgRoles);
+
+      await expect(service.addMember('org-1', 'user-2', 'nonexistent-role')).rejects.toThrow(
+        'Role does not exist in this organization',
+      );
+      expect(orgRepo.findUserById).not.toHaveBeenCalled();
     });
   });
 

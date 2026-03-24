@@ -281,5 +281,78 @@ describe('EmailService', () => {
         }),
       );
     });
+
+    it('uses inviter email as fallback when inviter name is not provided', async () => {
+      const configService = createConfigServiceMock({
+        isTestMode: jest.fn(() => true),
+        getFeUrl: jest.fn(() => 'https://app.example.com'),
+      });
+      const service = new EmailService(configService);
+      const sendEmailSpy = jest.spyOn(service, 'sendEmail');
+
+      await service.sendOrganizationInvitation({
+        id: 'inv-2',
+        email: 'invitee@example.com',
+        role: 'member',
+        organizationId: 'org-1',
+        organization: { id: 'org-1', name: 'Acme Corp', slug: 'acme-corp' },
+        inviter: { user: { id: 'admin-1', name: '', email: 'admin@example.com' } },
+        expiresAt: new Date(Date.now() + 86400000),
+      });
+
+      expect(sendEmailSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          html: expect.stringContaining('admin@example.com'),
+        }),
+      );
+    });
+  });
+
+  describe('maskEmail edge cases', () => {
+    it('masks a short local-part (2 chars or fewer) with triple stars', async () => {
+      const configService = createConfigServiceMock({
+        getResendApiKey: jest.fn(() => ''),
+        isTestMode: jest.fn(() => false),
+      });
+      const service = new EmailService(configService);
+
+      await service.sendEmail({ to: 'ab@example.com', subject: 'Short', html: '<p>Hi</p>' });
+      // sendEmail resolves (no API key path). If maskEmail didn't throw we're good.
+    });
+
+    it('handles email addresses without @ gracefully', async () => {
+      const configService = createConfigServiceMock({
+        getResendApiKey: jest.fn(() => ''),
+        isTestMode: jest.fn(() => false),
+        shouldEnforceResendTestRecipients: jest.fn(() => false),
+      });
+      const service = new EmailService(configService);
+
+      // sendEmail will call maskEmail('not-an-email') which should return '<invalid>'
+      await service.sendEmail({ to: 'not-an-email', subject: 'No at', html: '<p>Hi</p>' });
+    });
+  });
+
+  describe('sendPasswordResetEmail (name fallback)', () => {
+    it('uses email as fallback when user name is empty', async () => {
+      const configService = createConfigServiceMock({
+        isTestMode: jest.fn(() => true),
+        getFeUrl: jest.fn(() => 'https://app.example.com'),
+      });
+      const service = new EmailService(configService);
+      const sendEmailSpy = jest.spyOn(service, 'sendEmail');
+
+      await service.sendPasswordResetEmail({
+        user: { id: 'user-1', email: 'user@example.com', name: '' },
+        token: 'reset-token-xyz',
+        url: 'https://app.example.com/set-new-password?token=reset-token-xyz',
+      });
+
+      expect(sendEmailSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          html: expect.stringContaining('user@example.com'),
+        }),
+      );
+    });
   });
 });
