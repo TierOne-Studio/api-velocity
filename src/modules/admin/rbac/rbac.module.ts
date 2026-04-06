@@ -17,7 +17,9 @@ import { TypeOrmPermissionRepository } from './infrastructure/persistence/reposi
  */
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([RoleTypeOrmEntity, PermissionTypeOrmEntity])],
+  imports: [
+    TypeOrmModule.forFeature([RoleTypeOrmEntity, PermissionTypeOrmEntity]),
+  ],
   controllers: [RbacController],
   providers: [
     RoleService,

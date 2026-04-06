@@ -16,5 +16,8 @@ export interface ISessionRepository {
   revokeSession(token: string): Promise<void>;
   revokeAllSessions(userId: string): Promise<void>;
   listUserSessions(userId: string): Promise<SessionRow[]>;
-  findMemberInOrg(userId: string, organizationId: string): Promise<{ id: string } | null>;
+  findMemberInOrg(
+    userId: string,
+    organizationId: string,
+  ): Promise<{ id: string } | null>;
 }

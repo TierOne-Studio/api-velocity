@@ -1,5 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import {
+  jest,
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from '@jest/globals';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { RoleService } from './role.service';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
@@ -16,7 +23,9 @@ const makeDomainRole = (overrides: Partial<Record<string, unknown>> = {}) => ({
   ...overrides,
 });
 
-const makeDomainPermission = (overrides: Partial<Record<string, unknown>> = {}) => ({
+const makeDomainPermission = (
+  overrides: Partial<Record<string, unknown>> = {},
+) => ({
   id: 'p1',
   resource: 'user',
   action: 'read',
@@ -26,7 +35,7 @@ const makeDomainPermission = (overrides: Partial<Record<string, unknown>> = {}) 
 
 describe('RoleService', () => {
   let service: RoleService;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let mockRoleRepo: any;
 
   beforeEach(async () => {
@@ -72,7 +81,10 @@ describe('RoleService', () => {
     });
 
     it('should return all roles when no organization filter is provided', async () => {
-      mockRoleRepo.findAll.mockResolvedValue([makeDomainRole(), makeDomainRole({ id: '2', name: 'member' })]);
+      mockRoleRepo.findAll.mockResolvedValue([
+        makeDomainRole(),
+        makeDomainRole({ id: '2', name: 'member' }),
+      ]);
 
       const result = await service.findAll(null);
 
@@ -103,13 +115,18 @@ describe('RoleService', () => {
 
   describe('findByNameInOrganization', () => {
     it('should return role when found in the specified organization', async () => {
-      mockRoleRepo.findByNameInOrganization.mockResolvedValue(makeDomainRole({ organizationId: 'org-1' }));
+      mockRoleRepo.findByNameInOrganization.mockResolvedValue(
+        makeDomainRole({ organizationId: 'org-1' }),
+      );
 
       const result = await service.findByNameInOrganization('admin', 'org-1');
 
       expect(result).not.toBeNull();
       expect(result?.name).toBe('admin');
-      expect(mockRoleRepo.findByNameInOrganization).toHaveBeenCalledWith('admin', 'org-1');
+      expect(mockRoleRepo.findByNameInOrganization).toHaveBeenCalledWith(
+        'admin',
+        'org-1',
+      );
     });
 
     it('should return null when role not found in the specified organization', async () => {
@@ -123,8 +140,20 @@ describe('RoleService', () => {
 
   describe('create', () => {
     it('should create a new role for the active organization', async () => {
-      const createDto = { name: 'editor', displayName: 'Editor', description: 'Can edit content', color: 'blue' };
-      mockRoleRepo.create.mockResolvedValue(makeDomainRole({ id: '2', name: 'editor', displayName: 'Editor', isDefault: false }));
+      const createDto = {
+        name: 'editor',
+        displayName: 'Editor',
+        description: 'Can edit content',
+        color: 'blue',
+      };
+      mockRoleRepo.create.mockResolvedValue(
+        makeDomainRole({
+          id: '2',
+          name: 'editor',
+          displayName: 'Editor',
+          isDefault: false,
+        }),
+      );
 
       const result = await service.create(createDto, 'org-1');
 
@@ -137,8 +166,18 @@ describe('RoleService', () => {
   describe('update', () => {
     it('should update a role', async () => {
       const updateDto = { displayName: 'Updated Editor' };
-      const existing = makeDomainRole({ id: '2', name: 'editor', displayName: 'Editor', isDefault: false });
-      const updated = makeDomainRole({ id: '2', name: 'editor', displayName: 'Updated Editor', isDefault: false });
+      const existing = makeDomainRole({
+        id: '2',
+        name: 'editor',
+        displayName: 'Editor',
+        isDefault: false,
+      });
+      const updated = makeDomainRole({
+        id: '2',
+        name: 'editor',
+        displayName: 'Updated Editor',
+        isDefault: false,
+      });
       mockRoleRepo.findById.mockResolvedValue(existing);
       mockRoleRepo.update.mockResolvedValue(updated);
 
@@ -148,19 +187,41 @@ describe('RoleService', () => {
     });
 
     it('should allow updating system role display fields', async () => {
-      const existing = makeDomainRole({ id: '1', name: 'admin', displayName: 'Admin', isDefault: true });
-      const updated = makeDomainRole({ id: '1', name: 'admin', displayName: 'Administrator', isDefault: true });
+      const existing = makeDomainRole({
+        id: '1',
+        name: 'admin',
+        displayName: 'Admin',
+        isDefault: true,
+      });
+      const updated = makeDomainRole({
+        id: '1',
+        name: 'admin',
+        displayName: 'Administrator',
+        isDefault: true,
+      });
       mockRoleRepo.findById.mockResolvedValue(existing);
       mockRoleRepo.update.mockResolvedValue(updated);
 
-      const result = await service.update('1', { displayName: 'Administrator' });
+      const result = await service.update('1', {
+        displayName: 'Administrator',
+      });
 
       expect(result?.displayName).toBe('Administrator');
     });
 
     it('renames an organization-scoped system role when the name is available', async () => {
-      const existing = makeDomainRole({ id: '1', name: 'admin', organizationId: 'org-1', isDefault: true });
-      const updated = makeDomainRole({ id: '1', name: 'owner', organizationId: 'org-1', isDefault: true });
+      const existing = makeDomainRole({
+        id: '1',
+        name: 'admin',
+        organizationId: 'org-1',
+        isDefault: true,
+      });
+      const updated = makeDomainRole({
+        id: '1',
+        name: 'owner',
+        organizationId: 'org-1',
+        isDefault: true,
+      });
       mockRoleRepo.findById.mockResolvedValue(existing);
       mockRoleRepo.findByNameInOrganization.mockResolvedValue(null);
       mockRoleRepo.update.mockResolvedValue(updated);
@@ -168,30 +229,71 @@ describe('RoleService', () => {
       const result = await service.update('1', { name: 'Owner' });
 
       expect(result?.name).toBe('owner');
-      expect(mockRoleRepo.findByNameInOrganization).toHaveBeenCalledWith('owner', 'org-1');
-      expect(mockRoleRepo.update).toHaveBeenCalledWith('1', expect.objectContaining({ name: 'owner' }));
+      expect(mockRoleRepo.findByNameInOrganization).toHaveBeenCalledWith(
+        'owner',
+        'org-1',
+      );
+      expect(mockRoleRepo.update).toHaveBeenCalledWith(
+        '1',
+        expect.objectContaining({ name: 'owner' }),
+      );
     });
 
     it('blocks renaming a global role', async () => {
-      mockRoleRepo.findById.mockResolvedValue(makeDomainRole({ id: 'global-admin', name: 'admin', organizationId: null }));
+      mockRoleRepo.findById.mockResolvedValue(
+        makeDomainRole({
+          id: 'global-admin',
+          name: 'admin',
+          organizationId: null,
+        }),
+      );
 
-      await expect(service.update('global-admin', { name: 'owner' })).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.update('global-admin', { name: 'owner' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(mockRoleRepo.update).not.toHaveBeenCalled();
     });
 
     it('blocks renaming a role when the target name already exists in the organization', async () => {
-      mockRoleRepo.findById.mockResolvedValue(makeDomainRole({ id: '1', name: 'admin', organizationId: 'org-1', isDefault: true }));
-      mockRoleRepo.findByNameInOrganization.mockResolvedValue(makeDomainRole({ id: '2', name: 'owner', organizationId: 'org-1', isDefault: false }));
+      mockRoleRepo.findById.mockResolvedValue(
+        makeDomainRole({
+          id: '1',
+          name: 'admin',
+          organizationId: 'org-1',
+          isDefault: true,
+        }),
+      );
+      mockRoleRepo.findByNameInOrganization.mockResolvedValue(
+        makeDomainRole({
+          id: '2',
+          name: 'owner',
+          organizationId: 'org-1',
+          isDefault: false,
+        }),
+      );
 
-      await expect(service.update('1', { name: 'owner' })).rejects.toBeInstanceOf(ConflictException);
+      await expect(
+        service.update('1', { name: 'owner' }),
+      ).rejects.toBeInstanceOf(ConflictException);
       expect(mockRoleRepo.update).not.toHaveBeenCalled();
     });
   });
 
   describe('delete', () => {
     it('should delete a non-system role', async () => {
-      mockRoleRepo.findById.mockResolvedValue(makeDomainRole({ id: '2', name: 'editor', organizationId: 'org-1', isDefault: false }));
-      mockRoleRepo.getUsageSummary.mockResolvedValue({ users: 0, members: 0, invitations: 0 });
+      mockRoleRepo.findById.mockResolvedValue(
+        makeDomainRole({
+          id: '2',
+          name: 'editor',
+          organizationId: 'org-1',
+          isDefault: false,
+        }),
+      );
+      mockRoleRepo.getUsageSummary.mockResolvedValue({
+        users: 0,
+        members: 0,
+        invitations: 0,
+      });
       mockRoleRepo.remove.mockResolvedValue(undefined);
 
       await service.delete('2');
@@ -200,8 +302,19 @@ describe('RoleService', () => {
     });
 
     it('allows deleting an unused organization-scoped system role', async () => {
-      mockRoleRepo.findById.mockResolvedValue(makeDomainRole({ id: '1', name: 'admin', organizationId: 'org-1', isDefault: true }));
-      mockRoleRepo.getUsageSummary.mockResolvedValue({ users: 0, members: 0, invitations: 0 });
+      mockRoleRepo.findById.mockResolvedValue(
+        makeDomainRole({
+          id: '1',
+          name: 'admin',
+          organizationId: 'org-1',
+          isDefault: true,
+        }),
+      );
+      mockRoleRepo.getUsageSummary.mockResolvedValue({
+        users: 0,
+        members: 0,
+        invitations: 0,
+      });
       mockRoleRepo.remove.mockResolvedValue(undefined);
 
       await expect(service.delete('1')).resolves.toBeUndefined();
@@ -209,17 +322,38 @@ describe('RoleService', () => {
     });
 
     it('blocks deleting a global role', async () => {
-      mockRoleRepo.findById.mockResolvedValue(makeDomainRole({ id: 'global-admin', name: 'admin', organizationId: null }));
+      mockRoleRepo.findById.mockResolvedValue(
+        makeDomainRole({
+          id: 'global-admin',
+          name: 'admin',
+          organizationId: null,
+        }),
+      );
 
-      await expect(service.delete('global-admin')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.delete('global-admin')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
       expect(mockRoleRepo.getUsageSummary).not.toHaveBeenCalled();
     });
 
     it('blocks deleting a role that is still assigned', async () => {
-      mockRoleRepo.findById.mockResolvedValue(makeDomainRole({ id: '1', name: 'admin', organizationId: 'org-1', isDefault: true }));
-      mockRoleRepo.getUsageSummary.mockResolvedValue({ users: 1, members: 1, invitations: 0 });
+      mockRoleRepo.findById.mockResolvedValue(
+        makeDomainRole({
+          id: '1',
+          name: 'admin',
+          organizationId: 'org-1',
+          isDefault: true,
+        }),
+      );
+      mockRoleRepo.getUsageSummary.mockResolvedValue({
+        users: 1,
+        members: 1,
+        invitations: 0,
+      });
 
-      await expect(service.delete('1')).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.delete('1')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
       expect(mockRoleRepo.remove).not.toHaveBeenCalled();
     });
   });
@@ -245,7 +379,10 @@ describe('RoleService', () => {
 
       await service.assignPermissions('2', ['perm1', 'perm2']);
 
-      expect(mockRoleRepo.setPermissions).toHaveBeenCalledWith('2', ['perm1', 'perm2']);
+      expect(mockRoleRepo.setPermissions).toHaveBeenCalledWith('2', [
+        'perm1',
+        'perm2',
+      ]);
     });
 
     it('should assign empty permissions array', async () => {
@@ -286,7 +423,11 @@ describe('RoleService', () => {
     });
 
     it('returns existing role when dto is empty — covers hasAnyField === false branch', async () => {
-      const existing = makeDomainRole({ id: '2', name: 'editor', isDefault: false });
+      const existing = makeDomainRole({
+        id: '2',
+        name: 'editor',
+        isDefault: false,
+      });
       mockRoleRepo.findById.mockResolvedValue(existing);
 
       const result = await service.update('2', {});
@@ -297,8 +438,17 @@ describe('RoleService', () => {
     });
 
     it('updates description field', async () => {
-      const existing = makeDomainRole({ id: '2', name: 'editor', isDefault: false });
-      const updated = makeDomainRole({ id: '2', name: 'editor', description: 'Updated desc', isDefault: false });
+      const existing = makeDomainRole({
+        id: '2',
+        name: 'editor',
+        isDefault: false,
+      });
+      const updated = makeDomainRole({
+        id: '2',
+        name: 'editor',
+        description: 'Updated desc',
+        isDefault: false,
+      });
       mockRoleRepo.findById.mockResolvedValue(existing);
       mockRoleRepo.update.mockResolvedValue(updated);
 
@@ -308,8 +458,17 @@ describe('RoleService', () => {
     });
 
     it('updates color field', async () => {
-      const existing = makeDomainRole({ id: '2', name: 'editor', isDefault: false });
-      const updated = makeDomainRole({ id: '2', name: 'editor', color: 'green', isDefault: false });
+      const existing = makeDomainRole({
+        id: '2',
+        name: 'editor',
+        isDefault: false,
+      });
+      const updated = makeDomainRole({
+        id: '2',
+        name: 'editor',
+        color: 'green',
+        isDefault: false,
+      });
       mockRoleRepo.findById.mockResolvedValue(existing);
       mockRoleRepo.update.mockResolvedValue(updated);
 
@@ -319,7 +478,9 @@ describe('RoleService', () => {
     });
 
     it('returns null when repo update returns null', async () => {
-      mockRoleRepo.findById.mockResolvedValue(makeDomainRole({ id: '2', name: 'editor', isDefault: false }));
+      mockRoleRepo.findById.mockResolvedValue(
+        makeDomainRole({ id: '2', name: 'editor', isDefault: false }),
+      );
       mockRoleRepo.update.mockResolvedValue(null);
 
       const result = await service.update('2', { displayName: 'New Name' });
@@ -347,7 +508,12 @@ describe('RoleService', () => {
 
     it('returns org-scoped permissions when active organization is provided', async () => {
       mockRoleRepo.findByNameInOrganization.mockResolvedValue(
-        makeDomainRole({ id: '1', name: 'admin', isDefault: false, organizationId: 'org-1' }),
+        makeDomainRole({
+          id: '1',
+          name: 'admin',
+          isDefault: false,
+          organizationId: 'org-1',
+        }),
       );
       mockRoleRepo.getPermissions.mockResolvedValue([makeDomainPermission()]);
 
@@ -355,11 +521,16 @@ describe('RoleService', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].resource).toBe('user');
-      expect(mockRoleRepo.findByNameInOrganization).toHaveBeenCalledWith('admin', 'org-1');
+      expect(mockRoleRepo.findByNameInOrganization).toHaveBeenCalledWith(
+        'admin',
+        'org-1',
+      );
     });
 
     it('returns global permissions when active organization is not provided', async () => {
-      mockRoleRepo.findByName.mockResolvedValue(makeDomainRole({ id: '1', name: 'superadmin' }));
+      mockRoleRepo.findByName.mockResolvedValue(
+        makeDomainRole({ id: '1', name: 'superadmin' }),
+      );
       mockRoleRepo.getPermissions.mockResolvedValue([makeDomainPermission()]);
 
       const result = await service.getUserPermissions('superadmin', null);
@@ -395,7 +566,10 @@ describe('RoleService', () => {
       const result = await service.getUserActiveMemberRole('u-1', 'org-1');
 
       expect(result).toBe('admin');
-      expect(mockRoleRepo.getMemberRoleInOrg).toHaveBeenCalledWith('u-1', 'org-1');
+      expect(mockRoleRepo.getMemberRoleInOrg).toHaveBeenCalledWith(
+        'u-1',
+        'org-1',
+      );
     });
 
     it('returns null when user has no membership in org', async () => {

@@ -9,7 +9,8 @@ import type { IPermissionRepository } from '../../domain/repositories/permission
 @Injectable()
 export class PermissionService {
   constructor(
-    @Inject(PERMISSION_REPOSITORY) private readonly permissionRepo: IPermissionRepository,
+    @Inject(PERMISSION_REPOSITORY)
+    private readonly permissionRepo: IPermissionRepository,
   ) {}
 
   /**
@@ -29,7 +30,10 @@ export class PermissionService {
   /**
    * Find permission by resource and action
    */
-  async findByResourceAction(resource: string, action: string): Promise<Permission | null> {
+  async findByResourceAction(
+    resource: string,
+    action: string,
+  ): Promise<Permission | null> {
     return this.permissionRepo.findByResourceAction(resource, action);
   }
 
@@ -43,7 +47,11 @@ export class PermissionService {
   /**
    * Create a new permission (for extensibility)
    */
-  async create(resource: string, action: string, description?: string): Promise<Permission> {
+  async create(
+    resource: string,
+    action: string,
+    description?: string,
+  ): Promise<Permission> {
     return this.permissionRepo.create(resource, action, description);
   }
 }

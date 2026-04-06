@@ -62,7 +62,12 @@ describe('role.entity utilities', () => {
     });
 
     it('maps a permission row with null description', () => {
-      const row = { id: 'p-2', resource: 'session', action: 'revoke', description: null };
+      const row = {
+        id: 'p-2',
+        resource: 'session',
+        action: 'revoke',
+        description: null,
+      };
       const perm = rowToPermission(row);
 
       expect(perm.description).toBeNull();

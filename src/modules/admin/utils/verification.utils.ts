@@ -13,6 +13,10 @@ export async function buildVerificationToken(
     .sign(encodedSecret);
 }
 
-export function buildVerificationUrl(token: string, baseUrl: string, feUrl: string): string {
+export function buildVerificationUrl(
+  token: string,
+  baseUrl: string,
+  feUrl: string,
+): string {
   return `${baseUrl}/api/auth/verify-email?token=${token}&callbackURL=${encodeURIComponent(feUrl)}`;
 }

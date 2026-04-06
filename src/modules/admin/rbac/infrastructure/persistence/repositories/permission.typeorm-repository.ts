@@ -33,8 +33,13 @@ export class TypeOrmPermissionRepository implements IPermissionRepository {
     return entity ? mapPermission(entity) : null;
   }
 
-  async findByResourceAction(resource: string, action: string): Promise<Permission | null> {
-    const entity = await this.permissionRepo.findOne({ where: { resource, action } });
+  async findByResourceAction(
+    resource: string,
+    action: string,
+  ): Promise<Permission | null> {
+    const entity = await this.permissionRepo.findOne({
+      where: { resource, action },
+    });
     return entity ? mapPermission(entity) : null;
   }
 
@@ -52,7 +57,11 @@ export class TypeOrmPermissionRepository implements IPermissionRepository {
     );
   }
 
-  async create(resource: string, action: string, description?: string): Promise<Permission> {
+  async create(
+    resource: string,
+    action: string,
+    description?: string,
+  ): Promise<Permission> {
     const entity = this.permissionRepo.create({
       resource,
       action,

@@ -8,12 +8,20 @@ import type { PlatformRole } from '../../../users/utils/admin.utils';
 @Injectable()
 export class SessionsService {
   constructor(
-    @Inject(SESSION_REPOSITORY) private readonly sessionRepo: ISessionRepository,
+    @Inject(SESSION_REPOSITORY)
+    private readonly sessionRepo: ISessionRepository,
   ) {}
 
-  private async assertUserInManagerOrg(userId: string, activeOrganizationId: string): Promise<void> {
-    const member = await this.sessionRepo.findMemberInOrg(userId, activeOrganizationId);
-    if (!member) throw new ForbiddenException('User is not in your organization');
+  private async assertUserInManagerOrg(
+    userId: string,
+    activeOrganizationId: string,
+  ): Promise<void> {
+    const member = await this.sessionRepo.findMemberInOrg(
+      userId,
+      activeOrganizationId,
+    );
+    if (!member)
+      throw new ForbiddenException('User is not in your organization');
   }
 
   async listUserSessions(params: {
@@ -24,7 +32,8 @@ export class SessionsService {
     const { userId, platformRole, activeOrganizationId } = params;
 
     if (platformRole !== 'superadmin') {
-      if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(userId, activeOrganizationId);
     }
     return this.sessionRepo.listUserSessions(userId);
@@ -36,8 +45,11 @@ export class SessionsService {
     activeOrganizationId: string | null,
   ) {
     if (platformRole !== 'superadmin') {
-      if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
-      const session = await this.sessionRepo.findSessionByToken(input.sessionToken);
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
+      const session = await this.sessionRepo.findSessionByToken(
+        input.sessionToken,
+      );
       if (!session) return { success: true };
       await this.assertUserInManagerOrg(session.userId, activeOrganizationId);
     }
@@ -51,7 +63,8 @@ export class SessionsService {
     activeOrganizationId: string | null,
   ) {
     if (platformRole !== 'superadmin') {
-      if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
     await this.sessionRepo.revokeAllSessions(input.userId);

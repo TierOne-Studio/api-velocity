@@ -5,6 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { RoleService } from '../../modules/admin/rbac/application/services';
 import {
@@ -12,10 +13,14 @@ import {
   getPlatformRole,
 } from '../../modules/admin/users/utils/admin.utils';
 
+type PermissionsRequest = {
+  session?: UserSession;
+};
+
 /**
  * Guard that checks if the authenticated user has the required permissions.
  * Permissions are resolved via RoleService based on the user's platform role.
- * 
+ *
  * @example
  * @UseGuards(PermissionsGuard)
  * @RequirePermissions('user:read')
@@ -39,7 +44,7 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<PermissionsRequest>();
     const session = request.session;
 
     if (!session?.user) {
@@ -56,11 +61,17 @@ export class PermissionsGuard implements CanActivate {
     // user.role is NULL for non-superadmins after Phase 0 migration; resolve actual org membership role
     let effectiveRole: string = platformRole;
     if (activeOrganizationId && session.user?.id) {
-      const memberRole = await this.roleService.getUserActiveMemberRole(session.user.id, activeOrganizationId);
+      const memberRole = await this.roleService.getUserActiveMemberRole(
+        session.user.id,
+        activeOrganizationId,
+      );
       if (memberRole) effectiveRole = memberRole;
     }
 
-    const userPermissions = await this.getUserPermissions(effectiveRole, activeOrganizationId);
+    const userPermissions = await this.getUserPermissions(
+      effectiveRole,
+      activeOrganizationId,
+    );
 
     const hasAllPermissions = requiredPermissions.every((permission) =>
       userPermissions.includes(permission),

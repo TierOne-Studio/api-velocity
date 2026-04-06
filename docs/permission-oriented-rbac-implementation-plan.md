@@ -38,9 +38,10 @@ The system has a **hybrid authorization model**: the guard/decorator layer is co
 
 Make **every non-superadmin authorization decision** capability-/permission-based:
 
-- **Backend:** Remove all hardcoded role-name checks from services, utils, and controllers. Replace with permission queries and capability checks.
-- **Frontend:** Remove role normalization, hardcoded role hierarchies, and `isSuperadmin` heuristics. Use only `can(resource, action)` and backend-driven capability payloads.
-- **Tests:** Prove every admin action is permission-gated via unit tests (TDD), and that no role-name coupling exists.
+- **Backend:** Remove all hardcoded role-name checks from services, utils, and controllers. Replace them with permission queries and capability checks.
+- **Backend runtime foundation:** Treat organization-scoped chat linked directly to one Airweave collection as the MVP baseline. Any remaining project-scoped runtime path is legacy coupling to remove, not behavior to preserve.
+- **Frontend:** Remove role normalization, hardcoded role hierarchies, and `isSuperadmin` heuristics. Use only `can(resource, action)` and backend-driven capability payloads on the surviving admin/chat/org surfaces.
+- **Tests:** Prove every admin action is permission-gated via unit tests (TDD), and prove the MVP chat flow no longer depends on project-scoped contracts.
 
 ### What stays the same
 
@@ -48,6 +49,31 @@ Make **every non-superadmin authorization decision** capability-/permission-base
 - The permission guard (`PermissionsGuard`) architecture is correct and stays.
 - The `@RequirePermissions()` decorator pattern stays.
 - Better Auth + Organization plugin remain the auth foundation.
+
+### MVP Baseline for This Plan (2026-04-05)
+
+The product direction has been intentionally reduced since this plan was first drafted. The active MVP is now:
+
+- one Airweave collection per organization
+- private conversations per user
+- no user-facing Projects page
+- no user-facing Data Sources page
+- Airweave connection management handled outside the product for now
+
+Step 0 is therefore not a side task. It is the product foundation this document assumes:
+
+- a signed-in user chats inside an active organization context
+- the backend resolves the collection from `organization.metadata.airweaveCollectionId`
+- conversations remain private to the user, scoped to the organization
+- any `projectId`, `ProjectsService`, project selector, or `project:read` gate in that flow is legacy coupling to remove
+
+Implications for this RBAC plan:
+
+- project-scoped runtime flows are no longer a product target and should be removed rather than redesigned
+- chat and Airweave access must move from project-scoped lookup to organization-scoped lookup
+- the canonical MVP collection reference should live in organization metadata, e.g. `organization.metadata.airweaveCollectionId`
+- permission cleanup must prioritize surviving surfaces first: organizations, admin, chat, and any remaining Airweave endpoints
+- any residual `project:*` gating that only exists to support removed runtime surfaces is cleanup work, not preserved behavior
 
 ---
 
@@ -71,6 +97,15 @@ Make **every non-superadmin authorization decision** capability-/permission-base
 | Impersonation endpoint (start) | `api: src/modules/admin/organizations/api/controllers/org-impersonation.controller.ts` | ✅ `POST /:orgId/impersonate` uses `@RequirePermissions('user:impersonate')` |
 | Impersonation endpoint (stop) | `api: org-impersonation.controller.ts` | ✅ `POST /stop-impersonating` — no guard needed, validates session token + `impersonatedBy` field |
 | SessionsPage | `spa: src/features/Admin/views/SessionsPage.tsx` | ✅ Uses `can('user','read')` and `can('session','revoke')` — no role-name checks |
+
+### 2.1A Product Baseline Mismatch To Resolve First
+
+The authorization architecture and the current runtime product shape are temporarily out of sync.
+
+- The desired MVP is chat linked directly to one organization collection.
+- The current implementation still has project-scoped chat and Airweave coupling in both repos.
+- The RBAC redesign should not preserve that broader runtime model by accident.
+- For this document, project-scoped runtime behavior is treated as transitional technical debt that Step 0 removes before the deeper RBAC phases continue.
 
 ### 2.2 Current Permission Vocabulary
 
@@ -151,6 +186,8 @@ Request → PermissionsGuard:
 4. **Capabilities refine target-specific eligibility.** Capability = "you are allowed to do this action to this specific target." Computed by backend, consumed by frontend.
 5. **Frontend never reconstructs authorization logic.** It calls `can(resource, action)` for broad gating and uses backend capability payloads for target-specific UI.
 6. **Organization scope is always resolved server-side** via `activeOrganizationId` in the session.
+7. **The MVP runtime is organization-scoped chat, not project-scoped workspaces.** The user enters chat through the active organization and never through a project selector.
+8. **The Airweave collection reference is organization-owned.** The canonical source is organization metadata, not a project record.
 
 ### 3.2 Authorization Decision Flow (Target)
 
@@ -205,6 +242,25 @@ if (!actorCanOverrideTarget) {
   throw new ForbiddenException('Cannot perform this action on a user with higher privileges');
 }
 ```
+
+### 3.4 MVP Runtime Model (Target)
+
+The target runtime model assumed by every later phase is:
+
+```text
+session
+  -> activeOrganizationId
+  -> organization.metadata.airweaveCollectionId
+  -> chat retrieval / generation flow
+  -> conversation persistence scoped by { userId, organizationId }
+```
+
+Consequences:
+
+- chat list/create/send/stream contracts must not require `projectId`
+- chat services must not depend on `ProjectsService` to resolve collection access
+- user-facing Projects/Data Sources routes are removed from the MVP shell
+- any remaining project module code is cleanup-only unless another surviving runtime surface still depends on it
 
 ---
 
@@ -809,9 +865,49 @@ Returns what the current actor can do to this org:
 
 The backend computes this from the actor's permissions in the active org. The frontend uses it instead of local heuristics.
 
+### 6.6 Boundary Rule For This Plan
+
+Capability work in this document applies to the surviving MVP surfaces:
+
+- organization administration
+- user and session administration
+- role and permission administration
+- organization-scoped chat access and related Airweave access
+
+It does not imply that removed project-scoped runtime flows remain first-class product concepts.
+
 ---
 
 ## 7. Backend Implementation Phases
+
+### Phase MVP-0: Establish The MVP Runtime Foundation
+
+**Files to change:**
+- `src/modules/chat/api/controllers/chat.controller.ts`
+- `src/modules/chat/application/services/chat.service.ts`
+- `src/modules/chat/application/services/chat-agent.service.ts`
+- `src/modules/chat/infrastructure/persistence/repositories/chat.database-repository.ts`
+- `src/modules/chat/chat.module.ts`
+- `src/modules/airweave/api/controllers/airweave.controller.ts`
+- `src/modules/admin/organizations/api/controllers/admin-organizations.controller.ts`
+- `src/modules/admin/organizations/application/services/admin-organizations.service.ts`
+- `src/modules/projects/**` (detach, then remove if no surviving dependency remains)
+
+**Steps:**
+1. Remove `projectId` from the chat list/create/send/stream runtime contract where it only exists to select a collection.
+2. Resolve the active collection from `organization.metadata.airweaveCollectionId`.
+3. Preserve private conversations per user by scoping persistence to `userId + organizationId`.
+4. Remove `ProjectsService` as a runtime dependency from chat paths.
+5. Treat project/data-source runtime code as cleanup once chat and Airweave no longer depend on it.
+
+**TDD:**
+```
+"list conversations does not require projectId" -> pass
+"create conversation resolves collection from organization metadata" -> pass
+"send message fails fast when active organization has no configured collection" -> pass
+"chat service does not inject ProjectsService" -> pass
+"airweave access for MVP chat is organization-scoped, not project-scoped" -> pass
+```
 
 ### Phase B1: Add New Permissions + Compatibility Layer
 
@@ -1041,6 +1137,31 @@ Also for Users controller:
 
 ## 8. Frontend Implementation Phases
 
+### Phase F0: Simplify The MVP Shell Around Chat
+
+**Files to change:**
+- `spa: src/app/views/AppRoutes.tsx`
+- `spa: src/shared/components/ui/app-sidebar.tsx`
+- `spa: src/features/Chat/views/ChatPage.tsx`
+- `spa: src/features/Chat/hooks/useChat.ts`
+- `spa: src/features/Chat/services/chatService.ts`
+- `spa: src/features/Projects/**` (removal)
+- `spa: src/features/DataSources/**` (removal)
+
+**Steps:**
+1. Remove user-facing Projects/Data Sources routes and navigation.
+2. Remove project selection from the chat entry flow.
+3. Move chat requests to the organization-scoped backend contract.
+4. Keep chat visibility and behavior aligned with active organization context.
+
+**TDD:**
+```
+"chat page renders without project selector" -> pass
+"projects route removed from MVP shell" -> pass
+"data sources route removed from MVP shell" -> pass
+"chat service does not send projectId in MVP flow" -> pass
+```
+
 ### Phase F1: Centralize Superadmin Detection
 
 **Files to change:**
@@ -1173,6 +1294,14 @@ Change `targetRole: "admin" | "manager" | "member"` → `targetRole: string`.
 ---
 
 ## 9. Test Plan (TDD)
+
+### 9.0 MVP Foundation Tests First
+
+Before the finer-grained RBAC phases, lock down the actual product baseline:
+
+- backend tests proving chat and Airweave runtime contracts are organization-scoped
+- frontend tests proving the shell exposes chat directly and no longer exposes Projects/Data Sources
+- focused e2e smoke coverage proving an authenticated user reaches chat through active organization context without project selection
 
 ### 9.1 Backend Unit Tests
 
@@ -1466,6 +1595,8 @@ describe('Custom role support')
 
 This is the **living audit artifact**. Every row must have a test.
 
+This matrix covers the surviving admin and organization surfaces after the MVP foundation cleanup. Removed project-scoped runtime routes are intentionally excluded from the target audit.
+
 | # | Action | Backend Endpoint | Required Permission | Capability Dep. | Frontend Gate | Test File |
 |---|--------|-----------------|--------------------|----|--------------|-----------|
 | 1 | List users | `GET /api/admin/users` | `user:read` | — | `can('user','read')` | admin-users.ctrl.spec |
@@ -1519,6 +1650,8 @@ This is the **living audit artifact**. Every row must have a test.
 
 ### 11.1 Strategy
 
+**Phase 0 (foundation):** Detach chat/Airweave runtime behavior from projects. Store the MVP collection reference on the organization and remove project-scoped user flows.
+
 **Phase 1 (additive):** Add new fine-grained permissions alongside old ones. Both old and new exist in DB.
 
 **Phase 2 (shift):** Update controller decorators and frontend `can()` calls to use new permissions. Old permissions still assigned to roles but no longer checked.
@@ -1548,6 +1681,10 @@ ON CONFLICT DO NOTHING;
 
 ### 11.3 Compatibility Window
 
+For Phase 0:
+- No compatibility promise is made for user-facing project-scoped chat/data-source UX.
+- The target behavior is the simplified MVP shell, not dual support for both models.
+
 During Phases 1-2:
 - Old permissions remain in DB and assigned to roles → nothing breaks.
 - New permissions also assigned → controllers can start requiring them.
@@ -1564,6 +1701,7 @@ Each step must pass all tests before proceeding.
 
 | Step | Phase | What | Risk | Run After |
 |------|-------|------|------|-----------|
+| 0 | MVP-0 | Remove project-scoped MVP coupling: move chat/Airweave lookup to organization scope, store collection id in organization metadata, and delete runtime Projects/Data Sources dependencies | **High** | Full test suite + focused chat/e2e coverage |
 | 1 | B1 | Add new permissions migration (rbac_014) | Low | Full test suite |
 | 2 | B2 | Create CapabilityService + tests | Low | Full test suite |
 | 3 | B3 | Refactor AdminService → CapabilityService | Medium | Full test suite |
@@ -1576,11 +1714,11 @@ Each step must pass all tests before proceeding.
 | 10 | F1 | Frontend: centralize superadmin + fix PermissionsContext | Medium | Full SPA test suite |
 | 11 | F2 | Frontend: fix/remove AdminOnlyRoute | Low | Full SPA test suite |
 | 12 | F3 | Frontend: remove role hierarchy | Low | Full SPA test suite |
-| 13 | F4 | Frontend: update pages (Users, Orgs, Roles) | Medium | Full test suite + full e2e |
-| 14 | F5 | Frontend: update types (UserCapabilities) | Low | Full SPA test suite |
+| 13 | F4 | Frontend: update pages (Users, Orgs, Roles, Chat shell) | Medium | Full test suite + full e2e |
+| 14 | F5 | Frontend: update types (UserCapabilities and surviving chat/org contracts) | Low | Full SPA test suite |
 | 15 | F6 | Frontend: permission error handling | Low | Full SPA test suite |
 | 16 | F7 | Frontend: rename OrgManagerRoute → OrgMemberRoute | Low | Full SPA test suite |
-| 17 | — | Remove legacy permissions (cleanup migration rbac_015) | Low | Full test suite + full e2e |
+| 17 | — | Remove legacy permissions (cleanup migration rbac_015) and any dead `project:*` usage left after MVP cleanup | Low | Full test suite + full e2e |
 | 18 | — | Final audit: structural test + matrix review | — | All suites |
 
 ---
@@ -1612,6 +1750,9 @@ Each step must pass all tests before proceeding.
 - [ ] `PermissionsContext` handles API errors gracefully.
 - [ ] Same-named roles in different orgs don't leak permissions (verify preserved via org-scoped DB queries).
 - [ ] `superadmin` bypass unchanged in guard and `PermissionsContext`.
+- [ ] Chat and Airweave MVP flows no longer depend on `projectId`, `ProjectsService`, or `project:read` gating.
+- [ ] Organization metadata is the single source of truth for the MVP Airweave collection reference.
+- [ ] User-facing Projects/Data Sources runtime surfaces are removed without leaving dead permission paths behind.
 - [ ] All backend unit tests pass.
 - [ ] All frontend unit tests pass.
 - [ ] All e2e tests pass.
@@ -1625,11 +1766,12 @@ Each step must pass all tests before proceeding.
 - Changing `superadmin` semantics or bypass behavior.
 - Redesigning Better Auth internals (but reconciling/securing `permissions.ts` and `admin()` plugin IS in scope).
 - Audit logging infrastructure.
-- Non-admin end-user permissions outside admin/RBAC surfaces.
+- New end-user feature design beyond the MVP chat/org/admin surface cleanup described above.
 - Performance optimization of permission queries (address later if needed).
 - UI/UX redesign of admin pages beyond permission gating.
 - Multi-tenant permission isolation (already handled by org-scoped roles).
 - Implementing the `useOrgRole()` hook with actual role data (only relevant if `OrgMemberRoute` needs permission checking; currently org membership check is sufficient).
+- Reintroducing or preserving user-facing Projects/Data Sources flows as part of this plan.
 
 ---
 
@@ -1689,6 +1831,8 @@ These routes are automatically registered by `admin()` and use the static `ac`/`
 ## 16. Dead Code Inventory
 
 All items confirmed via exhaustive codebase search (iteration 3). Safe to delete.
+
+Note: project-scoped runtime modules are expected to become newly dead after Phase MVP-0 / F0 completes. They are not listed below as already-dead code unless their last runtime dependency has been removed.
 
 ### API Dead Code
 

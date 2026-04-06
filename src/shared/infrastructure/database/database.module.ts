@@ -1,4 +1,11 @@
-import { Module, Global, OnModuleDestroy, Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import {
+  Module,
+  Global,
+  OnModuleDestroy,
+  Inject,
+  Injectable,
+  OnModuleInit,
+} from '@nestjs/common';
 import { Pool } from 'pg';
 import { ConfigService } from '../../config';
 
@@ -36,7 +43,10 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
   /**
    * Execute a query and return a single row
    */
-  async queryOne<T = unknown>(sql: string, params?: unknown[]): Promise<T | null> {
+  async queryOne<T = unknown>(
+    sql: string,
+    params?: unknown[],
+  ): Promise<T | null> {
     const rows = await this.query<T>(sql, params);
     return rows[0] ?? null;
   }
@@ -44,13 +54,23 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
   /**
    * Execute a query within a transaction
    */
-  async transaction<T>(callback: (query: (sql: string, params?: unknown[]) => Promise<unknown[]>) => Promise<T>): Promise<T> {
+  async transaction<T>(
+    callback: (
+      query: <TRow = unknown>(
+        sql: string,
+        params?: unknown[],
+      ) => Promise<TRow[]>,
+    ) => Promise<T>,
+  ): Promise<T> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const queryFn = async (sql: string, params?: unknown[]) => {
+      const queryFn = async <TRow = unknown>(
+        sql: string,
+        params?: unknown[],
+      ): Promise<TRow[]> => {
         const result = await client.query(sql, params);
-        return result.rows;
+        return result.rows as TRow[];
       };
       const result = await callback(queryFn);
       await client.query('COMMIT');
@@ -222,14 +242,30 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
       {
         name: '003_core_indexes',
         up: async () => {
-          await this.query(`CREATE INDEX IF NOT EXISTS "user_email_idx" ON "user"(email)`);
-          await this.query(`CREATE INDEX IF NOT EXISTS "session_userId_idx" ON session("userId")`);
-          await this.query(`CREATE INDEX IF NOT EXISTS "session_token_idx" ON session(token)`);
-          await this.query(`CREATE INDEX IF NOT EXISTS "account_userId_idx" ON account("userId")`);
-          await this.query(`CREATE INDEX IF NOT EXISTS "member_userId_idx" ON member("userId")`);
-          await this.query(`CREATE INDEX IF NOT EXISTS "member_organizationId_idx" ON member("organizationId")`);
-          await this.query(`CREATE INDEX IF NOT EXISTS "invitation_organizationId_idx" ON invitation("organizationId")`);
-          await this.query(`CREATE INDEX IF NOT EXISTS "invitation_email_idx" ON invitation(email)`);
+          await this.query(
+            `CREATE INDEX IF NOT EXISTS "user_email_idx" ON "user"(email)`,
+          );
+          await this.query(
+            `CREATE INDEX IF NOT EXISTS "session_userId_idx" ON session("userId")`,
+          );
+          await this.query(
+            `CREATE INDEX IF NOT EXISTS "session_token_idx" ON session(token)`,
+          );
+          await this.query(
+            `CREATE INDEX IF NOT EXISTS "account_userId_idx" ON account("userId")`,
+          );
+          await this.query(
+            `CREATE INDEX IF NOT EXISTS "member_userId_idx" ON member("userId")`,
+          );
+          await this.query(
+            `CREATE INDEX IF NOT EXISTS "member_organizationId_idx" ON member("organizationId")`,
+          );
+          await this.query(
+            `CREATE INDEX IF NOT EXISTS "invitation_organizationId_idx" ON invitation("organizationId")`,
+          );
+          await this.query(
+            `CREATE INDEX IF NOT EXISTS "invitation_email_idx" ON invitation(email)`,
+          );
         },
       },
       {
@@ -248,8 +284,12 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
         name: '005_enforce_unified_org_member_roles',
         up: async () => {
           // Normalize legacy Better Auth owner role residue.
-          await this.query(`UPDATE member SET role = 'admin' WHERE role = 'owner'`);
-          await this.query(`UPDATE invitation SET role = 'admin' WHERE role = 'owner'`);
+          await this.query(
+            `UPDATE member SET role = 'admin' WHERE role = 'owner'`,
+          );
+          await this.query(
+            `UPDATE invitation SET role = 'admin' WHERE role = 'owner'`,
+          );
 
           // Add constraints as NOT VALID so new writes are protected immediately
           // without blocking startup on pre-existing unexpected rows.

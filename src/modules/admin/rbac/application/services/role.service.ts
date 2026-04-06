@@ -1,4 +1,10 @@
-import { Injectable, Inject, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Inject,
+  NotFoundException,
+  ForbiddenException,
+  ConflictException,
+} from '@nestjs/common';
 import { Role, Permission } from '../../domain/entities/role.entity';
 import { CreateRoleDto, UpdateRoleDto } from '../../api/dto';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
@@ -34,14 +40,20 @@ export class RoleService {
     return this.roleRepo.findByName(name);
   }
 
-  async findByNameInOrganization(name: string, activeOrganizationId: string): Promise<Role | null> {
+  async findByNameInOrganization(
+    name: string,
+    activeOrganizationId: string,
+  ): Promise<Role | null> {
     return this.roleRepo.findByNameInOrganization(name, activeOrganizationId);
   }
 
   /**
    * Create a new role
    */
-  async create(dto: CreateRoleDto, activeOrganizationId: string): Promise<Role> {
+  async create(
+    dto: CreateRoleDto,
+    activeOrganizationId: string,
+  ): Promise<Role> {
     return this.roleRepo.create(dto, activeOrganizationId);
   }
 
@@ -71,7 +83,10 @@ export class RoleService {
         throw new ForbiddenException('Cannot rename global role');
       }
 
-      const duplicate = await this.roleRepo.findByNameInOrganization(normalizedName, existing.organizationId);
+      const duplicate = await this.roleRepo.findByNameInOrganization(
+        normalizedName,
+        existing.organizationId,
+      );
       if (duplicate && duplicate.id !== existing.id) {
         throw new ConflictException('Role name already exists');
       }
@@ -98,7 +113,9 @@ export class RoleService {
 
     const usage = await this.roleRepo.getUsageSummary(id);
     if (usage.users > 0 || usage.members > 0 || usage.invitations > 0) {
-      throw new ConflictException('Role is still assigned and cannot be deleted');
+      throw new ConflictException(
+        'Role is still assigned and cannot be deleted',
+      );
     }
 
     await this.roleRepo.remove(id);
@@ -114,7 +131,10 @@ export class RoleService {
   /**
    * Assign permissions to a role
    */
-  async assignPermissions(roleId: string, permissionIds: string[]): Promise<void> {
+  async assignPermissions(
+    roleId: string,
+    permissionIds: string[],
+  ): Promise<void> {
     await this.roleRepo.setPermissions(roleId, permissionIds);
   }
 
@@ -126,7 +146,10 @@ export class RoleService {
     activeOrganizationId: string | null,
   ): Promise<Permission[]> {
     const role = activeOrganizationId
-      ? await this.roleRepo.findByNameInOrganization(roleName, activeOrganizationId)
+      ? await this.roleRepo.findByNameInOrganization(
+          roleName,
+          activeOrganizationId,
+        )
       : await this.roleRepo.findByName(roleName);
     if (!role) {
       return [];
@@ -137,15 +160,28 @@ export class RoleService {
   /**
    * Check if a role has a specific permission
    */
-  async hasPermission(roleName: string, resource: string, action: string, organizationId?: string | null): Promise<boolean> {
-    return this.roleRepo.hasPermission(roleName, resource, action, organizationId);
+  async hasPermission(
+    roleName: string,
+    resource: string,
+    action: string,
+    organizationId?: string | null,
+  ): Promise<boolean> {
+    return this.roleRepo.hasPermission(
+      roleName,
+      resource,
+      action,
+      organizationId,
+    );
   }
 
   /**
    * Get the user's membership role in the given organization.
    * Returns null when the user is not a member.
    */
-  async getUserActiveMemberRole(userId: string, organizationId: string): Promise<string | null> {
+  async getUserActiveMemberRole(
+    userId: string,
+    organizationId: string,
+  ): Promise<string | null> {
     return this.roleRepo.getMemberRoleInOrg(userId, organizationId);
   }
 }

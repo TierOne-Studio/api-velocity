@@ -69,13 +69,17 @@ describe('AdminUsersController validation', () => {
   });
 
   it('rejects list when limit is not a number', async () => {
-    await expect(controller.list(baseSession, 'abc', '0')).rejects.toMatchObject({
+    await expect(
+      controller.list(baseSession, 'abc', '0'),
+    ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
   });
 
   it('rejects list when offset is negative', async () => {
-    await expect(controller.list(baseSession, '10', '-1')).rejects.toMatchObject({
+    await expect(
+      controller.list(baseSession, '10', '-1'),
+    ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
   });
@@ -131,7 +135,9 @@ describe('AdminUsersController validation', () => {
 
   it('rejects setPassword when password is shorter than 8 chars', async () => {
     await expect(
-      controller.setPassword(baseSession, 'target-user', { newPassword: 'short' }),
+      controller.setPassword(baseSession, 'target-user', {
+        newPassword: 'short',
+      }),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
@@ -139,10 +145,11 @@ describe('AdminUsersController validation', () => {
 
   it('rejects bulkRemove when userIds is not an array', async () => {
     await expect(
-      controller.bulkRemove(baseSession, { userIds: undefined as unknown as string[] }),
+      controller.bulkRemove(baseSession, {
+        userIds: undefined as unknown as string[],
+      }),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
   });
-
 });

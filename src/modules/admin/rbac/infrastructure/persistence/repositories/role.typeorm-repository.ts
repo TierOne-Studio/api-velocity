@@ -1,7 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
-import { IRoleRepository, RoleUsageSummary } from '../../../domain/repositories/role.repository.interface';
+import {
+  IRoleRepository,
+  RoleUsageSummary,
+} from '../../../domain/repositories/role.repository.interface';
 import { Role, Permission } from '../../../domain/entities/role.entity';
 import { CreateRoleDto } from '../../../api/dto/create-role.dto';
 import { UpdateRoleDto } from '../../../api/dto/update-role.dto';
@@ -66,14 +69,20 @@ export class TypeOrmRoleRepository implements IRoleRepository {
     return entity ? mapRole(entity) : null;
   }
 
-  async findByNameInOrganization(name: string, activeOrganizationId: string): Promise<Role | null> {
+  async findByNameInOrganization(
+    name: string,
+    activeOrganizationId: string,
+  ): Promise<Role | null> {
     const entity = await this.roleRepo.findOne({
       where: { name, organizationId: activeOrganizationId },
     });
     return entity ? mapRole(entity) : null;
   }
 
-  async create(dto: CreateRoleDto, activeOrganizationId: string): Promise<Role> {
+  async create(
+    dto: CreateRoleDto,
+    activeOrganizationId: string,
+  ): Promise<Role> {
     const entity = this.roleRepo.create({
       name: dto.name,
       displayName: dto.displayName,
@@ -88,7 +97,9 @@ export class TypeOrmRoleRepository implements IRoleRepository {
 
   async update(id: string, dto: UpdateRoleDto): Promise<Role | null> {
     return this.dataSource.transaction(async (manager) => {
-      const existing = await manager.findOne(RoleTypeOrmEntity, { where: { id } });
+      const existing = await manager.findOne(RoleTypeOrmEntity, {
+        where: { id },
+      });
       if (!existing) {
         return null;
       }
@@ -114,7 +125,9 @@ export class TypeOrmRoleRepository implements IRoleRepository {
         );
       }
 
-      const updated = await manager.findOne(RoleTypeOrmEntity, { where: { id } });
+      const updated = await manager.findOne(RoleTypeOrmEntity, {
+        where: { id },
+      });
       return updated ? mapRole(updated) : null;
     });
   }
@@ -194,7 +207,8 @@ export class TypeOrmRoleRepository implements IRoleRepository {
     });
     if (!role) return [];
     const sorted = [...(role.permissions ?? [])].sort((a, b) => {
-      if (a.resource !== b.resource) return a.resource.localeCompare(b.resource);
+      if (a.resource !== b.resource)
+        return a.resource.localeCompare(b.resource);
       return a.action.localeCompare(b.action);
     });
     return sorted.map(mapPermission);
@@ -209,7 +223,9 @@ export class TypeOrmRoleRepository implements IRoleRepository {
       if (!role) throw new NotFoundException(`Role ${roleId} not found`);
       const permissions =
         permissionIds.length > 0
-          ? await manager.findBy(PermissionTypeOrmEntity, { id: In(permissionIds) })
+          ? await manager.findBy(PermissionTypeOrmEntity, {
+              id: In(permissionIds),
+            })
           : [];
       role.permissions = permissions;
       await manager.save(RoleTypeOrmEntity, role);
@@ -250,7 +266,10 @@ export class TypeOrmRoleRepository implements IRoleRepository {
     return result[0] ? parseInt(result[0].count, 10) > 0 : false;
   }
 
-  async getMemberRoleInOrg(userId: string, organizationId: string): Promise<string | null> {
+  async getMemberRoleInOrg(
+    userId: string,
+    organizationId: string,
+  ): Promise<string | null> {
     const result = await this.dataSource.query<{ role: string }[]>(
       `SELECT m.role FROM member m WHERE m."userId" = $1 AND m."organizationId" = $2 LIMIT 1`,
       [userId, organizationId],

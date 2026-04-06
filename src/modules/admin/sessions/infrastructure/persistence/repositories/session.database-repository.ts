@@ -31,7 +31,10 @@ export class SessionDatabaseRepository implements ISessionRepository {
     );
   }
 
-  async findMemberInOrg(userId: string, organizationId: string): Promise<{ id: string } | null> {
+  async findMemberInOrg(
+    userId: string,
+    organizationId: string,
+  ): Promise<{ id: string } | null> {
     return this.db.queryOne<{ id: string }>(
       'SELECT id FROM member WHERE "organizationId" = $1 AND "userId" = $2',
       [organizationId, userId],

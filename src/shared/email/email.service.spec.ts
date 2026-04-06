@@ -15,7 +15,9 @@ describe('EmailService', () => {
     process.env = originalEnv;
   });
 
-  function createConfigServiceMock(overrides?: Partial<ConfigService>): ConfigService {
+  function createConfigServiceMock(
+    overrides?: Partial<ConfigService>,
+  ): ConfigService {
     const mock = {
       getResendApiKey: jest.fn(() => ''),
       getFromEmail: jest.fn(() => 'noreply@tierone.cc'),
@@ -80,7 +82,11 @@ describe('EmailService', () => {
     const service = new EmailService(configService);
 
     await expect(
-      service.sendEmail({ to: 'user@example.com', subject: 'Test', html: '<p>Hi</p>' }),
+      service.sendEmail({
+        to: 'user@example.com',
+        subject: 'Test',
+        html: '<p>Hi</p>',
+      }),
     ).resolves.toBeUndefined();
   });
 
@@ -92,13 +98,19 @@ describe('EmailService', () => {
     const service = new EmailService(configService);
 
     await expect(
-      service.sendEmail({ to: 'user@example.com', subject: 'No key', html: '<p>Hi</p>' }),
+      service.sendEmail({
+        to: 'user@example.com',
+        subject: 'No key',
+        html: '<p>Hi</p>',
+      }),
     ).resolves.toBeUndefined();
   });
 
   describe('sendEmailVerification', () => {
     it('calls sendEmail with verification subject and URL', async () => {
-      const configService = createConfigServiceMock({ isTestMode: jest.fn(() => true) });
+      const configService = createConfigServiceMock({
+        isTestMode: jest.fn(() => true),
+      });
       const service = new EmailService(configService);
       const sendEmailSpy = jest.spyOn(service, 'sendEmail');
 
@@ -112,13 +124,17 @@ describe('EmailService', () => {
         expect.objectContaining({
           to: 'user@example.com',
           subject: 'Verify your email',
-          html: expect.stringContaining('https://api.example.com/verify?token=abc'),
+          html: expect.stringContaining(
+            'https://api.example.com/verify?token=abc',
+          ),
         }),
       );
     });
 
     it('uses email as fallback when name is not provided', async () => {
-      const configService = createConfigServiceMock({ isTestMode: jest.fn(() => true) });
+      const configService = createConfigServiceMock({
+        isTestMode: jest.fn(() => true),
+      });
       const service = new EmailService(configService);
       const sendEmailSpy = jest.spyOn(service, 'sendEmail');
 
@@ -163,19 +179,25 @@ describe('EmailService', () => {
 
   describe('production send (with Resend client)', () => {
     it('initializes Resend client when API key is present', () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
       const configService = createConfigServiceMock({
         getResendApiKey: jest.fn(() => 'real-api-key'),
       });
 
       new EmailService(configService);
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Resend client initialized'));
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Resend client initialized'),
+      );
       consoleSpy.mockRestore();
     });
 
     it('sends email successfully via Resend', async () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
       const configService = createConfigServiceMock({
         getResendApiKey: jest.fn(() => 'real-api-key'),
         isTestMode: jest.fn(() => false),
@@ -183,11 +205,16 @@ describe('EmailService', () => {
       const service = new EmailService(configService);
 
       // Mock the internal resendClient.emails.send
-      const mockSend = jest.fn<() => Promise<{ data: { id: string }; error: null }>>()
+      const mockSend = jest
+        .fn<() => Promise<{ data: { id: string }; error: null }>>()
         .mockResolvedValue({ data: { id: 'email-123' }, error: null });
       (service as any).resendClient = { emails: { send: mockSend } };
 
-      await service.sendEmail({ to: 'user@example.com', subject: 'Test', html: '<p>Hi</p>' });
+      await service.sendEmail({
+        to: 'user@example.com',
+        subject: 'Test',
+        html: '<p>Hi</p>',
+      });
 
       expect(mockSend).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -204,7 +231,9 @@ describe('EmailService', () => {
     });
 
     it('throws when Resend API returns error object', async () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = jest
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
       const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       const configService = createConfigServiceMock({
         getResendApiKey: jest.fn(() => 'real-api-key'),
@@ -212,12 +241,17 @@ describe('EmailService', () => {
       });
       const service = new EmailService(configService);
 
-      const mockSend = jest.fn<() => Promise<{ data: null; error: { message: string } }>>()
+      const mockSend = jest
+        .fn<() => Promise<{ data: null; error: { message: string } }>>()
         .mockResolvedValue({ data: null, error: { message: 'rate limited' } });
       (service as any).resendClient = { emails: { send: mockSend } };
 
       await expect(
-        service.sendEmail({ to: 'user@example.com', subject: 'Err', html: '<p>Hi</p>' }),
+        service.sendEmail({
+          to: 'user@example.com',
+          subject: 'Err',
+          html: '<p>Hi</p>',
+        }),
       ).rejects.toThrow('Failed to send email');
 
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -229,7 +263,9 @@ describe('EmailService', () => {
     });
 
     it('re-throws when Resend client throws an exception', async () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = jest
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
       const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       const configService = createConfigServiceMock({
         getResendApiKey: jest.fn(() => 'real-api-key'),
@@ -237,12 +273,17 @@ describe('EmailService', () => {
       });
       const service = new EmailService(configService);
 
-      const mockSend = jest.fn<() => Promise<never>>()
+      const mockSend = jest
+        .fn<() => Promise<never>>()
         .mockRejectedValue(new Error('Network timeout'));
       (service as any).resendClient = { emails: { send: mockSend } };
 
       await expect(
-        service.sendEmail({ to: 'user@example.com', subject: 'Exc', html: '<p>Hi</p>' }),
+        service.sendEmail({
+          to: 'user@example.com',
+          subject: 'Exc',
+          html: '<p>Hi</p>',
+        }),
       ).rejects.toThrow('Network timeout');
 
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -269,7 +310,13 @@ describe('EmailService', () => {
         role: 'member',
         organizationId: 'org-1',
         organization: { id: 'org-1', name: 'Acme Corp', slug: 'acme-corp' },
-        inviter: { user: { id: 'admin-1', name: 'Admin User', email: 'admin@example.com' } },
+        inviter: {
+          user: {
+            id: 'admin-1',
+            name: 'Admin User',
+            email: 'admin@example.com',
+          },
+        },
         expiresAt: new Date(Date.now() + 86400000),
       });
 
@@ -296,7 +343,9 @@ describe('EmailService', () => {
         role: 'member',
         organizationId: 'org-1',
         organization: { id: 'org-1', name: 'Acme Corp', slug: 'acme-corp' },
-        inviter: { user: { id: 'admin-1', name: '', email: 'admin@example.com' } },
+        inviter: {
+          user: { id: 'admin-1', name: '', email: 'admin@example.com' },
+        },
         expiresAt: new Date(Date.now() + 86400000),
       });
 
@@ -310,14 +359,20 @@ describe('EmailService', () => {
 
   describe('maskEmail edge cases', () => {
     it('masks a short local-part (2 chars or fewer) with triple stars', async () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
       const configService = createConfigServiceMock({
         getResendApiKey: jest.fn(() => ''),
         isTestMode: jest.fn(() => false),
       });
       const service = new EmailService(configService);
 
-      await service.sendEmail({ to: 'ab@example.com', subject: 'Short', html: '<p>Hi</p>' });
+      await service.sendEmail({
+        to: 'ab@example.com',
+        subject: 'Short',
+        html: '<p>Hi</p>',
+      });
 
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('[EmailService] sendEmail called:'),
@@ -327,7 +382,9 @@ describe('EmailService', () => {
     });
 
     it('handles email addresses without @ gracefully by masking to <invalid>', async () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
       const configService = createConfigServiceMock({
         getResendApiKey: jest.fn(() => ''),
         isTestMode: jest.fn(() => false),
@@ -335,7 +392,11 @@ describe('EmailService', () => {
       });
       const service = new EmailService(configService);
 
-      await service.sendEmail({ to: 'not-an-email', subject: 'No at', html: '<p>Hi</p>' });
+      await service.sendEmail({
+        to: 'not-an-email',
+        subject: 'No at',
+        html: '<p>Hi</p>',
+      });
 
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('[EmailService] sendEmail called:'),

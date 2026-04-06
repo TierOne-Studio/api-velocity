@@ -1,8 +1,13 @@
-export type ResendTestEvent = 'delivered' | 'bounced' | 'complained' | 'suppressed';
+export type ResendTestEvent =
+  | 'delivered'
+  | 'bounced'
+  | 'complained'
+  | 'suppressed';
 
 const RESEND_TEST_DOMAIN = 'resend.dev';
 const RANDOM_SUFFIX_LENGTH = 6;
-const RESEND_TEST_RECIPIENT_REGEX = /^(delivered|bounced|complained|suppressed)(\+[a-z0-9-]+)?@resend\.dev$/i;
+const RESEND_TEST_RECIPIENT_REGEX =
+  /^(delivered|bounced|complained|suppressed)(\+[a-z0-9-]+)?@resend\.dev$/i;
 
 export const DEFAULT_E2E_TEST_USER_EMAIL = 'delivered+e2e-test-user@resend.dev';
 
@@ -16,7 +21,10 @@ function normalizeLabel(label: string): string {
     .replace(/^-|-$/g, '');
 }
 
-export function resendTestEmail(event: ResendTestEvent = 'delivered', label?: string): string {
+export function resendTestEmail(
+  event: ResendTestEvent = 'delivered',
+  label?: string,
+): string {
   if (!label) {
     return `${event}@${RESEND_TEST_DOMAIN}`;
   }
@@ -30,7 +38,9 @@ export function resendTestEmail(event: ResendTestEvent = 'delivered', label?: st
 }
 
 export function uniqueResendDeliveredEmail(flowLabel: string): string {
-  const randomSuffix = Math.random().toString(36).slice(2, 2 + RANDOM_SUFFIX_LENGTH);
+  const randomSuffix = Math.random()
+    .toString(36)
+    .slice(2, 2 + RANDOM_SUFFIX_LENGTH);
   const uniqueLabel = `${flowLabel}-${Date.now()}-${randomSuffix}`;
   return resendTestEmail('delivered', uniqueLabel);
 }

@@ -6,7 +6,11 @@ const mockQuery = jest.fn<any>();
 const mockQueryOne = jest.fn<any>();
 const mockTransaction = jest.fn<any>();
 
-const mockDb = { query: mockQuery, queryOne: mockQueryOne, transaction: mockTransaction };
+const mockDb = {
+  query: mockQuery,
+  queryOne: mockQueryOne,
+  transaction: mockTransaction,
+};
 
 describe('AdminUserDatabaseRepository', () => {
   let repo: AdminUserDatabaseRepository;
@@ -14,9 +18,11 @@ describe('AdminUserDatabaseRepository', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     repo = new AdminUserDatabaseRepository(mockDb as any);
-    mockTransaction.mockImplementation(async (fn: (q: typeof mockQuery) => Promise<void>) => {
-      await fn(mockQuery);
-    });
+    mockTransaction.mockImplementation(
+      async (fn: (q: typeof mockQuery) => Promise<void>) => {
+        await fn(mockQuery);
+      },
+    );
   });
 
   // ─── findUserRole ────────────────────────────────────────────────────────────
@@ -53,7 +59,9 @@ describe('AdminUserDatabaseRepository', () => {
   describe('findMemberInOrg', () => {
     it('returns id when member exists in org', async () => {
       mockQueryOne.mockResolvedValue({ id: 'mem-1' });
-      expect(await repo.findMemberInOrg('u-1', 'org-1')).toEqual({ id: 'mem-1' });
+      expect(await repo.findMemberInOrg('u-1', 'org-1')).toEqual({
+        id: 'mem-1',
+      });
     });
 
     it('returns null when no membership', async () => {
@@ -67,7 +75,9 @@ describe('AdminUserDatabaseRepository', () => {
   describe('findUserOrganization', () => {
     it('returns organizationId row', async () => {
       mockQueryOne.mockResolvedValue({ organizationId: 'org-1' });
-      expect(await repo.findUserOrganization('u-1')).toEqual({ organizationId: 'org-1' });
+      expect(await repo.findUserOrganization('u-1')).toEqual({
+        organizationId: 'org-1',
+      });
     });
   });
 
@@ -248,7 +258,11 @@ describe('AdminUserDatabaseRepository', () => {
     it('adds EXISTS clause for admin platform role', async () => {
       mockQuery.mockResolvedValue([]);
       mockQueryOne.mockResolvedValue({ count: '0' });
-      await repo.listUsers({ ...baseParams, platformRole: 'admin', activeOrganizationId: 'org-1' });
+      await repo.listUsers({
+        ...baseParams,
+        platformRole: 'admin',
+        activeOrganizationId: 'org-1',
+      });
       const [sql] = mockQuery.mock.calls[0] as [string];
       expect(sql).toContain('EXISTS');
     });
@@ -256,7 +270,11 @@ describe('AdminUserDatabaseRepository', () => {
     it('adds EXISTS clause for manager platform role', async () => {
       mockQuery.mockResolvedValue([]);
       mockQueryOne.mockResolvedValue({ count: '0' });
-      await repo.listUsers({ ...baseParams, platformRole: 'manager', activeOrganizationId: 'org-1' });
+      await repo.listUsers({
+        ...baseParams,
+        platformRole: 'manager',
+        activeOrganizationId: 'org-1',
+      });
       const [sql] = mockQuery.mock.calls[0] as [string];
       expect(sql).toContain('EXISTS');
     });
@@ -277,7 +295,12 @@ describe('AdminUserDatabaseRepository', () => {
     it('passes only filter params to COUNT query (not LIMIT/OFFSET)', async () => {
       mockQuery.mockResolvedValue([]);
       mockQueryOne.mockResolvedValue({ count: '5' });
-      await repo.listUsers({ ...baseParams, searchValue: 'test', limit: 20, offset: 40 });
+      await repo.listUsers({
+        ...baseParams,
+        searchValue: 'test',
+        limit: 20,
+        offset: 40,
+      });
       // query call (with pagination params) should have 3 params: search, limit, offset
       const [, dataParams] = mockQuery.mock.calls[0] as [string, unknown[]];
       expect(dataParams).toHaveLength(3);
@@ -298,9 +321,13 @@ describe('AdminUserDatabaseRepository', () => {
       expect(sql).toContain(`'organizationId', m."organizationId"`);
       expect(sql).toContain(`'organizationName', o.name`);
       expect(sql).toContain(`'roleName', m.role`);
-      expect(sql).toContain(`'roleDisplayName', COALESCE(r.display_name, m.role)`);
+      expect(sql).toContain(
+        `'roleDisplayName', COALESCE(r.display_name, m.role)`,
+      );
       expect(sql).toContain('JOIN organization o ON o.id = m."organizationId"');
-      expect(sql).toContain('LEFT JOIN roles r ON r.organization_id = m."organizationId" AND r.name = m.role');
+      expect(sql).toContain(
+        'LEFT JOIN roles r ON r.organization_id = m."organizationId" AND r.name = m.role',
+      );
     });
   });
 
@@ -312,7 +339,12 @@ describe('AdminUserDatabaseRepository', () => {
         .mockResolvedValueOnce(undefined)
         .mockResolvedValueOnce(undefined);
       mockQueryOne.mockResolvedValue({ id: 'u-1', role: 'admin' });
-      await repo.setUserRole({ userId: 'u-1', role: 'admin', organizationId: null, newMemberId: 'm-1' });
+      await repo.setUserRole({
+        userId: 'u-1',
+        role: 'admin',
+        organizationId: null,
+        newMemberId: 'm-1',
+      });
       const deleteSql = mockQuery.mock.calls[1][0] as string;
       expect(deleteSql).toContain('DELETE FROM member');
     });
@@ -320,7 +352,12 @@ describe('AdminUserDatabaseRepository', () => {
     it('throws ForbiddenException when non-admin role has no orgId', async () => {
       mockQuery.mockResolvedValueOnce(undefined);
       await expect(
-        repo.setUserRole({ userId: 'u-1', role: 'member', organizationId: null, newMemberId: 'm-1' }),
+        repo.setUserRole({
+          userId: 'u-1',
+          role: 'member',
+          organizationId: null,
+          newMemberId: 'm-1',
+        }),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -330,7 +367,12 @@ describe('AdminUserDatabaseRepository', () => {
         .mockResolvedValueOnce([{ id: 'mem-1' }])
         .mockResolvedValueOnce(undefined);
       mockQueryOne.mockResolvedValue({ id: 'u-1', role: 'member' });
-      await repo.setUserRole({ userId: 'u-1', role: 'member', organizationId: 'org-1', newMemberId: 'm-new' });
+      await repo.setUserRole({
+        userId: 'u-1',
+        role: 'member',
+        organizationId: 'org-1',
+        newMemberId: 'm-new',
+      });
       const updateSql = mockQuery.mock.calls[2][0] as string;
       expect(updateSql).toContain('UPDATE member');
     });
@@ -341,7 +383,12 @@ describe('AdminUserDatabaseRepository', () => {
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce(undefined);
       mockQueryOne.mockResolvedValue({ id: 'u-1', role: 'member' });
-      await repo.setUserRole({ userId: 'u-1', role: 'member', organizationId: 'org-1', newMemberId: 'm-new' });
+      await repo.setUserRole({
+        userId: 'u-1',
+        role: 'member',
+        organizationId: 'org-1',
+        newMemberId: 'm-new',
+      });
       const insertSql = mockQuery.mock.calls[2][0] as string;
       expect(insertSql).toContain('INSERT INTO member');
     });
@@ -362,7 +409,9 @@ describe('AdminUserDatabaseRepository', () => {
 
     it('throws ForbiddenException when email already exists', async () => {
       mockQuery.mockResolvedValueOnce([{ id: 'existing' }]);
-      await expect(repo.createUser(baseParams)).rejects.toThrow(ForbiddenException);
+      await expect(repo.createUser(baseParams)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('creates user and account without org insert when organizationId is null', async () => {
@@ -453,8 +502,16 @@ describe('AdminUserDatabaseRepository', () => {
 
   describe('findOrganizationById', () => {
     it('returns org row when found', async () => {
-      mockQueryOne.mockResolvedValue({ id: 'org-1', name: 'Acme', slug: 'acme' });
-      expect(await repo.findOrganizationById('org-1')).toEqual({ id: 'org-1', name: 'Acme', slug: 'acme' });
+      mockQueryOne.mockResolvedValue({
+        id: 'org-1',
+        name: 'Acme',
+        slug: 'acme',
+      });
+      expect(await repo.findOrganizationById('org-1')).toEqual({
+        id: 'org-1',
+        name: 'Acme',
+        slug: 'acme',
+      });
     });
 
     it('returns null when not found', async () => {

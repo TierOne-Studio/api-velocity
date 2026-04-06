@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { hashPassword } from 'better-auth/crypto';
 import { EmailService } from '../../../../../shared/email/email.service';
@@ -31,7 +37,8 @@ export type CreateUserInput = {
 @Injectable()
 export class AdminService {
   constructor(
-    @Inject(ADMIN_USER_REPOSITORY) private readonly userRepo: IAdminUserRepository,
+    @Inject(ADMIN_USER_REPOSITORY)
+    private readonly userRepo: IAdminUserRepository,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
   ) {}
@@ -40,21 +47,22 @@ export class AdminService {
     return platformRole === 'superadmin';
   }
 
-  private async getTargetRole(userId: string): Promise<'admin' | 'manager' | 'member' | null> {
+  private async getTargetRole(
+    userId: string,
+  ): Promise<'admin' | 'manager' | 'member' | null> {
     const role = await this.userRepo.findUserRole(userId);
     if (!role) return null;
-    if (role === 'admin' || role === 'manager' || role === 'member') return role;
+    if (role === 'admin' || role === 'manager' || role === 'member')
+      return role;
     return 'member';
   }
 
-  private async assertTargetActionAllowed(
-    params: {
-      actorUserId?: string;
-      targetUserId: string;
-      platformRole: PlatformRole;
-      allowSelf: boolean;
-    },
-  ): Promise<void> {
+  private async assertTargetActionAllowed(params: {
+    actorUserId?: string;
+    targetUserId: string;
+    platformRole: PlatformRole;
+    allowSelf: boolean;
+  }): Promise<void> {
     const { actorUserId, targetUserId, platformRole, allowSelf } = params;
 
     if (!actorUserId) {
@@ -63,7 +71,9 @@ export class AdminService {
 
     if (actorUserId === targetUserId) {
       if (!allowSelf) {
-        throw new ForbiddenException('You cannot perform this action on yourself');
+        throw new ForbiddenException(
+          'You cannot perform this action on yourself',
+        );
       }
       return;
     }
@@ -78,13 +88,22 @@ export class AdminService {
     }
 
     if (targetRole !== 'member') {
-      throw new ForbiddenException('Organization-scoped actors can only perform this action on members');
+      throw new ForbiddenException(
+        'Organization-scoped actors can only perform this action on members',
+      );
     }
   }
 
-  private async assertUserInManagerOrg(userId: string, activeOrganizationId: string): Promise<void> {
-    const member = await this.userRepo.findMemberInOrg(userId, activeOrganizationId);
-    if (!member) throw new ForbiddenException('User is not in your organization');
+  private async assertUserInManagerOrg(
+    userId: string,
+    activeOrganizationId: string,
+  ): Promise<void> {
+    const member = await this.userRepo.findMemberInOrg(
+      userId,
+      activeOrganizationId,
+    );
+    if (!member)
+      throw new ForbiddenException('User is not in your organization');
   }
 
   private async resolveRoleAssignmentOrganizationId(params: {
@@ -99,7 +118,10 @@ export class AdminService {
     return member?.organizationId ?? null;
   }
 
-  async getCreateUserMetadata(platformRole: PlatformRole, activeOrganizationId: string | null) {
+  async getCreateUserMetadata(
+    platformRole: PlatformRole,
+    activeOrganizationId: string | null,
+  ) {
     const roles = await this.userRepo.listRoles();
     const allowedRoleNames = getAllowedRoleNamesForCreator(platformRole);
 
@@ -107,8 +129,10 @@ export class AdminService {
     if (this.isSuperadmin(platformRole)) {
       organizations = await this.userRepo.listOrganizations();
     } else {
-      if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
-      const org = await this.userRepo.findOrganizationById(activeOrganizationId);
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
+      const org =
+        await this.userRepo.findOrganizationById(activeOrganizationId);
       organizations = org ? [org] : [];
     }
 
@@ -139,11 +163,13 @@ export class AdminService {
     });
 
     if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
 
-    if (input.name === undefined) throw new ForbiddenException('No data to update');
+    if (input.name === undefined)
+      throw new ForbiddenException('No data to update');
     return this.userRepo.updateUser(input.userId, { name: input.name });
   }
 
@@ -166,7 +192,8 @@ export class AdminService {
     }
 
     if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
 
@@ -178,7 +205,9 @@ export class AdminService {
       })) ?? undefined;
 
     if (!organizationIdForRole) {
-      throw new BadRequestException('Organization is required for role assignments');
+      throw new BadRequestException(
+        'Organization is required for role assignments',
+      );
     }
 
     return this.userRepo.setUserRole({
@@ -203,7 +232,8 @@ export class AdminService {
     });
 
     if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
 
@@ -225,7 +255,8 @@ export class AdminService {
     });
 
     if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
 
@@ -247,7 +278,8 @@ export class AdminService {
     });
 
     if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
 
@@ -270,7 +302,8 @@ export class AdminService {
     });
 
     if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
       await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
     await this.userRepo.removeUser(input.userId);
@@ -286,14 +319,25 @@ export class AdminService {
     if (input.userIds.length === 0) return { success: true, deletedCount: 0 };
 
     if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId) throw new ForbiddenException('Active organization required');
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
       for (const userId of input.userIds) {
-        await this.assertTargetActionAllowed({ actorUserId, targetUserId: userId, platformRole, allowSelf: false });
+        await this.assertTargetActionAllowed({
+          actorUserId,
+          targetUserId: userId,
+          platformRole,
+          allowSelf: false,
+        });
         await this.assertUserInManagerOrg(userId, activeOrganizationId);
       }
     } else {
       for (const userId of input.userIds) {
-        await this.assertTargetActionAllowed({ actorUserId, targetUserId: userId, platformRole, allowSelf: false });
+        await this.assertTargetActionAllowed({
+          actorUserId,
+          targetUserId: userId,
+          platformRole,
+          allowSelf: false,
+        });
       }
     }
 
@@ -309,7 +353,14 @@ export class AdminService {
     activeOrganizationId: string | null;
     platformRole: PlatformRole;
   }) {
-    const { limit, offset, searchValue, organizationId, platformRole, activeOrganizationId } = params;
+    const {
+      limit,
+      offset,
+      searchValue,
+      organizationId,
+      platformRole,
+      activeOrganizationId,
+    } = params;
     if (!this.isSuperadmin(platformRole) && !activeOrganizationId) {
       throw new ForbiddenException('Active organization required');
     }
@@ -317,7 +368,9 @@ export class AdminService {
       limit,
       offset,
       searchValue,
-      organizationId: this.isSuperadmin(platformRole) ? organizationId ?? null : undefined,
+      organizationId: this.isSuperadmin(platformRole)
+        ? (organizationId ?? null)
+        : undefined,
       activeOrganizationId,
       platformRole,
     });
@@ -330,7 +383,8 @@ export class AdminService {
     platformRole: PlatformRole;
     activeOrganizationId: string | null;
   }) {
-    const { actorUserId, targetUserId, platformRole, activeOrganizationId } = params;
+    const { actorUserId, targetUserId, platformRole, activeOrganizationId } =
+      params;
 
     const targetRole = await this.getTargetRole(targetUserId);
     if (!targetRole) throw new ForbiddenException('Target user not found');
@@ -343,16 +397,22 @@ export class AdminService {
       if (!activeOrganizationId) {
         isTargetInActiveOrganization = false;
       } else {
-        const member = await this.userRepo.findMemberInOrg(targetUserId, activeOrganizationId);
+        const member = await this.userRepo.findMemberInOrg(
+          targetUserId,
+          activeOrganizationId,
+        );
         isTargetInActiveOrganization = !!member;
       }
     }
 
-    const canSelfSafeAction = isSelf && (this.isSuperadmin(platformRole) || isTargetInActiveOrganization);
+    const canSelfSafeAction =
+      isSelf &&
+      (this.isSuperadmin(platformRole) || isTargetInActiveOrganization);
 
     const canMutateNonSelf =
       !isSelf &&
-      (this.isSuperadmin(platformRole) || (isTargetMember && isTargetInActiveOrganization));
+      (this.isSuperadmin(platformRole) ||
+        (isTargetMember && isTargetInActiveOrganization));
 
     return {
       targetUserId,
@@ -376,18 +436,28 @@ export class AdminService {
     userIds: string[];
     platformRole: PlatformRole;
     activeOrganizationId: string | null;
-  }): Promise<Record<string, Awaited<ReturnType<AdminService['getUserCapabilities']>>>> {
+  }): Promise<
+    Record<string, Awaited<ReturnType<AdminService['getUserCapabilities']>>>
+  > {
     const { actorUserId, userIds, platformRole, activeOrganizationId } = params;
 
     if (userIds.length === 0) return {};
 
     const settled = await Promise.allSettled(
       userIds.map((targetUserId) =>
-        this.getUserCapabilities({ actorUserId, targetUserId, platformRole, activeOrganizationId }),
+        this.getUserCapabilities({
+          actorUserId,
+          targetUserId,
+          platformRole,
+          activeOrganizationId,
+        }),
       ),
     );
 
-    const result: Record<string, Awaited<ReturnType<AdminService['getUserCapabilities']>>> = {};
+    const result: Record<
+      string,
+      Awaited<ReturnType<AdminService['getUserCapabilities']>>
+    > = {};
     for (let i = 0; i < userIds.length; i++) {
       const outcome = settled[i];
       if (outcome.status === 'fulfilled') {
@@ -397,23 +467,38 @@ export class AdminService {
     return result;
   }
 
-  async createUser(input: CreateUserInput, platformRole: PlatformRole, activeOrganizationId: string | null) {
+  async createUser(
+    input: CreateUserInput,
+    platformRole: PlatformRole,
+    activeOrganizationId: string | null,
+  ) {
     const allowed = getAllowedRoleNamesForCreator(platformRole);
     if (!allowed.includes(input.role)) {
       throw new ForbiddenException('Role not allowed');
     }
 
-    const enforcedActiveOrgId = requireActiveOrganizationIdForManager(platformRole, {
-      session: { activeOrganizationId: activeOrganizationId ?? undefined },
-    } as unknown as UserSession);
+    const enforcedActiveOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      {
+        session: { activeOrganizationId: activeOrganizationId ?? undefined },
+      } as unknown as UserSession,
+    );
 
     const organizationIdToUse = input.organizationId;
 
     if (!organizationIdToUse) {
-      throw new ForbiddenException('Organization is required for org-scoped users');
+      throw new ForbiddenException(
+        'Organization is required for org-scoped users',
+      );
     }
-    if (!this.isSuperadmin(platformRole) && enforcedActiveOrgId && organizationIdToUse !== enforcedActiveOrgId) {
-      throw new ForbiddenException('Organization-scoped actors can only assign users to their active organization');
+    if (
+      !this.isSuperadmin(platformRole) &&
+      enforcedActiveOrgId &&
+      organizationIdToUse !== enforcedActiveOrgId
+    ) {
+      throw new ForbiddenException(
+        'Organization-scoped actors can only assign users to their active organization',
+      );
     }
 
     const userId = randomUUID();
@@ -449,10 +534,12 @@ export class AdminService {
       });
       logger.log(`Verification email sent successfully for userId: ${userId}`);
     } catch (error) {
-      logger.error(`Failed to send verification email for userId: ${userId}`, error);
+      logger.error(
+        `Failed to send verification email for userId: ${userId}`,
+        error,
+      );
     }
 
     return created;
   }
-
 }

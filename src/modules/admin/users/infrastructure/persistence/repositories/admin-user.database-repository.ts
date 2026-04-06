@@ -50,21 +50,29 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
     );
   }
 
-  async findMemberInOrg(userId: string, organizationId: string): Promise<{ id: string } | null> {
+  async findMemberInOrg(
+    userId: string,
+    organizationId: string,
+  ): Promise<{ id: string } | null> {
     return this.db.queryOne<{ id: string }>(
       'SELECT id FROM member WHERE "organizationId" = $1 AND "userId" = $2',
       [organizationId, userId],
     );
   }
 
-  async findUserOrganization(userId: string): Promise<{ organizationId: string } | null> {
+  async findUserOrganization(
+    userId: string,
+  ): Promise<{ organizationId: string } | null> {
     return this.db.queryOne<{ organizationId: string }>(
       'SELECT "organizationId" as "organizationId" FROM member WHERE "userId" = $1 ORDER BY "createdAt" DESC LIMIT 1',
       [userId],
     );
   }
 
-  async updateUser(userId: string, fields: { name?: string }): Promise<UserRow | null> {
+  async updateUser(
+    userId: string,
+    fields: { name?: string },
+  ): Promise<UserRow | null> {
     const updates: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
@@ -88,13 +96,17 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
     const { userId, role, organizationId, newMemberId } = params;
 
     await this.db.transaction(async (query) => {
-      await query('UPDATE "user" SET role = $1, "updatedAt" = NOW() WHERE id = $2', [role, userId]);
+      await query(
+        'UPDATE "user" SET role = $1, "updatedAt" = NOW() WHERE id = $2',
+        [role, userId],
+      );
 
       if (role === 'admin') {
         await query('DELETE FROM member WHERE "userId" = $1', [userId]);
       } else {
         const orgId = organizationId;
-        if (!orgId) throw new ForbiddenException('Active organization required');
+        if (!orgId)
+          throw new ForbiddenException('Active organization required');
 
         const existing = await query(
           'SELECT id FROM member WHERE "organizationId" = $1 AND "userId" = $2',
@@ -153,22 +165,37 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
     return deleted.length;
   }
 
-  async listUsers(params: ListUsersParams): Promise<{ data: UserRow[]; total: number }> {
-    const { limit, offset, searchValue, organizationId, platformRole, activeOrganizationId } = params;
+  async listUsers(
+    params: ListUsersParams,
+  ): Promise<{ data: UserRow[]; total: number }> {
+    const {
+      limit,
+      offset,
+      searchValue,
+      organizationId,
+      platformRole,
+      activeOrganizationId,
+    } = params;
     const where: string[] = [];
     const values: unknown[] = [];
 
     if (searchValue) {
       values.push(`%${searchValue}%`);
-      where.push(`(u.name ILIKE $${values.length} OR u.email ILIKE $${values.length})`);
+      where.push(
+        `(u.name ILIKE $${values.length} OR u.email ILIKE $${values.length})`,
+      );
     }
 
     if (platformRole === 'superadmin' && organizationId) {
       values.push(organizationId);
-      where.push(`EXISTS (SELECT 1 FROM member m WHERE m."userId" = u.id AND m."organizationId" = $${values.length})`);
+      where.push(
+        `EXISTS (SELECT 1 FROM member m WHERE m."userId" = u.id AND m."organizationId" = $${values.length})`,
+      );
     } else if (platformRole !== 'superadmin') {
       values.push(activeOrganizationId);
-      where.push(`EXISTS (SELECT 1 FROM member m WHERE m."userId" = u.id AND m."organizationId" = $${values.length})`);
+      where.push(
+        `EXISTS (SELECT 1 FROM member m WHERE m."userId" = u.id AND m."organizationId" = $${values.length})`,
+      );
     }
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -196,11 +223,22 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
   }
 
   async createUser(params: CreateUserParams): Promise<UserRow> {
-    const { userId, accountId, name, email, hashedPassword, role, organizationId } = params;
+    const {
+      userId,
+      accountId,
+      name,
+      email,
+      hashedPassword,
+      role,
+      organizationId,
+    } = params;
 
     await this.db.transaction(async (query) => {
-      const existing = await query('SELECT id FROM "user" WHERE email = $1', [email.toLowerCase()]);
-      if (existing.length > 0) throw new ForbiddenException('User already exists');
+      const existing = await query('SELECT id FROM "user" WHERE email = $1', [
+        email.toLowerCase(),
+      ]);
+      if (existing.length > 0)
+        throw new ForbiddenException('User already exists');
 
       await query(
         `INSERT INTO "user" (id, name, email, "emailVerified", image, "createdAt", "updatedAt", role, banned)
@@ -223,7 +261,10 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
     });
 
     const created = await this.findUserById(userId);
-    if (!created) throw new Error('Failed to create user: user not found after transaction');
+    if (!created)
+      throw new Error(
+        'Failed to create user: user not found after transaction',
+      );
     return created;
   }
 
@@ -256,7 +297,9 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
   }
 
   async listOrganizations(): Promise<OrgBasicRow[]> {
-    return this.db.query<OrgBasicRow>('SELECT id, name, slug FROM organization ORDER BY name ASC');
+    return this.db.query<OrgBasicRow>(
+      'SELECT id, name, slug FROM organization ORDER BY name ASC',
+    );
   }
 
   async findOrganizationById(id: string): Promise<OrgBasicRow | null> {

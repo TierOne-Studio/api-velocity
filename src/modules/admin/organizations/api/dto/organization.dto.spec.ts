@@ -23,14 +23,20 @@ describe('rowToOrganization', () => {
   });
 
   it('parses JSON metadata when the metadata field is a non-empty string', () => {
-    const row: OrganizationRow = { ...baseRow, metadata: '{"plan":"pro","seats":10}' };
+    const row: OrganizationRow = {
+      ...baseRow,
+      metadata: '{"plan":"pro","seats":10}',
+    };
     const org = rowToOrganization(row);
 
     expect(org.metadata).toEqual({ plan: 'pro', seats: 10 });
   });
 
   it('includes logo when present', () => {
-    const row: OrganizationRow = { ...baseRow, logo: 'https://cdn.example.com/logo.png' };
+    const row: OrganizationRow = {
+      ...baseRow,
+      logo: 'https://cdn.example.com/logo.png',
+    };
     const org = rowToOrganization(row);
 
     expect(org.logo).toBe('https://cdn.example.com/logo.png');

@@ -26,7 +26,9 @@ export class PostSignupService {
       [slug],
     );
     if (!org) {
-      console.warn(`[PostSignup] Default org slug "${slug}" not found — skipping onboarding`);
+      console.warn(
+        `[PostSignup] Default org slug "${slug}" not found — skipping onboarding`,
+      );
       return;
     }
 
@@ -44,4 +46,3 @@ export class PostSignupService {
     console.log(`[PostSignup] Added user ${userId} as member to org ${org.id}`);
   }
 }
-

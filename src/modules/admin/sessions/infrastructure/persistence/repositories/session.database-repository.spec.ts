@@ -53,7 +53,9 @@ describe('SessionDatabaseRepository', () => {
   describe('findMemberInOrg', () => {
     it('returns id when member exists', async () => {
       mockQueryOne.mockResolvedValue({ id: 'mem-1' });
-      expect(await repo.findMemberInOrg('u-1', 'org-1')).toEqual({ id: 'mem-1' });
+      expect(await repo.findMemberInOrg('u-1', 'org-1')).toEqual({
+        id: 'mem-1',
+      });
     });
 
     it('returns null when member not found', async () => {

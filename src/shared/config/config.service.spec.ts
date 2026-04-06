@@ -35,7 +35,9 @@ describe('ConfigService', () => {
     it('should throw when AUTH_SECRET is not set', () => {
       delete process.env.AUTH_SECRET;
       const configService = new ConfigService();
-      expect(() => configService.getAuthSecret()).toThrow('AUTH_SECRET environment variable is required');
+      expect(() => configService.getAuthSecret()).toThrow(
+        'AUTH_SECRET environment variable is required',
+      );
     });
   });
 
@@ -57,19 +59,24 @@ describe('ConfigService', () => {
     it('should return DATABASE_URL when set', () => {
       process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db';
       const configService = new ConfigService();
-      expect(configService.getDatabaseUrl()).toBe('postgresql://user:pass@localhost:5432/db');
+      expect(configService.getDatabaseUrl()).toBe(
+        'postgresql://user:pass@localhost:5432/db',
+      );
     });
 
     it('should throw when DATABASE_URL is not set', () => {
       delete process.env.DATABASE_URL;
       const configService = new ConfigService();
-      expect(() => configService.getDatabaseUrl()).toThrow('DATABASE_URL environment variable is required');
+      expect(() => configService.getDatabaseUrl()).toThrow(
+        'DATABASE_URL environment variable is required',
+      );
     });
   });
 
   describe('getTrustedOrigins', () => {
     it('should read TRUSTED_ORIGINS from the environment', () => {
-      process.env.TRUSTED_ORIGINS = 'http://localhost:5173,http://127.0.0.1:65520';
+      process.env.TRUSTED_ORIGINS =
+        'http://localhost:5173,http://127.0.0.1:65520';
 
       const configService = new ConfigService();
 
@@ -135,6 +142,82 @@ describe('ConfigService', () => {
     });
   });
 
+  describe('getAirweaveApiKey', () => {
+    it('returns AIRWEAVE_API_KEY when set', () => {
+      process.env.AIRWEAVE_API_KEY = 'sk-airweave';
+
+      const configService = new ConfigService();
+
+      expect(configService.getAirweaveApiKey()).toBe('sk-airweave');
+    });
+
+    it('returns null when AIRWEAVE_API_KEY is not set', () => {
+      delete process.env.AIRWEAVE_API_KEY;
+
+      const configService = new ConfigService();
+
+      expect(configService.getAirweaveApiKey()).toBeNull();
+    });
+  });
+
+  describe('getAirweaveBaseUrl', () => {
+    it('returns AIRWEAVE_BASE_URL when set', () => {
+      process.env.AIRWEAVE_BASE_URL = 'https://sandbox.airweave.ai';
+
+      const configService = new ConfigService();
+
+      expect(configService.getAirweaveBaseUrl()).toBe(
+        'https://sandbox.airweave.ai',
+      );
+    });
+
+    it('returns the production Airweave URL by default', () => {
+      delete process.env.AIRWEAVE_BASE_URL;
+
+      const configService = new ConfigService();
+
+      expect(configService.getAirweaveBaseUrl()).toBe(
+        'https://api.airweave.ai',
+      );
+    });
+  });
+
+  describe('getOpenAiApiKey', () => {
+    it('returns OPENAI_API_KEY when set', () => {
+      process.env.OPENAI_API_KEY = 'sk-openai';
+
+      const configService = new ConfigService();
+
+      expect(configService.getOpenAiApiKey()).toBe('sk-openai');
+    });
+
+    it('returns null when OPENAI_API_KEY is not set', () => {
+      delete process.env.OPENAI_API_KEY;
+
+      const configService = new ConfigService();
+
+      expect(configService.getOpenAiApiKey()).toBeNull();
+    });
+  });
+
+  describe('getOpenAiModel', () => {
+    it('returns OPENAI_MODEL when set', () => {
+      process.env.OPENAI_MODEL = 'gpt-4o-mini';
+
+      const configService = new ConfigService();
+
+      expect(configService.getOpenAiModel()).toBe('gpt-4o-mini');
+    });
+
+    it('returns gpt-4o by default', () => {
+      delete process.env.OPENAI_MODEL;
+
+      const configService = new ConfigService();
+
+      expect(configService.getOpenAiModel()).toBe('gpt-4o');
+    });
+  });
+
   describe('isTestMode', () => {
     it('should return true when NODE_ENV is test', () => {
       process.env.NODE_ENV = 'test';
@@ -161,14 +244,18 @@ describe('ConfigService', () => {
       delete process.env.AUTH_SECRET;
       process.env.DATABASE_URL = 'postgresql://localhost/db';
       const configService = new ConfigService();
-      expect(() => configService.validateEnvironment()).toThrow('Missing required environment variables: AUTH_SECRET');
+      expect(() => configService.validateEnvironment()).toThrow(
+        'Missing required environment variables: AUTH_SECRET',
+      );
     });
 
     it('should throw when DATABASE_URL is missing', () => {
       process.env.AUTH_SECRET = 'secret';
       delete process.env.DATABASE_URL;
       const configService = new ConfigService();
-      expect(() => configService.validateEnvironment()).toThrow('Missing required environment variables: DATABASE_URL');
+      expect(() => configService.validateEnvironment()).toThrow(
+        'Missing required environment variables: DATABASE_URL',
+      );
     });
 
     it('should list all missing vars when multiple are absent', () => {

@@ -43,7 +43,10 @@ export class OrgImpersonationController {
     }
 
     const platformRole = getPlatformRole(session);
-    const activeOrganizationId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrganizationId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
     const result = await this.impersonationService.startImpersonation({
       actorUserId: session.user.id,
       targetUserId: dto.userId,
@@ -63,7 +66,9 @@ export class OrgImpersonationController {
    * This endpoint uses the current session token to identify the impersonation session.
    */
   @Post('stop-impersonating')
-  async stopImpersonating(@Req() request: Request & { headers: { authorization?: string } }) {
+  async stopImpersonating(
+    @Req() request: Request & { headers: { authorization?: string } },
+  ) {
     const authHeader = request.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
       throw new ForbiddenException('No session token provided');

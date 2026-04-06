@@ -52,7 +52,10 @@ export function getRoleLevel(role: string): number {
  * Filter roles to only those assignable by the given requester role.
  * A user can only assign roles at or below their own level.
  */
-export function filterAssignableRoles(allRoleNames: string[], requesterRole: string): string[] {
+export function filterAssignableRoles(
+  allRoleNames: string[],
+  requesterRole: string,
+): string[] {
   const requesterLevel = getRoleLevel(requesterRole);
   return allRoleNames.filter((r) => {
     const roleLevel = ROLE_HIERARCHY[r];
@@ -105,8 +108,17 @@ export class AdminOrganizationsService {
    * Get all roles from the database for organization membership.
    * Returns org-scoped roles when organizationId is provided, otherwise global roles.
    */
-  async getRoles(organizationId: string | null, requesterRole?: string): Promise<{
-    roles: Array<{ name: string; displayName: string; description: string | null; color: string | null; isDefault: boolean }>;
+  async getRoles(
+    organizationId: string | null,
+    _requesterRole?: string,
+  ): Promise<{
+    roles: Array<{
+      name: string;
+      displayName: string;
+      description: string | null;
+      color: string | null;
+      isDefault: boolean;
+    }>;
     assignableRoles: string[];
   }> {
     const rows = await this.orgRepo.getRoles(organizationId);
@@ -154,10 +166,10 @@ export class AdminOrganizationsService {
     }
 
     const organizationId = this.generateId();
-    const shouldCreateCreatorMembership = actor.platformRole !== 'superadmin';
-    const memberId = shouldCreateCreatorMembership ? this.generateId() : undefined;
-    const creatorMemberRole = shouldCreateCreatorMembership ? 'admin' : undefined;
-    const metadataJson = input.metadata === undefined ? null : JSON.stringify(input.metadata);
+    const memberId = this.generateId();
+    const creatorMemberRole = 'admin';
+    const metadataJson =
+      input.metadata === undefined ? null : JSON.stringify(input.metadata);
 
     await this.orgRepo.createOrg({
       id: organizationId,
@@ -181,7 +193,9 @@ export class AdminOrganizationsService {
   /**
    * List all organizations with pagination and search
    */
-  async findAll(query: PaginationQuery): Promise<PaginatedResult<OrganizationWithMemberCount>> {
+  async findAll(
+    query: PaginationQuery,
+  ): Promise<PaginatedResult<OrganizationWithMemberCount>> {
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.min(100, Math.max(1, query.limit ?? 20));
     const offset = (page - 1) * limit;
@@ -203,12 +217,20 @@ export class AdminOrganizationsService {
     const search = query.search?.trim() || undefined;
 
     const total = await this.orgRepo.countAllForUser(userId, search);
-    const rows = await this.orgRepo.findAllForUser(userId, search, limit, offset);
+    const rows = await this.orgRepo.findAllForUser(
+      userId,
+      search,
+      limit,
+      offset,
+    );
 
     return this.mapPaginatedOrganizations(rows, total, page, limit);
   }
 
-  async canUserReadOrganization(userId: string, organizationId: string): Promise<boolean> {
+  async canUserReadOrganization(
+    userId: string,
+    organizationId: string,
+  ): Promise<boolean> {
     return this.orgRepo.canUserReadOrganization(userId, organizationId);
   }
 
@@ -227,7 +249,10 @@ export class AdminOrganizationsService {
   /**
    * Update an organization
    */
-  async update(id: string, dto: UpdateOrganizationDto): Promise<Organization | null> {
+  async update(
+    id: string,
+    dto: UpdateOrganizationDto,
+  ): Promise<Organization | null> {
     const existing = await this.findById(id);
     if (!existing) return null;
 
@@ -242,12 +267,14 @@ export class AdminOrganizationsService {
     if (dto.slug !== undefined) {
       const slug = dto.slug.trim().toLowerCase();
       if (!slug) throw new BadRequestException('slug is required');
-      if (!this.slugRegex.test(slug)) throw new BadRequestException('invalid slug');
+      if (!this.slugRegex.test(slug))
+        throw new BadRequestException('invalid slug');
       updates.slug = slug;
     }
 
     if (dto.logo !== undefined) updates.logo = dto.logo;
-    if (dto.metadata !== undefined) updates.metadataJson = JSON.stringify(dto.metadata);
+    if (dto.metadata !== undefined)
+      updates.metadataJson = JSON.stringify(dto.metadata);
 
     if (Object.keys(updates).length === 0) return existing;
 
@@ -267,18 +294,20 @@ export class AdminOrganizationsService {
   /**
    * Get members of an organization
    */
-  async getMembers(organizationId: string): Promise<Array<{
-    id: string;
-    userId: string;
-    role: string;
-    createdAt: Date;
-    user: {
+  async getMembers(organizationId: string): Promise<
+    Array<{
       id: string;
-      name: string;
-      email: string;
-      image: string | null;
-    };
-  }>> {
+      userId: string;
+      role: string;
+      createdAt: Date;
+      user: {
+        id: string;
+        name: string;
+        email: string;
+        image: string | null;
+      };
+    }>
+  > {
     const rows = await this.orgRepo.getMembers(organizationId);
     return rows.map((row) => ({
       id: row.id,
@@ -297,13 +326,15 @@ export class AdminOrganizationsService {
   async listMemberCandidates(
     organizationId: string,
     params: { search?: string; limit?: number } = {},
-  ): Promise<Array<{
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-    image: string | null;
-  }>> {
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+      image: string | null;
+    }>
+  > {
     const org = await this.findById(organizationId);
     if (!org) throw new NotFoundException('Organization not found');
 
@@ -339,17 +370,32 @@ export class AdminOrganizationsService {
     const organization = await this.orgRepo.findBasicById(organizationId);
     if (!organization) throw new NotFoundException('Organization not found');
 
-    const existingMember = await this.orgRepo.findMemberByEmail(organizationId, normalizedEmail);
-    if (existingMember) throw new BadRequestException('User is already a member of this organization');
+    const existingMember = await this.orgRepo.findMemberByEmail(
+      organizationId,
+      normalizedEmail,
+    );
+    if (existingMember)
+      throw new BadRequestException(
+        'User is already a member of this organization',
+      );
 
-    const existingInvitation = await this.orgRepo.findPendingInvitation(organizationId, normalizedEmail);
-    if (existingInvitation) throw new ConflictException('Invitation already exists for this user');
+    const existingInvitation = await this.orgRepo.findPendingInvitation(
+      organizationId,
+      normalizedEmail,
+    );
+    if (existingInvitation)
+      throw new ConflictException('Invitation already exists for this user');
 
     const invitationId = this.generateId();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     const invitation = await this.orgRepo.createInvitation(
-      invitationId, organizationId, normalizedEmail, role, expiresAt, inviter.id,
+      invitationId,
+      organizationId,
+      normalizedEmail,
+      role,
+      expiresAt,
+      inviter.id,
     );
 
     if (!invitation) {
@@ -386,22 +432,30 @@ export class AdminOrganizationsService {
   /**
    * Get invitations for an organization
    */
-  async getInvitations(organizationId: string): Promise<Array<{
-    id: string;
-    email: string;
-    role: string;
-    status: string;
-    expiresAt: Date;
-    createdAt: Date;
-  }>> {
+  async getInvitations(organizationId: string): Promise<
+    Array<{
+      id: string;
+      email: string;
+      role: string;
+      status: string;
+      expiresAt: Date;
+      createdAt: Date;
+    }>
+  > {
     return this.orgRepo.getInvitations(organizationId);
   }
 
   /**
    * Delete an invitation
    */
-  async deleteInvitation(organizationId: string, invitationId: string): Promise<void> {
-    const deleted = await this.orgRepo.deleteInvitation(invitationId, organizationId);
+  async deleteInvitation(
+    organizationId: string,
+    invitationId: string,
+  ): Promise<void> {
+    const deleted = await this.orgRepo.deleteInvitation(
+      invitationId,
+      organizationId,
+    );
     if (!deleted) {
       const exists = await this.orgRepo.findInvitationById(invitationId);
       if (!exists) throw new NotFoundException('Invitation not found');
@@ -415,7 +469,13 @@ export class AdminOrganizationsService {
     organizationId: string,
     userId: string,
     role: string,
-  ): Promise<{ id: string; organizationId: string; userId: string; role: string; createdAt: Date }> {
+  ): Promise<{
+    id: string;
+    organizationId: string;
+    userId: string;
+    role: string;
+    createdAt: Date;
+  }> {
     const org = await this.findById(organizationId);
     if (!org) throw new NotFoundException('Organization not found');
 
@@ -427,11 +487,19 @@ export class AdminOrganizationsService {
     const user = await this.orgRepo.findUserById(userId);
     if (!user) throw new NotFoundException('User not found');
     if (this.isSuperadminUserRole(user.role)) {
-      throw new ForbiddenException('Superadmin users cannot be added as organization members');
+      throw new ForbiddenException(
+        'Superadmin users cannot be added as organization members',
+      );
     }
 
-    const existingMember = await this.orgRepo.findMemberByUserId(userId, organizationId);
-    if (existingMember) throw new ConflictException('User is already a member of this organization');
+    const existingMember = await this.orgRepo.findMemberByUserId(
+      userId,
+      organizationId,
+    );
+    if (existingMember)
+      throw new ConflictException(
+        'User is already a member of this organization',
+      );
 
     const memberId = this.generateId();
     return this.orgRepo.addMember(memberId, organizationId, userId, role);
@@ -457,29 +525,57 @@ export class AdminOrganizationsService {
     const member = await this.orgRepo.findMemberById(memberId, organizationId);
     if (!member) throw new NotFoundException('Member not found');
 
-    if (platformRole !== 'superadmin' && await this.orgRepo.roleGrantsManagePermission(member.role, organizationId)) {
-      const manageCount = await this.orgRepo.countMembersWithManageCapability(organizationId);
-      if (manageCount <= 1 && !await this.orgRepo.roleGrantsManagePermission(newRole, organizationId)) {
-        throw new ForbiddenException('Cannot change role of the last member with organization manage-members permission');
+    if (
+      platformRole !== 'superadmin' &&
+      (await this.orgRepo.roleGrantsManagePermission(
+        member.role,
+        organizationId,
+      ))
+    ) {
+      const manageCount =
+        await this.orgRepo.countMembersWithManageCapability(organizationId);
+      if (
+        manageCount <= 1 &&
+        !(await this.orgRepo.roleGrantsManagePermission(
+          newRole,
+          organizationId,
+        ))
+      ) {
+        throw new ForbiddenException(
+          'Cannot change role of the last member with organization manage-members permission',
+        );
       }
     }
 
-    const updated = await this.orgRepo.updateMemberRole(memberId, organizationId, newRole);
-    if (!updated) throw new NotFoundException(`Member ${memberId} not found in organization ${organizationId}`);
+    const updated = await this.orgRepo.updateMemberRole(
+      memberId,
+      organizationId,
+      newRole,
+    );
+    if (!updated)
+      throw new NotFoundException(
+        `Member ${memberId} not found in organization ${organizationId}`,
+      );
     return updated;
   }
 
   async removeMember(
     organizationId: string,
     memberId: string,
-    platformRole: PlatformRole,
+    _platformRole: PlatformRole,
   ): Promise<{ success: true }> {
     const member = await this.orgRepo.findMemberById(memberId, organizationId);
     if (!member) throw new NotFoundException('Member not found');
 
-    if (await this.orgRepo.roleGrantsManagePermission(member.role, organizationId)) {
-      const manageCount = await this.orgRepo.countMembersWithManageCapability(organizationId);
-      if (manageCount <= 1) throw new ForbiddenException('Cannot remove the last member with organization manage-members permission');
+    if (
+      await this.orgRepo.roleGrantsManagePermission(member.role, organizationId)
+    ) {
+      const manageCount =
+        await this.orgRepo.countMembersWithManageCapability(organizationId);
+      if (manageCount <= 1)
+        throw new ForbiddenException(
+          'Cannot remove the last member with organization manage-members permission',
+        );
     }
 
     const removed = await this.orgRepo.removeMember(memberId, organizationId);
@@ -489,7 +585,8 @@ export class AdminOrganizationsService {
   }
 
   private generateId(): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const chars =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
     for (let i = 0; i < 32; i++) {
       result += chars.charAt(Math.floor(Math.random() * chars.length));

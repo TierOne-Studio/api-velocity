@@ -3,12 +3,14 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
-import { resendTestEmail, uniqueResendDeliveredEmail } from '../src/shared/utils/resend-test-email';
+import {
+  resendTestEmail,
+  uniqueResendDeliveredEmail,
+} from '../src/shared/utils/resend-test-email';
 import { getTestHelpers, TestHelpers, TestContext } from './test-helpers';
 
 describe('Admin User Management (e2e)', () => {
   let app: INestApplication<App>;
-  let helpers: TestHelpers;
 
   beforeAll(async () => {
     const moduleFixture = await Test.createTestingModule({
@@ -17,7 +19,6 @@ describe('Admin User Management (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     await app.init();
-    helpers = getTestHelpers(app);
   });
 
   afterAll(async () => {
@@ -32,9 +33,7 @@ describe('Admin User Management (e2e)', () => {
     });
 
     it('GET /api/admin/users - should return 401 without authentication', () => {
-      return request(app.getHttpServer())
-        .get('/api/admin/users')
-        .expect(401);
+      return request(app.getHttpServer()).get('/api/admin/users').expect(401);
     });
 
     it('POST /api/admin/users - should return 401 without authentication', () => {
@@ -124,7 +123,7 @@ describe('Admin User Management - Role-Based Access Control', () => {
     app = moduleFixture.createNestApplication();
     await app.init();
     helpers = getTestHelpers(app);
-    
+
     // Setup test context with users, org, and sessions via Better Auth
     ctx = await helpers.setupTestContext();
     const otherOrg = await helpers.createTestOrganization({
@@ -210,20 +209,37 @@ describe('Admin User Management - Role-Based Access Control', () => {
       const outsider = await createOutsiderCandidate('manager-list');
 
       return request(app.getHttpServer())
-        .get(`/api/platform-admin/organizations/${ctx.testOrg.id}/member-candidates`)
+        .get(
+          `/api/platform-admin/organizations/${ctx.testOrg.id}/member-candidates`,
+        )
         .set('Cookie', ctx.managerCookie)
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body.data)).toBe(true);
-          expect(res.body.data.some((candidate: { id: string }) => candidate.id === outsider.userId)).toBe(true);
-          expect(res.body.data.some((candidate: { id: string }) => candidate.id === ctx.memberUser.id)).toBe(false);
-          expect(res.body.data.some((candidate: { id: string }) => candidate.id === ctx.managerUser.id)).toBe(false);
+          expect(
+            res.body.data.some(
+              (candidate: { id: string }) => candidate.id === outsider.userId,
+            ),
+          ).toBe(true);
+          expect(
+            res.body.data.some(
+              (candidate: { id: string }) => candidate.id === ctx.memberUser.id,
+            ),
+          ).toBe(false);
+          expect(
+            res.body.data.some(
+              (candidate: { id: string }) =>
+                candidate.id === ctx.managerUser.id,
+            ),
+          ).toBe(false);
         });
     });
 
     it('[Manager] should reject access to member candidates for another organization', async () => {
       return request(app.getHttpServer())
-        .get(`/api/platform-admin/organizations/${otherOrgId}/member-candidates`)
+        .get(
+          `/api/platform-admin/organizations/${otherOrgId}/member-candidates`,
+        )
         .set('Cookie', ctx.managerCookie)
         .expect(403);
     });
@@ -232,11 +248,17 @@ describe('Admin User Management - Role-Based Access Control', () => {
       const outsider = await createOutsiderCandidate('admin-list');
 
       return request(app.getHttpServer())
-        .get(`/api/platform-admin/organizations/${ctx.testOrg.id}/member-candidates`)
+        .get(
+          `/api/platform-admin/organizations/${ctx.testOrg.id}/member-candidates`,
+        )
         .set('Cookie', ctx.superadminCookie)
         .expect(200)
         .expect((res) => {
-          expect(res.body.data.some((candidate: { id: string }) => candidate.id === outsider.userId)).toBe(true);
+          expect(
+            res.body.data.some(
+              (candidate: { id: string }) => candidate.id === outsider.userId,
+            ),
+          ).toBe(true);
         });
     });
 
@@ -244,11 +266,17 @@ describe('Admin User Management - Role-Based Access Control', () => {
       const outsider = await createOutsiderCandidate('admin-add');
 
       await request(app.getHttpServer())
-        .get(`/api/platform-admin/organizations/${ctx.testOrg.id}/member-candidates`)
+        .get(
+          `/api/platform-admin/organizations/${ctx.testOrg.id}/member-candidates`,
+        )
         .set('Cookie', ctx.superadminCookie)
         .expect(200)
         .expect((res) => {
-          expect(res.body.data.some((candidate: { id: string }) => candidate.id === outsider.userId)).toBe(true);
+          expect(
+            res.body.data.some(
+              (candidate: { id: string }) => candidate.id === outsider.userId,
+            ),
+          ).toBe(true);
         });
 
       await request(app.getHttpServer())
@@ -258,11 +286,17 @@ describe('Admin User Management - Role-Based Access Control', () => {
         .expect(201);
 
       await request(app.getHttpServer())
-        .get(`/api/platform-admin/organizations/${ctx.testOrg.id}/member-candidates`)
+        .get(
+          `/api/platform-admin/organizations/${ctx.testOrg.id}/member-candidates`,
+        )
         .set('Cookie', ctx.superadminCookie)
         .expect(200)
         .expect((res) => {
-          expect(res.body.data.some((candidate: { id: string }) => candidate.id === outsider.userId)).toBe(false);
+          expect(
+            res.body.data.some(
+              (candidate: { id: string }) => candidate.id === outsider.userId,
+            ),
+          ).toBe(false);
         });
     });
   });
@@ -270,7 +304,7 @@ describe('Admin User Management - Role-Based Access Control', () => {
   describe('User Creation - Role Hierarchy', () => {
     it('[Superadmin] should create admin user with organization', async () => {
       const email = uniqueResendDeliveredEmail('newadmin');
-      
+
       return request(app.getHttpServer())
         .post('/api/admin/users')
         .set('Cookie', ctx.superadminCookie)
@@ -289,7 +323,7 @@ describe('Admin User Management - Role-Based Access Control', () => {
 
     it('[Org Admin] should create manager user with organization', async () => {
       const email = uniqueResendDeliveredEmail('newmanager');
-      
+
       return request(app.getHttpServer())
         .post('/api/admin/users')
         .set('Cookie', ctx.adminCookie)
@@ -308,7 +342,7 @@ describe('Admin User Management - Role-Based Access Control', () => {
 
     it('[Manager] should create member user in their organization', async () => {
       const email = uniqueResendDeliveredEmail('newmember');
-      
+
       const res = await request(app.getHttpServer())
         .post('/api/admin/users')
         .set('Cookie', ctx.managerCookie)
@@ -319,7 +353,7 @@ describe('Admin User Management - Role-Based Access Control', () => {
           role: 'member',
           organizationId: ctx.testOrg.id,
         });
-      
+
       // Manager may get 403 if not properly set up - accept both
       expect([201, 403]).toContain(res.status);
       if (res.status === 201) {
@@ -329,7 +363,7 @@ describe('Admin User Management - Role-Based Access Control', () => {
 
     it('[Manager] should reject admin user creation with 403', async () => {
       const email = uniqueResendDeliveredEmail('attemptedadmin');
-      
+
       return request(app.getHttpServer())
         .post('/api/admin/users')
         .set('Cookie', ctx.managerCookie)
@@ -344,7 +378,7 @@ describe('Admin User Management - Role-Based Access Control', () => {
 
     it('should reject manager/member creation without organization', async () => {
       const email = uniqueResendDeliveredEmail('noorg');
-      
+
       return request(app.getHttpServer())
         .post('/api/admin/users')
         .set('Cookie', ctx.adminCookie)
@@ -381,8 +415,12 @@ describe('Admin User Management - Role-Based Access Control', () => {
         password: 'SecurePass123!',
       });
       await helpers.setUserRole(signUp.userId, 'member');
-      await helpers.addUserToOrganization(signUp.userId, ctx.testOrg.id, 'member');
-      
+      await helpers.addUserToOrganization(
+        signUp.userId,
+        ctx.testOrg.id,
+        'member',
+      );
+
       return request(app.getHttpServer())
         .put(`/api/admin/users/${signUp.userId}/role`)
         .set('Cookie', ctx.adminCookie)

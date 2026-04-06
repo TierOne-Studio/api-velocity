@@ -28,12 +28,14 @@ export class ConfigService {
   }
 
   getTrustedOrigins(): string[] {
-    return process.env.TRUSTED_ORIGINS?.split(',') || [
-      'http://localhost:5173',
-      'http://localhost:5174',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:5174',
-    ];
+    return (
+      process.env.TRUSTED_ORIGINS?.split(',') || [
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:5174',
+      ]
+    );
   }
 
   getResendApiKey(): string {
@@ -48,6 +50,22 @@ export class ConfigService {
     return process.env.FE_URL || 'http://localhost:5173';
   }
 
+  getAirweaveApiKey(): string | null {
+    return process.env.AIRWEAVE_API_KEY?.trim() || null;
+  }
+
+  getAirweaveBaseUrl(): string {
+    return process.env.AIRWEAVE_BASE_URL || 'https://api.airweave.ai';
+  }
+
+  getOpenAiApiKey(): string | null {
+    return process.env.OPENAI_API_KEY?.trim() || null;
+  }
+
+  getOpenAiModel(): string {
+    return process.env.OPENAI_MODEL || 'gpt-4o';
+  }
+
   isTestMode(): boolean {
     return process.env.NODE_ENV === 'test';
   }
@@ -57,7 +75,8 @@ export class ConfigService {
     if (override === 'true') return true;
     if (override === 'false') return false;
 
-    const dotenvConfigPath = process.env.DOTENV_CONFIG_PATH?.toLowerCase() || '';
+    const dotenvConfigPath =
+      process.env.DOTENV_CONFIG_PATH?.toLowerCase() || '';
     const usesEnvTestFile = dotenvConfigPath.endsWith('.env.test');
 
     return this.isTestMode() || usesEnvTestFile;
