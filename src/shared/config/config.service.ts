@@ -66,6 +66,21 @@ export class ConfigService {
     return process.env.OPENAI_MODEL || 'gpt-4o';
   }
 
+  getChatSystemPrompt(): string {
+    return (
+      process.env.CHAT_SYSTEM_PROMPT ||
+      'You answer questions about organization knowledge bases. Use only the provided source context. Respond in structured markdown with sections ## Answer, ### Key Findings, and ### Sources. Keep attribution brief and factual.'
+    );
+  }
+
+  getChatRateLimitTtl(): number {
+    return parseInt(process.env.CHAT_RATE_LIMIT_TTL || '60000', 10);
+  }
+
+  getChatRateLimitMax(): number {
+    return parseInt(process.env.CHAT_RATE_LIMIT_MAX || '20', 10);
+  }
+
   isTestMode(): boolean {
     return process.env.NODE_ENV === 'test';
   }

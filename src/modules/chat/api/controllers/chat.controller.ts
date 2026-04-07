@@ -11,6 +11,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { Response } from 'express';
 import { RequirePermissions, PermissionsGuard } from '../../../../shared';
@@ -32,7 +33,7 @@ type SendMessageBody = {
 };
 
 @Controller('api/chat')
-@UseGuards(PermissionsGuard)
+@UseGuards(PermissionsGuard, ThrottlerGuard)
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
@@ -139,6 +140,7 @@ export class ChatController {
 
   @Post('conversations/:conversationId/messages')
   @RequirePermissions('organization:read')
+  @Throttle({ chat: {} })
   async sendMessage(
     @Session() session: UserSession,
     @Param('conversationId') conversationId: string,
@@ -159,6 +161,7 @@ export class ChatController {
 
   @Post('conversations/:conversationId/messages/stream')
   @RequirePermissions('organization:read')
+  @Throttle({ chat: {} })
   async streamMessage(
     @Session() session: UserSession,
     @Param('conversationId') conversationId: string,

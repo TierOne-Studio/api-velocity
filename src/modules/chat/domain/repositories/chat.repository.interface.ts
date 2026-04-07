@@ -44,6 +44,7 @@ export interface IChatRepository {
     conversationId: string,
     userId: string,
     organizationId: string | null,
+    limit?: number,
   ): Promise<MessageRow[]>;
   createMessage(params: CreateMessageParams): Promise<MessageRow>;
   deleteConversation(

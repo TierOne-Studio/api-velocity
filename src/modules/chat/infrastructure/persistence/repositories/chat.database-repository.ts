@@ -141,6 +141,7 @@ export class ChatDatabaseRepository implements IChatRepository {
     conversationId: string,
     userId: string,
     organizationId: string | null,
+    limit = 200,
   ): Promise<MessageRow[]> {
     const params: unknown[] = [conversationId, userId];
     let sql = `SELECT ${MESSAGE_COLUMNS}
@@ -156,45 +157,51 @@ export class ChatDatabaseRepository implements IChatRepository {
 
     sql += ' ORDER BY m.created_at ASC';
 
+    params.push(limit);
+    sql += ` LIMIT $${params.length}`;
+
     return this.db.query<MessageRow>(sql, params);
   }
 
   async createMessage(params: CreateMessageParams): Promise<MessageRow> {
-    const row = await this.db.queryOne<MessageRow>(
-      `INSERT INTO message (
-        id,
-        conversation_id,
-        role,
-        content,
-        metadata,
-        created_at
-      ) VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
-      RETURNING
-        id,
-        conversation_id,
-        role,
-        content,
-        metadata,
-        created_at`,
-      [
-        params.id,
-        params.conversationId,
-        params.role,
-        params.content,
-        JSON.stringify(params.metadata ?? null),
-      ],
-    );
+    return this.db.transaction(async (query) => {
+      const rows = await query<MessageRow>(
+        `INSERT INTO message (
+          id,
+          conversation_id,
+          role,
+          content,
+          metadata,
+          created_at
+        ) VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
+        RETURNING
+          id,
+          conversation_id,
+          role,
+          content,
+          metadata,
+          created_at`,
+        [
+          params.id,
+          params.conversationId,
+          params.role,
+          params.content,
+          JSON.stringify(params.metadata ?? null),
+        ],
+      );
 
-    await this.db.query(
-      'UPDATE conversation SET updated_at = NOW() WHERE id = $1',
-      [params.conversationId],
-    );
+      await query(
+        'UPDATE conversation SET updated_at = NOW() WHERE id = $1',
+        [params.conversationId],
+      );
 
-    if (!row) {
-      throw new Error('Failed to create message');
-    }
+      const row = rows[0] ?? null;
+      if (!row) {
+        throw new Error('Failed to create message');
+      }
 
-    return row;
+      return row;
+    });
   }
 
   async deleteConversation(

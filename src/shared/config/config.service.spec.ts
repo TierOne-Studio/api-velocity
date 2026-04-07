@@ -218,6 +218,62 @@ describe('ConfigService', () => {
     });
   });
 
+  describe('getChatSystemPrompt', () => {
+    it('returns CHAT_SYSTEM_PROMPT when set', () => {
+      process.env.CHAT_SYSTEM_PROMPT = 'custom prompt';
+
+      const configService = new ConfigService();
+
+      expect(configService.getChatSystemPrompt()).toBe('custom prompt');
+    });
+
+    it('returns the default prompt when not set', () => {
+      delete process.env.CHAT_SYSTEM_PROMPT;
+
+      const configService = new ConfigService();
+
+      expect(configService.getChatSystemPrompt()).toContain(
+        'You answer questions about organization knowledge bases',
+      );
+    });
+  });
+
+  describe('getChatRateLimitTtl', () => {
+    it('returns CHAT_RATE_LIMIT_TTL when set', () => {
+      process.env.CHAT_RATE_LIMIT_TTL = '30000';
+
+      const configService = new ConfigService();
+
+      expect(configService.getChatRateLimitTtl()).toBe(30000);
+    });
+
+    it('returns 60000 by default', () => {
+      delete process.env.CHAT_RATE_LIMIT_TTL;
+
+      const configService = new ConfigService();
+
+      expect(configService.getChatRateLimitTtl()).toBe(60000);
+    });
+  });
+
+  describe('getChatRateLimitMax', () => {
+    it('returns CHAT_RATE_LIMIT_MAX when set', () => {
+      process.env.CHAT_RATE_LIMIT_MAX = '10';
+
+      const configService = new ConfigService();
+
+      expect(configService.getChatRateLimitMax()).toBe(10);
+    });
+
+    it('returns 20 by default', () => {
+      delete process.env.CHAT_RATE_LIMIT_MAX;
+
+      const configService = new ConfigService();
+
+      expect(configService.getChatRateLimitMax()).toBe(20);
+    });
+  });
+
   describe('isTestMode', () => {
     it('should return true when NODE_ENV is test', () => {
       process.env.NODE_ENV = 'test';

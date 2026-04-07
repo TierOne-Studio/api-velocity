@@ -15,6 +15,7 @@ describe('ChatAgentService', () => {
   let configService: {
     getOpenAiApiKey: any;
     getOpenAiModel: any;
+    getChatSystemPrompt: any;
   };
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
 
@@ -25,6 +26,11 @@ describe('ChatAgentService', () => {
     configService = {
       getOpenAiApiKey: jest.fn().mockReturnValue(null),
       getOpenAiModel: jest.fn().mockReturnValue('gpt-4o'),
+      getChatSystemPrompt: jest
+        .fn()
+        .mockReturnValue(
+          'You answer questions about organization knowledge bases. Use only the provided source context. Respond in structured markdown with sections ## Answer, ### Key Findings, and ### Sources. Keep attribution brief and factual.',
+        ),
     };
     service = new ChatAgentService(
       airweaveService as never,
@@ -178,5 +184,65 @@ describe('ChatAgentService', () => {
       '[ChatAgentService] Failed to generate LangChain reply',
       expect.objectContaining({ error: 'langchain failed' }),
     );
+  });
+
+  it('reads system prompt from the config service', async () => {
+    configService.getOpenAiApiKey.mockReturnValue('sk-openai');
+    configService.getChatSystemPrompt.mockReturnValue('custom prompt');
+    airweaveService.searchCollection.mockResolvedValue({
+      results: [
+        {
+          entityId: 'entity-1',
+          name: 'Guide',
+          relevanceScore: 0.9,
+          breadcrumbs: [],
+          createdAt: null,
+          updatedAt: null,
+          text: 'content',
+          sourceName: 'github',
+          entityType: 'file',
+          webUrl: 'https://example.com',
+        },
+      ],
+    });
+    jest
+      .spyOn(service as ChatAgentServiceWithLangChain, 'generateLangChainReply')
+      .mockResolvedValue('## Answer\n\nOK');
+
+    await service.generateReply({
+      organizationName: 'Test',
+      collectionId: 'test',
+      question: 'test?',
+      previousMessages: [],
+    });
+
+    expect(configService.getChatSystemPrompt).toHaveBeenCalled();
+  });
+
+  it('reuses the same ChatOpenAI instance for identical config', () => {
+    const serviceInstance = service as unknown as {
+      getOrCreateLlm: (apiKey: string) => unknown;
+    };
+
+    configService.getOpenAiModel.mockReturnValue('gpt-4o');
+
+    const llm1 = serviceInstance.getOrCreateLlm('sk-openai');
+    const llm2 = serviceInstance.getOrCreateLlm('sk-openai');
+
+    expect(llm1).toBe(llm2);
+  });
+
+  it('creates a new ChatOpenAI instance when config changes', () => {
+    const serviceInstance = service as unknown as {
+      getOrCreateLlm: (apiKey: string) => unknown;
+    };
+
+    configService.getOpenAiModel.mockReturnValue('gpt-4o');
+    const llm1 = serviceInstance.getOrCreateLlm('sk-openai');
+
+    configService.getOpenAiModel.mockReturnValue('gpt-4o-mini');
+    const llm2 = serviceInstance.getOrCreateLlm('sk-openai');
+
+    expect(llm1).not.toBe(llm2);
   });
 });

@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { PermissionsGuard } from '../../../../shared';
 import { ChatController } from './chat.controller';
 import { ChatService } from '../../application/services/chat.service';
@@ -34,13 +35,30 @@ describe('ChatController', () => {
     controller = new ChatController(chatService);
   });
 
-  it('applies the class-level PermissionsGuard', () => {
+  it('applies the class-level PermissionsGuard and ThrottlerGuard', () => {
     const guards = Reflect.getMetadata(
       GUARDS_METADATA,
       ChatController,
     ) as unknown[];
 
     expect(guards).toContain(PermissionsGuard);
+    expect(guards).toContain(ThrottlerGuard);
+  });
+
+  it('applies @Throttle metadata on sendMessage and streamMessage', () => {
+    const sendKeys = Reflect.getMetadataKeys(
+      ChatController.prototype.sendMessage,
+    );
+    const streamKeys = Reflect.getMetadataKeys(
+      ChatController.prototype.streamMessage,
+    );
+
+    expect(sendKeys).toEqual(
+      expect.arrayContaining([expect.stringContaining('THROTTLER:')]),
+    );
+    expect(streamKeys).toEqual(
+      expect.arrayContaining([expect.stringContaining('THROTTLER:')]),
+    );
   });
 
   it('lists conversations for the current user and organization', async () => {

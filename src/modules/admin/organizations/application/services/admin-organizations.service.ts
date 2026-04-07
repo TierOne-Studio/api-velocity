@@ -7,6 +7,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { EmailService } from '../../../../../shared/email/email.service';
 import {
   PaginationQuery,
@@ -16,6 +17,7 @@ import {
   rowToOrganization,
 } from '../../api/dto';
 import { type PlatformRole } from '../../../utils/admin.utils';
+import { isSuperadminRole } from '../../../users/utils/admin.utils';
 import {
   type IAdminOrgRepository,
   ADMIN_ORG_REPOSITORY,
@@ -94,14 +96,6 @@ export class AdminOrganizationsService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
-  }
-
-  private isSuperadminUserRole(role: string | null | undefined): boolean {
-    return String(role ?? '')
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .includes('superadmin');
   }
 
   /**
@@ -486,7 +480,7 @@ export class AdminOrganizationsService {
 
     const user = await this.orgRepo.findUserById(userId);
     if (!user) throw new NotFoundException('User not found');
-    if (this.isSuperadminUserRole(user.role)) {
+    if (isSuperadminRole(user.role)) {
       throw new ForbiddenException(
         'Superadmin users cannot be added as organization members',
       );
@@ -585,12 +579,6 @@ export class AdminOrganizationsService {
   }
 
   private generateId(): string {
-    const chars =
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
-    for (let i = 0; i < 32; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
+    return randomUUID();
   }
 }

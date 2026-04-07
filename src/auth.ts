@@ -201,8 +201,7 @@ export const auth = betterAuth({
           );
         } else {
           console.log(
-            '[Organization] Invitation email (no service):',
-            invitationPayload.email,
+            '[Organization] Email service not initialized — skipping invitation email',
           );
         }
       },
@@ -233,8 +232,7 @@ export const auth = betterAuth({
         await emailServiceInstance.sendPasswordResetEmail(resetPayload);
       } else {
         console.log(
-          '[Password Reset] Email (no service):',
-          resetPayload.user.email,
+          '[Password Reset] Email service not initialized — skipping reset email',
         );
       }
     },
@@ -270,13 +268,6 @@ export const auth = betterAuth({
         return;
       }
 
-      console.log('📧 [Auth] sendVerificationEmail called:', {
-        email: verificationPayload.user.email,
-        hasEmailService: !!emailServiceInstance,
-        isTestMode,
-        sendOnSignUp: !isTestMode,
-      });
-
       // Modify the callbackURL to point to the frontend
       const feUrl = process.env.FE_URL || 'http://localhost:5173';
       const urlObj = new URL(verificationPayload.url);
@@ -288,16 +279,11 @@ export const auth = betterAuth({
       };
 
       if (emailServiceInstance) {
-        console.log(
-          '✅ [Auth] Calling emailServiceInstance.sendEmailVerification',
-        );
         await emailServiceInstance.sendEmailVerification(modifiedPayload);
       } else {
         console.log(
-          '⚠️ [Auth] Email service not initialized - Email (no service):',
-          verificationPayload.user.email,
+          '[Auth] Email service not initialized — skipping verification email',
         );
-        console.log('⚠️ [Auth] URL:', modifiedPayload.url);
       }
     },
   },

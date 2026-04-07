@@ -27,10 +27,30 @@ type ChatReply = {
 
 @Injectable()
 export class ChatAgentService {
+  private cachedLlm: ChatOpenAI | null = null;
+  private cachedLlmKey = '';
+
   constructor(
     private readonly airweaveService: AirweaveService,
     private readonly configService: ConfigService,
   ) {}
+
+  private getOrCreateLlm(apiKey: string): ChatOpenAI {
+    const model = this.configService.getOpenAiModel();
+    const cacheKey = `${apiKey}:${model}`;
+
+    if (this.cachedLlm && this.cachedLlmKey === cacheKey) {
+      return this.cachedLlm;
+    }
+
+    this.cachedLlm = new ChatOpenAI({
+      apiKey,
+      model,
+      temperature: 0.2,
+    });
+    this.cachedLlmKey = cacheKey;
+    return this.cachedLlm;
+  }
 
   async generateReply(params: GenerateReplyParams): Promise<ChatReply> {
     const searchResponse = await this.airweaveService.searchCollection(
@@ -130,7 +150,7 @@ export class ChatAgentService {
     const prompt = ChatPromptTemplate.fromMessages([
       [
         'system',
-        'You answer questions about organization knowledge bases. Use only the provided source context. Respond in structured markdown with sections ## Answer, ### Key Findings, and ### Sources. Keep attribution brief and factual.',
+        this.configService.getChatSystemPrompt(),
       ],
       [
         'human',
@@ -145,11 +165,7 @@ export class ChatAgentService {
 
     const chain = RunnableSequence.from([
       prompt,
-      new ChatOpenAI({
-        apiKey,
-        model: this.configService.getOpenAiModel(),
-        temperature: 0.2,
-      }),
+      this.getOrCreateLlm(apiKey),
       new StringOutputParser(),
     ]);
 

@@ -4,6 +4,20 @@ import type { UserSession } from '@thallesp/nestjs-better-auth';
 export type OrganizationRoleName = 'admin' | 'manager' | 'member';
 export type PlatformRole = 'superadmin' | OrganizationRoleName;
 
+export function isSuperadminRole(
+  role: string | string[] | null | undefined,
+): boolean {
+  if (Array.isArray(role)) {
+    return role.includes('superadmin');
+  }
+
+  return String(role ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .includes('superadmin');
+}
+
 export function getPlatformRole(session: UserSession): PlatformRole {
   const role = (session?.user as { role?: string | string[] } | undefined)
     ?.role;

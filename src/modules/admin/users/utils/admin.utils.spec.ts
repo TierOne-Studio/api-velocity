@@ -3,6 +3,7 @@ import {
   getAllowedRoleNamesForCreator,
   getActiveOrganizationId,
   getPlatformRole,
+  isSuperadminRole,
   requireActiveOrganizationIdForManager,
 } from './admin.utils';
 
@@ -145,6 +146,48 @@ describe('admin.utils', () => {
           session: { activeOrganizationId: undefined },
         } as any),
       ).toThrow(ForbiddenException);
+    });
+  });
+
+  describe('isSuperadminRole', () => {
+    it('should return true for superadmin string', () => {
+      expect(isSuperadminRole('superadmin')).toBe(true);
+    });
+
+    it('should return false for admin string', () => {
+      expect(isSuperadminRole('admin')).toBe(false);
+    });
+
+    it('should return false for null', () => {
+      expect(isSuperadminRole(null)).toBe(false);
+    });
+
+    it('should return false for undefined', () => {
+      expect(isSuperadminRole(undefined)).toBe(false);
+    });
+
+    it('should handle comma-separated string with superadmin', () => {
+      expect(isSuperadminRole('superadmin,admin')).toBe(true);
+    });
+
+    it('should return false for comma-separated string without superadmin', () => {
+      expect(isSuperadminRole('admin,manager')).toBe(false);
+    });
+
+    it('should handle array with superadmin', () => {
+      expect(isSuperadminRole(['superadmin', 'admin'])).toBe(true);
+    });
+
+    it('should return false for array without superadmin', () => {
+      expect(isSuperadminRole(['admin', 'member'])).toBe(false);
+    });
+
+    it('should return false for empty string', () => {
+      expect(isSuperadminRole('')).toBe(false);
+    });
+
+    it('should return false for empty array', () => {
+      expect(isSuperadminRole([])).toBe(false);
     });
   });
 });

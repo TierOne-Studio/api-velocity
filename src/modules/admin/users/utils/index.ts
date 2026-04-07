@@ -1,6 +1,7 @@
 export {
   getPlatformRole,
   getActiveOrganizationId,
+  isSuperadminRole,
   requireActiveOrganizationIdForManager,
   getAllowedRoleNamesForCreator,
 } from './admin.utils';
