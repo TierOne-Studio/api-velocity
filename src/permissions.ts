@@ -1,16 +1,16 @@
-import { createAccessControl } from "better-auth/plugins/access";
-import { defaultStatements, adminAc } from "better-auth/plugins/admin/access";
+import { createAccessControl } from 'better-auth/plugins/access';
+import { defaultStatements, adminAc } from 'better-auth/plugins/admin/access';
 
 /**
  * RBAC Permission Statements
- * 
+ *
  * Defines all resources and their available actions.
  * Uses Better Auth's access control system.
  */
 export const statement = {
   ...defaultStatements,
-  organization: ["create", "list", "get", "update", "invite"],
-  role: ["list", "get"],
+  organization: ['create', 'list', 'get', 'update', 'invite'],
+  role: ['list', 'get'],
 } as const;
 
 /**
@@ -20,7 +20,7 @@ export const ac = createAccessControl(statement);
 
 /**
  * Role Definitions
- * 
+ *
  * Each role defines what permissions it has for each resource.
  */
 
@@ -31,23 +31,34 @@ export const superadminRole = ac.newRole({
 
 // Admin role - full access within an organization
 export const adminRole = ac.newRole({
-  user: ["create", "list", "get", "update", "delete", "ban", "impersonate", "set-role", "set-password"],
-  session: ["list", "revoke"],
-  organization: ["create", "list", "get", "update", "invite"],
-  role: ["list", "get"],
+  user: [
+    'create',
+    'list',
+    'get',
+    'update',
+    'delete',
+    'ban',
+    'impersonate',
+    'set-role',
+    'set-password',
+  ],
+  session: ['list', 'revoke'],
+  organization: ['create', 'list', 'get', 'update', 'invite'],
+  role: ['list', 'get'],
 });
 
 // Manager role - can manage users/sessions within their organization
 export const managerRole = ac.newRole({
-  user: ["create", "list", "get", "update", "ban", "set-role", "set-password"],
-  session: ["list", "revoke"],
-  organization: ["create", "list", "get", "update", "invite"],
-  role: ["list", "get"],
+  user: ['create', 'list', 'get', 'update', 'ban', 'set-role', 'set-password'],
+  session: ['list', 'revoke'],
+  organization: ['create', 'list', 'get', 'update', 'invite'],
+  role: ['list', 'get'],
 });
 
 // Member role - basic org member
 export const memberRole = ac.newRole({
-  role: ["list", "get"],
+  organization: ['list', 'get'],
+  role: ['list', 'get'],
 });
 
 /**
@@ -65,24 +76,24 @@ export const roles = {
  */
 export const roleMetadata = {
   superadmin: {
-    name: "Superadmin",
-    description: "Unrestricted global access across the entire platform",
-    color: "red",
+    name: 'Superadmin',
+    description: 'Unrestricted global access across the entire platform',
+    color: 'red',
   },
   admin: {
-    name: "Admin",
-    description: "Full access within an organization",
-    color: "red",
+    name: 'Admin',
+    description: 'Full access within an organization',
+    color: 'red',
   },
   manager: {
-    name: "Manager",
-    description: "Can manage everything within their organization",
-    color: "blue",
+    name: 'Manager',
+    description: 'Can manage everything within their organization',
+    color: 'blue',
   },
   member: {
-    name: "Member",
-    description: "Basic access within an organization",
-    color: "gray",
+    name: 'Member',
+    description: 'Basic access within an organization',
+    color: 'gray',
   },
 } as const;
 

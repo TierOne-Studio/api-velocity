@@ -20,18 +20,22 @@ describe('permissions module (source verification)', () => {
 
   describe('statement', () => {
     it('should define organization resource with create action', () => {
-      expect(source).toContain('"create"');
+      expect(source).toContain("'create'");
       expect(source).toContain('organization:');
     });
 
     it('should define organization resource with invite action', () => {
-      expect(source).toContain('"invite"');
+      expect(source).toContain("'invite'");
     });
 
     it('should define role resource with list and get actions', () => {
       expect(source).toContain('role:');
-      expect(source).toContain('"list"');
-      expect(source).toContain('"get"');
+      expect(source).toContain("'list'");
+      expect(source).toContain("'get'");
+    });
+
+    it('should not define a project resource', () => {
+      expect(source).not.toContain('project:');
     });
 
     it('should spread defaultStatements from better-auth', () => {
@@ -52,12 +56,22 @@ describe('permissions module (source verification)', () => {
 
     it('should define managerRole with user permissions', () => {
       expect(source).toContain('managerRole');
-      expect(source).toContain('"set-role"');
-      expect(source).toContain('"set-password"');
+      expect(source).toContain("'set-role'");
+      expect(source).toContain("'set-password'");
+    });
+
+    it('should define organization permissions for admin and manager roles', () => {
+      expect(source).toContain(
+        "organization: ['create', 'list', 'get', 'update', 'invite']",
+      );
     });
 
     it('should define memberRole', () => {
       expect(source).toContain('memberRole');
+    });
+
+    it('should grant read-only organization access to memberRole', () => {
+      expect(source).toContain("organization: ['list', 'get']");
     });
 
     it('should export roles object with superadmin, admin, manager, member keys', () => {
@@ -68,7 +82,7 @@ describe('permissions module (source verification)', () => {
     });
 
     it('managerRole should include session permissions', () => {
-      expect(source).toContain('"revoke"');
+      expect(source).toContain("'revoke'");
       expect(source).toContain('session:');
     });
   });
@@ -76,26 +90,26 @@ describe('permissions module (source verification)', () => {
   describe('roleMetadata', () => {
     it('should define superadmin metadata', () => {
       expect(source).toContain('superadmin:');
-      expect(source).toContain('name: "Superadmin"');
+      expect(source).toContain("name: 'Superadmin'");
     });
 
     it('should define admin metadata with red color', () => {
-      expect(source).toContain('color: "red"');
+      expect(source).toContain("color: 'red'");
     });
 
     it('should define manager metadata with blue color', () => {
-      expect(source).toContain('color: "blue"');
+      expect(source).toContain("color: 'blue'");
     });
 
     it('should define member metadata with gray color', () => {
-      expect(source).toContain('color: "gray"');
+      expect(source).toContain("color: 'gray'");
     });
 
     it('should include name fields for each role', () => {
-      expect(source).toContain('name: "Superadmin"');
-      expect(source).toContain('name: "Admin"');
-      expect(source).toContain('name: "Manager"');
-      expect(source).toContain('name: "Member"');
+      expect(source).toContain("name: 'Superadmin'");
+      expect(source).toContain("name: 'Admin'");
+      expect(source).toContain("name: 'Manager'");
+      expect(source).toContain("name: 'Member'");
     });
 
     it('should include description fields', () => {

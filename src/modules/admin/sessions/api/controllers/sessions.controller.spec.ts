@@ -43,19 +43,27 @@ describe('SessionsController', () => {
       expect(guards).toContain(PermissionsGuard);
     });
 
-
     it('requires session:read permission on listSessions', () => {
-      const permissions = Reflect.getMetadata(PERMISSIONS_KEY, controller.listSessions);
+      const permissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        controller.listSessions,
+      );
       expect(permissions).toContain('session:read');
     });
 
     it('requires session:revoke permission on revokeSession', () => {
-      const permissions = Reflect.getMetadata(PERMISSIONS_KEY, controller.revokeSession);
+      const permissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        controller.revokeSession,
+      );
       expect(permissions).toContain('session:revoke');
     });
 
     it('requires session:revoke permission on revokeAll', () => {
-      const permissions = Reflect.getMetadata(PERMISSIONS_KEY, controller.revokeAll);
+      const permissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        controller.revokeAll,
+      );
       expect(permissions).toContain('session:revoke');
     });
   });
@@ -95,7 +103,9 @@ describe('SessionsController', () => {
     it('delegates to service with superadmin role and null activeOrganizationId', async () => {
       sessionsService.revokeSession.mockResolvedValue({ success: true });
 
-      const result = await controller.revokeSession(superadminSession, { sessionToken: 'token1' });
+      const result = await controller.revokeSession(superadminSession, {
+        sessionToken: 'token1',
+      });
 
       expect(sessionsService.revokeSession).toHaveBeenCalledWith(
         { sessionToken: 'token1' },
@@ -131,13 +141,17 @@ describe('SessionsController', () => {
 
     it('rejects null sessionToken', async () => {
       await expect(
-        controller.revokeSession(superadminSession, { sessionToken: null as any }),
+        controller.revokeSession(superadminSession, {
+          sessionToken: null as any,
+        }),
       ).rejects.toThrow('sessionToken is required');
     });
 
     it('rejects undefined sessionToken', async () => {
       await expect(
-        controller.revokeSession(superadminSession, { sessionToken: undefined as any }),
+        controller.revokeSession(superadminSession, {
+          sessionToken: undefined as any,
+        }),
       ).rejects.toThrow('sessionToken is required');
     });
   });

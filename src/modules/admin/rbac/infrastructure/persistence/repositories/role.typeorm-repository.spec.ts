@@ -41,11 +41,15 @@ const mockTransactionManager = {
 };
 
 const mockDataSource = {
-  transaction: jest.fn<any>().mockImplementation(
-    async (fn: (manager: typeof mockTransactionManager) => Promise<unknown>) => {
-      return fn(mockTransactionManager);
-    },
-  ),
+  transaction: jest
+    .fn<any>()
+    .mockImplementation(
+      async (
+        fn: (manager: typeof mockTransactionManager) => Promise<unknown>,
+      ) => {
+        return fn(mockTransactionManager);
+      },
+    ),
   query: jest.fn<any>(),
 };
 
@@ -82,9 +86,15 @@ describe('TypeOrmRoleRepository', () => {
     mockQueryBuilder.setLock.mockReturnThis();
     mockQueryBuilder.where.mockReturnThis();
     mockTransactionManager.createQueryBuilder.mockReturnValue(mockQueryBuilder);
-    repo = new TypeOrmRoleRepository(mockRoleRepo as any, mockPermRepo as any, mockDataSource as any);
+    repo = new TypeOrmRoleRepository(
+      mockRoleRepo as any,
+      mockPermRepo as any,
+      mockDataSource as any,
+    );
     mockDataSource.transaction.mockImplementation(
-      async (fn: (manager: typeof mockTransactionManager) => Promise<unknown>) => {
+      async (
+        fn: (manager: typeof mockTransactionManager) => Promise<unknown>,
+      ) => {
         return fn(mockTransactionManager);
       },
     );
@@ -150,7 +160,10 @@ describe('TypeOrmRoleRepository', () => {
     it('saves and returns mapped role', async () => {
       mockRoleCreate.mockReturnValue(roleEntity);
       mockRoleSave.mockResolvedValue(roleEntity);
-      const result = await repo.create({ name: 'admin', displayName: 'Admin' }, 'org-1');
+      const result = await repo.create(
+        { name: 'admin', displayName: 'Admin' },
+        'org-1',
+      );
       expect(result).toEqual(roleMapped);
     });
 
@@ -159,7 +172,11 @@ describe('TypeOrmRoleRepository', () => {
       mockRoleSave.mockResolvedValue(roleEntity);
       await repo.create({ name: 'custom', displayName: 'Custom' }, 'org-1');
       expect(mockRoleCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ color: 'gray', description: null, organizationId: 'org-1' }),
+        expect.objectContaining({
+          color: 'gray',
+          description: null,
+          organizationId: 'org-1',
+        }),
       );
     });
   });
@@ -170,8 +187,13 @@ describe('TypeOrmRoleRepository', () => {
     it('applies partial fields and returns mapped role', async () => {
       mockTransactionManager.findOne.mockResolvedValue(roleEntity);
       mockTransactionManager.update.mockResolvedValue(undefined);
-      mockTransactionManager.findOne.mockResolvedValueOnce(roleEntity).mockResolvedValueOnce(roleEntity);
-      const result = await repo.update('r-1', { displayName: 'Super Admin', color: 'blue' });
+      mockTransactionManager.findOne
+        .mockResolvedValueOnce(roleEntity)
+        .mockResolvedValueOnce(roleEntity);
+      const result = await repo.update('r-1', {
+        displayName: 'Super Admin',
+        color: 'blue',
+      });
       expect(result).toEqual(roleMapped);
       expect(mockTransactionManager.update).toHaveBeenCalledWith(
         expect.anything(),
@@ -187,8 +209,8 @@ describe('TypeOrmRoleRepository', () => {
 
     it('returns null when role disappears after update (second findOne returns null)', async () => {
       mockTransactionManager.findOne
-        .mockResolvedValueOnce(roleEntity)  // initial lookup: role exists
-        .mockResolvedValueOnce(null);        // post-update lookup: role gone
+        .mockResolvedValueOnce(roleEntity) // initial lookup: role exists
+        .mockResolvedValueOnce(null); // post-update lookup: role gone
       mockTransactionManager.update.mockResolvedValue(undefined);
 
       const result = await repo.update('r-1', { displayName: 'X' });
@@ -196,10 +218,13 @@ describe('TypeOrmRoleRepository', () => {
     });
 
     it('skips undefined fields in partial', async () => {
-      mockTransactionManager.findOne.mockResolvedValueOnce(roleEntity).mockResolvedValueOnce(roleEntity);
+      mockTransactionManager.findOne
+        .mockResolvedValueOnce(roleEntity)
+        .mockResolvedValueOnce(roleEntity);
       mockTransactionManager.update.mockResolvedValue(undefined);
       await repo.update('r-1', { description: 'new desc' });
-      const [, , partial] = (mockTransactionManager.update as jest.Mock).mock.calls[0] as [unknown, string, object];
+      const [, , partial] = (mockTransactionManager.update as jest.Mock).mock
+        .calls[0] as [unknown, string, object];
       expect(partial).not.toHaveProperty('displayName');
       expect(partial).not.toHaveProperty('color');
     });
@@ -215,8 +240,12 @@ describe('TypeOrmRoleRepository', () => {
 
       expect(result).toEqual({ ...roleMapped, name: 'owner' });
       expect(mockTransactionManager.query).toHaveBeenCalledTimes(2);
-      expect((mockTransactionManager.query as jest.Mock).mock.calls[0][0]).toContain('UPDATE member SET role = $1');
-      expect((mockTransactionManager.query as jest.Mock).mock.calls[1][0]).toContain('UPDATE invitation SET role = $1');
+      expect(
+        (mockTransactionManager.query as jest.Mock).mock.calls[0][0],
+      ).toContain('UPDATE member SET role = $1');
+      expect(
+        (mockTransactionManager.query as jest.Mock).mock.calls[1][0],
+      ).toContain('UPDATE invitation SET role = $1');
     });
   });
 
@@ -228,8 +257,13 @@ describe('TypeOrmRoleRepository', () => {
       mockTransactionManager.delete.mockResolvedValue(undefined);
       await repo.remove('r-1');
       expect(mockTransactionManager.createQueryBuilder).toHaveBeenCalled();
-      expect(mockQueryBuilder.setLock).toHaveBeenCalledWith('pessimistic_write');
-      expect(mockTransactionManager.delete).toHaveBeenCalledWith(expect.anything(), 'r-1');
+      expect(mockQueryBuilder.setLock).toHaveBeenCalledWith(
+        'pessimistic_write',
+      );
+      expect(mockTransactionManager.delete).toHaveBeenCalledWith(
+        expect.anything(),
+        'r-1',
+      );
     });
 
     it('does nothing when role is not found', async () => {
@@ -243,21 +277,35 @@ describe('TypeOrmRoleRepository', () => {
     it('returns zeroes when role is missing', async () => {
       mockRoleFindOne.mockResolvedValue(null);
 
-      await expect(repo.getUsageSummary('missing')).resolves.toEqual({ users: 0, members: 0, invitations: 0 });
+      await expect(repo.getUsageSummary('missing')).resolves.toEqual({
+        users: 0,
+        members: 0,
+        invitations: 0,
+      });
     });
 
     it('returns organization-scoped usage counts', async () => {
       mockRoleFindOne.mockResolvedValue(roleEntity);
-      mockDataSource.query.mockResolvedValue([{ users: '1', members: '2', invitations: '3' }]);
+      mockDataSource.query.mockResolvedValue([
+        { users: '1', members: '2', invitations: '3' },
+      ]);
 
-      await expect(repo.getUsageSummary('r-1')).resolves.toEqual({ users: 1, members: 2, invitations: 3 });
+      await expect(repo.getUsageSummary('r-1')).resolves.toEqual({
+        users: 1,
+        members: 2,
+        invitations: 3,
+      });
     });
 
     it('returns zeroes for org-scoped role when the database query returns an empty array', async () => {
       mockRoleFindOne.mockResolvedValue(roleEntity);
       mockDataSource.query.mockResolvedValue([]);
 
-      await expect(repo.getUsageSummary('r-1')).resolves.toEqual({ users: 0, members: 0, invitations: 0 });
+      await expect(repo.getUsageSummary('r-1')).resolves.toEqual({
+        users: 0,
+        members: 0,
+        invitations: 0,
+      });
     });
   });
 
@@ -270,10 +318,28 @@ describe('TypeOrmRoleRepository', () => {
     });
 
     it('returns sorted mapped permissions', async () => {
-      const permA = { id: 'p-1', resource: 'users', action: 'write', description: null };
-      const permB = { id: 'p-2', resource: 'users', action: 'read', description: null };
-      const permC = { id: 'p-3', resource: 'orgs', action: 'read', description: null };
-      mockRoleFindOne.mockResolvedValue({ ...roleEntity, permissions: [permA, permB, permC] });
+      const permA = {
+        id: 'p-1',
+        resource: 'users',
+        action: 'write',
+        description: null,
+      };
+      const permB = {
+        id: 'p-2',
+        resource: 'users',
+        action: 'read',
+        description: null,
+      };
+      const permC = {
+        id: 'p-3',
+        resource: 'orgs',
+        action: 'read',
+        description: null,
+      };
+      mockRoleFindOne.mockResolvedValue({
+        ...roleEntity,
+        permissions: [permA, permB, permC],
+      });
       const result = await repo.getPermissions('r-1');
       expect(result[0].resource).toBe('orgs');
       expect(result[1].action).toBe('read');
@@ -292,13 +358,23 @@ describe('TypeOrmRoleRepository', () => {
   describe('setPermissions', () => {
     it('throws NotFoundException when role not found in transaction', async () => {
       mockTransactionManager.findOne.mockResolvedValue(null);
-      await expect(repo.setPermissions('nope', ['p-1'])).rejects.toThrow(NotFoundException);
+      await expect(repo.setPermissions('nope', ['p-1'])).rejects.toThrow(
+        NotFoundException,
+      );
       expect(mockTransactionManager.save).not.toHaveBeenCalled();
     });
 
     it('assigns permissions when permissionIds are provided', async () => {
-      const permEntity = { id: 'p-1', resource: 'users', action: 'read', description: null };
-      mockTransactionManager.findOne.mockResolvedValue({ ...roleEntity, permissions: [] });
+      const permEntity = {
+        id: 'p-1',
+        resource: 'users',
+        action: 'read',
+        description: null,
+      };
+      mockTransactionManager.findOne.mockResolvedValue({
+        ...roleEntity,
+        permissions: [],
+      });
       mockTransactionManager.findBy.mockResolvedValue([permEntity]);
       mockTransactionManager.save.mockResolvedValue(undefined);
       await repo.setPermissions('r-1', ['p-1']);
@@ -306,7 +382,10 @@ describe('TypeOrmRoleRepository', () => {
     });
 
     it('assigns empty permissions when permissionIds is empty', async () => {
-      mockTransactionManager.findOne.mockResolvedValue({ ...roleEntity, permissions: [] });
+      mockTransactionManager.findOne.mockResolvedValue({
+        ...roleEntity,
+        permissions: [],
+      });
       mockTransactionManager.save.mockResolvedValue(undefined);
       await repo.setPermissions('r-1', []);
       expect(mockTransactionManager.findBy).not.toHaveBeenCalled();
@@ -337,7 +416,10 @@ describe('TypeOrmRoleRepository', () => {
 
   describe('getUsageSummary (system / global role)', () => {
     it('returns user count for system role (no organizationId)', async () => {
-      mockRoleFindOne.mockResolvedValue({ ...roleEntity, organizationId: null });
+      mockRoleFindOne.mockResolvedValue({
+        ...roleEntity,
+        organizationId: null,
+      });
       mockDataSource.query.mockResolvedValue([{ count: '5' }]);
 
       const result = await repo.getUsageSummary('r-1');
@@ -350,7 +432,10 @@ describe('TypeOrmRoleRepository', () => {
     });
 
     it('returns zero user count when system role query returns empty result', async () => {
-      mockRoleFindOne.mockResolvedValue({ ...roleEntity, organizationId: null });
+      mockRoleFindOne.mockResolvedValue({
+        ...roleEntity,
+        organizationId: null,
+      });
       mockDataSource.query.mockResolvedValue([]);
 
       const result = await repo.getUsageSummary('r-1');
@@ -379,7 +464,9 @@ describe('TypeOrmRoleRepository', () => {
 
     it('returns true when count > 0 and organizationId is provided', async () => {
       mockDataSource.query.mockResolvedValue([{ count: '1' }]);
-      expect(await repo.hasPermission('admin', 'users', 'read', 'org-1')).toBe(true);
+      expect(await repo.hasPermission('admin', 'users', 'read', 'org-1')).toBe(
+        true,
+      );
       expect(mockDataSource.query).toHaveBeenCalledWith(
         expect.stringContaining('AND r.organization_id = $2'),
         ['admin', 'org-1', 'users', 'read'],
@@ -388,12 +475,16 @@ describe('TypeOrmRoleRepository', () => {
 
     it('returns false when count is 0 and organizationId is provided', async () => {
       mockDataSource.query.mockResolvedValue([{ count: '0' }]);
-      expect(await repo.hasPermission('member', 'users', 'delete', 'org-1')).toBe(false);
+      expect(
+        await repo.hasPermission('member', 'users', 'delete', 'org-1'),
+      ).toBe(false);
     });
 
     it('returns false when result is empty and organizationId is provided', async () => {
       mockDataSource.query.mockResolvedValue([]);
-      expect(await repo.hasPermission('member', 'users', 'delete', 'org-1')).toBe(false);
+      expect(
+        await repo.hasPermission('member', 'users', 'delete', 'org-1'),
+      ).toBe(false);
     });
   });
 

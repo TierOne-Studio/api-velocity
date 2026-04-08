@@ -25,10 +25,10 @@ export default async function globalTeardown() {
     await pool.query('DELETE FROM member');
     await pool.query('DELETE FROM organization');
     await pool.query('DELETE FROM "user"');
-    
+
     // Reset role_permissions to defaults (keep RBAC structure)
     await pool.query('DELETE FROM role_permissions');
-    
+
     console.log('✅ Test database cleaned up');
   } catch (error) {
     console.error('❌ Error cleaning up test database:', error);

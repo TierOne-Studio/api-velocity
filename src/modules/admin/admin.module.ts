@@ -51,6 +51,11 @@ export { RbacModule } from './rbac/rbac.module';
     { provide: SESSION_REPOSITORY, useClass: SessionDatabaseRepository },
     { provide: ADMIN_ORG_REPOSITORY, useClass: AdminOrgDatabaseRepository },
   ],
-  exports: [AdminService, SessionsService, AdminOrganizationsService, OrgImpersonationService],
+  exports: [
+    AdminService,
+    SessionsService,
+    AdminOrganizationsService,
+    OrgImpersonationService,
+  ],
 })
 export class AdminModule {}

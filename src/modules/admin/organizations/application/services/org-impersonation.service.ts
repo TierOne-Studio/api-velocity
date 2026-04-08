@@ -1,4 +1,9 @@
-import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { DatabaseService } from '../../../../../shared/infrastructure/database/database.module';
 import { OrgMember } from '../../api/dto';
 import { randomUUID } from 'crypto';
@@ -75,7 +80,9 @@ export class OrgImpersonationService {
       }
 
       let resolvedOrganizationId =
-        platformRole === 'admin' ? organizationId ?? activeOrganizationId ?? undefined : organizationId;
+        platformRole === 'admin'
+          ? (organizationId ?? activeOrganizationId ?? undefined)
+          : organizationId;
 
       if (resolvedOrganizationId) {
         const targetMembership = await this.db.queryOne<{ id: string }>(
@@ -84,7 +91,9 @@ export class OrgImpersonationService {
         );
 
         if (!targetMembership) {
-          throw new ForbiddenException('Target user is not a member of the selected organization');
+          throw new ForbiddenException(
+            'Target user is not a member of the selected organization',
+          );
         }
       } else {
         const memberships = await this.db.query<{ organizationId: string }>(
@@ -94,17 +103,26 @@ export class OrgImpersonationService {
            ORDER BY "organizationId" ASC`,
           [targetUserId],
         );
-        const distinctOrganizationIds = [...new Set(memberships.map((membership) => membership.organizationId))]
-          .sort((left, right) => left.localeCompare(right));
+        const distinctOrganizationIds = [
+          ...new Set(
+            memberships.map((membership) => membership.organizationId),
+          ),
+        ].sort((left, right) => left.localeCompare(right));
 
         if (distinctOrganizationIds.length === 0) {
-          throw new BadRequestException('Target user must belong to an organization');
+          throw new BadRequestException(
+            'Target user must belong to an organization',
+          );
         }
 
         resolvedOrganizationId = distinctOrganizationIds[0];
       }
 
-      return this.createImpersonationSession(actorUserId, targetUserId, resolvedOrganizationId);
+      return this.createImpersonationSession(
+        actorUserId,
+        targetUserId,
+        resolvedOrganizationId,
+      );
     }
 
     const managerOrganizationId = organizationId ?? activeOrganizationId;
@@ -112,12 +130,19 @@ export class OrgImpersonationService {
       throw new ForbiddenException('Active organization required');
     }
 
-    if (activeOrganizationId && managerOrganizationId !== activeOrganizationId) {
-      throw new ForbiddenException('You can only impersonate users in your active organization');
+    if (
+      activeOrganizationId &&
+      managerOrganizationId !== activeOrganizationId
+    ) {
+      throw new ForbiddenException(
+        'You can only impersonate users in your active organization',
+      );
     }
 
     if (target.role !== 'member') {
-      throw new ForbiddenException('Organization-scoped actors can only impersonate members');
+      throw new ForbiddenException(
+        'Organization-scoped actors can only impersonate members',
+      );
     }
 
     const targetMembership = await this.db.queryOne<{ id: string }>(
@@ -126,16 +151,25 @@ export class OrgImpersonationService {
     );
 
     if (!targetMembership) {
-      throw new ForbiddenException('Target user is not a member of your active organization');
+      throw new ForbiddenException(
+        'Target user is not a member of your active organization',
+      );
     }
 
-    return this.createImpersonationSession(actorUserId, targetUserId, managerOrganizationId);
+    return this.createImpersonationSession(
+      actorUserId,
+      targetUserId,
+      managerOrganizationId,
+    );
   }
 
   /**
    * Get a user's membership in an organization
    */
-  async getMembership(userId: string, organizationId: string): Promise<OrgMember | null> {
+  async getMembership(
+    userId: string,
+    organizationId: string,
+  ): Promise<OrgMember | null> {
     const row = await this.db.queryOne<{
       id: string;
       userId: string;
@@ -178,42 +212,60 @@ export class OrgImpersonationService {
     targetUserId: string,
     organizationId: string,
   ): Promise<{ sessionToken: string }> {
-    const impersonatorMembership = await this.getMembership(impersonatorUserId, organizationId);
+    const impersonatorMembership = await this.getMembership(
+      impersonatorUserId,
+      organizationId,
+    );
     if (!impersonatorMembership) {
       throw new ForbiddenException('You are not a member of this organization');
     }
 
     if (!this.canImpersonate(impersonatorMembership.role)) {
-      throw new ForbiddenException('You do not have permission to impersonate users');
+      throw new ForbiddenException(
+        'You do not have permission to impersonate users',
+      );
     }
 
-    const targetMembership = await this.getMembership(targetUserId, organizationId);
+    const targetMembership = await this.getMembership(
+      targetUserId,
+      organizationId,
+    );
     if (!targetMembership) {
-      throw new NotFoundException('Target user is not a member of this organization');
+      throw new NotFoundException(
+        'Target user is not a member of this organization',
+      );
     }
 
     if (targetUserId === impersonatorUserId) {
       throw new ForbiddenException('You cannot impersonate yourself');
     }
 
-    return this.createImpersonationSession(impersonatorUserId, targetUserId, organizationId);
+    return this.createImpersonationSession(
+      impersonatorUserId,
+      targetUserId,
+      organizationId,
+    );
   }
 
   /**
    * Stop impersonation - invalidate the impersonated session
    */
   async stopImpersonation(sessionToken: string): Promise<void> {
-    const session = await this.db.queryOne<{ id: string; impersonatedBy: string | null }>(
-      `SELECT id, "impersonatedBy" FROM session WHERE token = $1`,
-      [sessionToken],
-    );
+    const session = await this.db.queryOne<{
+      id: string;
+      impersonatedBy: string | null;
+    }>(`SELECT id, "impersonatedBy" FROM session WHERE token = $1`, [
+      sessionToken,
+    ]);
 
     if (!session) {
       throw new NotFoundException('Session not found');
     }
 
     if (!session.impersonatedBy) {
-      throw new ForbiddenException('This session is not an impersonation session');
+      throw new ForbiddenException(
+        'This session is not an impersonation session',
+      );
     }
 
     await this.db.query(`DELETE FROM session WHERE token = $1`, [sessionToken]);

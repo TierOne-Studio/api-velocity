@@ -34,11 +34,20 @@ describe('OrgImpersonationController', () => {
   });
 
   it('applies permission-led guards on impersonate only', () => {
-    const impersonateHandler = (controller as unknown as Record<string, unknown>).impersonate as object;
-    const stopHandler = (controller as unknown as Record<string, unknown>).stopImpersonating as object;
+    const impersonateHandler = (
+      controller as unknown as Record<string, unknown>
+    ).impersonate as object;
+    const stopHandler = (controller as unknown as Record<string, unknown>)
+      .stopImpersonating as object;
 
-    const guards = Reflect.getMetadata(GUARDS_METADATA, impersonateHandler) as unknown[];
-    const permissions = Reflect.getMetadata(PERMISSIONS_KEY, impersonateHandler) as string[];
+    const guards = Reflect.getMetadata(
+      GUARDS_METADATA,
+      impersonateHandler,
+    ) as unknown[];
+    const permissions = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      impersonateHandler,
+    ) as string[];
 
     expect(guards).toContain(PermissionsGuard);
     expect(permissions).toContain('user:impersonate');
@@ -59,7 +68,10 @@ describe('OrgImpersonationController', () => {
         baseSession,
       );
 
-      expect(result).toEqual({ success: true, sessionToken: 'new-session-token' });
+      expect(result).toEqual({
+        success: true,
+        sessionToken: 'new-session-token',
+      });
       expect(impersonationService.startImpersonation).toHaveBeenCalledWith({
         actorUserId: 'manager-1',
         targetUserId: 'user-1',
@@ -73,7 +85,11 @@ describe('OrgImpersonationController', () => {
       const sessionWithoutUser = {} as any;
 
       await expect(
-        controller.impersonate('org-1', { userId: 'user-1' }, sessionWithoutUser),
+        controller.impersonate(
+          'org-1',
+          { userId: 'user-1' },
+          sessionWithoutUser,
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
 

@@ -30,16 +30,25 @@ export class AdminUsersController {
     private readonly impersonationService: OrgImpersonationService,
   ) {}
 
-  private validatePagination(limit: string, offset: string): { parsedLimit: number; parsedOffset: number } {
+  private validatePagination(
+    limit: string,
+    offset: string,
+  ): { parsedLimit: number; parsedOffset: number } {
     const parsedLimit = parseInt(String(limit), 10);
     const parsedOffset = parseInt(String(offset), 10);
 
     if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
-      throw new HttpException('limit must be a positive integer', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'limit must be a positive integer',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     if (!Number.isFinite(parsedOffset) || parsedOffset < 0) {
-      throw new HttpException('offset must be a non-negative integer', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'offset must be a non-negative integer',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     return { parsedLimit, parsedOffset };
@@ -78,11 +87,16 @@ export class AdminUsersController {
     }
 
     if (body.role !== 'admin' && !body.organizationId?.trim()) {
-      throw new HttpException('organizationId is required for non-admin roles', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'organizationId is required for non-admin roles',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
-  private validateSetRolePayload(body: { role: 'admin' | 'manager' | 'member' }): void {
+  private validateSetRolePayload(body: {
+    role: 'admin' | 'manager' | 'member';
+  }): void {
     const allowedRoles = ['admin', 'manager', 'member'];
     if (!allowedRoles.includes(body.role)) {
       throw new HttpException('invalid role', HttpStatus.BAD_REQUEST);
@@ -91,7 +105,10 @@ export class AdminUsersController {
 
   private validateSetPasswordPayload(body: { newPassword: string }): void {
     if (!body?.newPassword?.trim()) {
-      throw new HttpException('newPassword is required', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'newPassword is required',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     if (body.newPassword.length < PASSWORD_POLICY.minLength) {
@@ -104,7 +121,10 @@ export class AdminUsersController {
 
   private validateBulkRemovePayload(body: { userIds: string[] }): void {
     if (!Array.isArray(body?.userIds)) {
-      throw new HttpException('userIds must be an array', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'userIds must be an array',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
@@ -112,7 +132,10 @@ export class AdminUsersController {
   @RequirePermissions('user:read')
   async getCreateMetadata(@Session() session: UserSession) {
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
     return this.adminService.getCreateUserMetadata(platformRole, activeOrgId);
   }
 
@@ -125,10 +148,16 @@ export class AdminUsersController {
     @Query('searchValue') searchValue?: string,
     @Query('organizationId') organizationId?: string,
   ) {
-    const { parsedLimit, parsedOffset } = this.validatePagination(limit, offset);
+    const { parsedLimit, parsedOffset } = this.validatePagination(
+      limit,
+      offset,
+    );
 
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
 
     return this.adminService.listUsers({
       limit: parsedLimit,
@@ -147,7 +176,10 @@ export class AdminUsersController {
     @Body() body: { userIds: string[] },
   ) {
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
 
     return this.adminService.getBatchCapabilities({
       actorUserId: session.user.id,
@@ -159,9 +191,15 @@ export class AdminUsersController {
 
   @Get(':userId/capabilities')
   @RequirePermissions('user:read')
-  async getCapabilities(@Session() session: UserSession, @Param('userId') userId: string) {
+  async getCapabilities(
+    @Session() session: UserSession,
+    @Param('userId') userId: string,
+  ) {
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
 
     return this.adminService.getUserCapabilities({
       actorUserId: session.user.id,
@@ -187,7 +225,10 @@ export class AdminUsersController {
     this.validateCreatePayload(body);
 
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
 
     return this.adminService.createUser(
       {
@@ -210,7 +251,10 @@ export class AdminUsersController {
     @Body() body: { name?: string },
   ) {
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
     return this.adminService.updateUser(
       { userId, name: body.name },
       platformRole,
@@ -229,7 +273,10 @@ export class AdminUsersController {
     this.validateSetRolePayload(body);
 
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
     return this.adminService.setUserRole(
       { userId, role: body.role },
       platformRole,
@@ -246,7 +293,10 @@ export class AdminUsersController {
     @Body() body: { banReason?: string },
   ) {
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
     return this.adminService.banUser(
       { userId, banReason: body.banReason },
       platformRole,
@@ -257,9 +307,15 @@ export class AdminUsersController {
 
   @Post(':userId/unban')
   @RequirePermissions('user:ban')
-  async unban(@Session() session: UserSession, @Param('userId') userId: string) {
+  async unban(
+    @Session() session: UserSession,
+    @Param('userId') userId: string,
+  ) {
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
     return this.adminService.unbanUser(
       { userId },
       platformRole,
@@ -278,7 +334,10 @@ export class AdminUsersController {
     this.validateSetPasswordPayload(body);
 
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
     return this.adminService.setUserPassword(
       { userId, newPassword: body.newPassword },
       platformRole,
@@ -295,7 +354,10 @@ export class AdminUsersController {
     @Body() body: { organizationId?: string },
   ) {
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
     const result = await this.impersonationService.startImpersonation({
       actorUserId: session.user.id,
       targetUserId: userId,
@@ -312,9 +374,15 @@ export class AdminUsersController {
 
   @Delete(':userId')
   @RequirePermissions('user:delete')
-  async remove(@Session() session: UserSession, @Param('userId') userId: string) {
+  async remove(
+    @Session() session: UserSession,
+    @Param('userId') userId: string,
+  ) {
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
     return this.adminService.removeUser(
       { userId },
       platformRole,
@@ -325,11 +393,17 @@ export class AdminUsersController {
 
   @Post('bulk-delete')
   @RequirePermissions('user:delete')
-  async bulkRemove(@Session() session: UserSession, @Body() body: { userIds: string[] }) {
+  async bulkRemove(
+    @Session() session: UserSession,
+    @Body() body: { userIds: string[] },
+  ) {
     this.validateBulkRemovePayload(body);
 
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
     return this.adminService.removeUsers(
       { userIds: body.userIds },
       platformRole,
@@ -337,5 +411,4 @@ export class AdminUsersController {
       session.user.id,
     );
   }
-
 }

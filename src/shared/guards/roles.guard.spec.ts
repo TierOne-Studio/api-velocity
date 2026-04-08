@@ -3,7 +3,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RolesGuard } from './roles.guard';
-import { ROLES_KEY } from '../decorators/roles.decorator';
 
 describe('RolesGuard', () => {
   let guard: RolesGuard;
@@ -68,7 +67,9 @@ describe('RolesGuard', () => {
 
   describe('when multiple roles are allowed', () => {
     beforeEach(() => {
-      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['admin', 'moderator']);
+      jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockReturnValue(['admin', 'moderator']);
     });
 
     it('should allow access for admin', () => {
@@ -77,7 +78,9 @@ describe('RolesGuard', () => {
     });
 
     it('should allow access for moderator', () => {
-      const context = createMockExecutionContext({ user: { role: 'moderator' } });
+      const context = createMockExecutionContext({
+        user: { role: 'moderator' },
+      });
       expect(guard.canActivate(context)).toBe(true);
     });
 

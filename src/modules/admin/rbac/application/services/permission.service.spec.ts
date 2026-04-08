@@ -1,9 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import {
+  jest,
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from '@jest/globals';
 import { PermissionService } from './permission.service';
 import { PERMISSION_REPOSITORY } from '../../domain/repositories/permission.repository.interface';
 
-const makeDomainPermission = (overrides: Partial<Record<string, unknown>> = {}) => ({
+const makeDomainPermission = (
+  overrides: Partial<Record<string, unknown>> = {},
+) => ({
   id: 'perm-1',
   resource: 'user',
   action: 'read',
@@ -13,7 +22,7 @@ const makeDomainPermission = (overrides: Partial<Record<string, unknown>> = {}) 
 
 describe('PermissionService', () => {
   let service: PermissionService;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let mockPermRepo: any;
 
   beforeEach(async () => {
@@ -63,7 +72,9 @@ describe('PermissionService', () => {
 
   describe('findById', () => {
     it('returns permission when found', async () => {
-      mockPermRepo.findById.mockResolvedValue(makeDomainPermission({ id: 'perm-1' }));
+      mockPermRepo.findById.mockResolvedValue(
+        makeDomainPermission({ id: 'perm-1' }),
+      );
 
       const result = await service.findById('perm-1');
 
@@ -92,7 +103,10 @@ describe('PermissionService', () => {
       expect(result).not.toBeNull();
       expect(result?.resource).toBe('org');
       expect(result?.action).toBe('delete');
-      expect(mockPermRepo.findByResourceAction).toHaveBeenCalledWith('org', 'delete');
+      expect(mockPermRepo.findByResourceAction).toHaveBeenCalledWith(
+        'org',
+        'delete',
+      );
     });
 
     it('returns null when not found', async () => {
@@ -111,12 +125,16 @@ describe('PermissionService', () => {
           makeDomainPermission({ id: '1', resource: 'user', action: 'read' }),
           makeDomainPermission({ id: '2', resource: 'user', action: 'create' }),
         ],
-        org: [makeDomainPermission({ id: '3', resource: 'org', action: 'list' })],
+        org: [
+          makeDomainPermission({ id: '3', resource: 'org', action: 'list' }),
+        ],
       });
 
       const result = await service.findGroupedByResource();
 
-      expect(Object.keys(result)).toEqual(expect.arrayContaining(['user', 'org']));
+      expect(Object.keys(result)).toEqual(
+        expect.arrayContaining(['user', 'org']),
+      );
       expect(result['user']).toHaveLength(2);
       expect(result['org']).toHaveLength(1);
     });
@@ -147,25 +165,43 @@ describe('PermissionService', () => {
   describe('create', () => {
     it('creates permission with description', async () => {
       mockPermRepo.create.mockResolvedValue(
-        makeDomainPermission({ id: 'new-1', resource: 'report', action: 'export', description: 'Export reports' }),
+        makeDomainPermission({
+          id: 'new-1',
+          resource: 'report',
+          action: 'export',
+          description: 'Export reports',
+        }),
       );
 
       const result = await service.create('report', 'export', 'Export reports');
 
       expect(result.resource).toBe('report');
       expect(result.action).toBe('export');
-      expect(mockPermRepo.create).toHaveBeenCalledWith('report', 'export', 'Export reports');
+      expect(mockPermRepo.create).toHaveBeenCalledWith(
+        'report',
+        'export',
+        'Export reports',
+      );
     });
 
     it('creates permission without description', async () => {
       mockPermRepo.create.mockResolvedValue(
-        makeDomainPermission({ id: 'new-2', resource: 'report', action: 'view', description: null }),
+        makeDomainPermission({
+          id: 'new-2',
+          resource: 'report',
+          action: 'view',
+          description: null,
+        }),
       );
 
       const result = await service.create('report', 'view');
 
       expect(result.resource).toBe('report');
-      expect(mockPermRepo.create).toHaveBeenCalledWith('report', 'view', undefined);
+      expect(mockPermRepo.create).toHaveBeenCalledWith(
+        'report',
+        'view',
+        undefined,
+      );
     });
   });
 });

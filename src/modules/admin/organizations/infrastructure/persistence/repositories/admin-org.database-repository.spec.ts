@@ -1,5 +1,8 @@
 import { jest } from '@jest/globals';
-import { ConflictException, InternalServerErrorException } from '@nestjs/common';
+import {
+  ConflictException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { AdminOrgDatabaseRepository } from './admin-org.database-repository';
 
 const mockQuery = jest.fn<any>();
@@ -18,9 +21,11 @@ describe('AdminOrgDatabaseRepository', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     repo = new AdminOrgDatabaseRepository(mockDb as any);
-    mockTransaction.mockImplementation(async (fn: (q: typeof mockQuery) => Promise<void>) => {
-      await fn(mockQuery);
-    });
+    mockTransaction.mockImplementation(
+      async (fn: (q: typeof mockQuery) => Promise<void>) => {
+        await fn(mockQuery);
+      },
+    );
   });
 
   // ─── findAll ────────────────────────────────────────────────────────────────
@@ -120,7 +125,9 @@ describe('AdminOrgDatabaseRepository', () => {
     it('returns true when the user can read the target organization', async () => {
       mockQueryOne.mockResolvedValue({ id: 'org-2' });
 
-      await expect(repo.canUserReadOrganization('user-1', 'org-2')).resolves.toBe(true);
+      await expect(
+        repo.canUserReadOrganization('user-1', 'org-2'),
+      ).resolves.toBe(true);
 
       const [sql, params] = mockQueryOne.mock.calls[0];
       expect(sql).toContain('membership."userId" = $1');
@@ -132,7 +139,9 @@ describe('AdminOrgDatabaseRepository', () => {
     it('returns false when the user cannot read the target organization', async () => {
       mockQueryOne.mockResolvedValue(null);
 
-      await expect(repo.canUserReadOrganization('user-1', 'org-9')).resolves.toBe(false);
+      await expect(
+        repo.canUserReadOrganization('user-1', 'org-9'),
+      ).resolves.toBe(false);
     });
   });
 
@@ -176,13 +185,17 @@ describe('AdminOrgDatabaseRepository', () => {
     };
 
     it('throws ConflictException when INSERT hits a unique constraint violation (23505)', async () => {
-      const pgUniqueError = Object.assign(new Error('duplicate key'), { code: '23505' });
+      const pgUniqueError = Object.assign(new Error('duplicate key'), {
+        code: '23505',
+      });
       mockQuery.mockRejectedValueOnce(pgUniqueError);
       await expect(repo.createOrg(params)).rejects.toThrow(ConflictException);
     });
 
     it('rethrows unrelated DB errors without wrapping', async () => {
-      const dbError = Object.assign(new Error('connection lost'), { code: '08006' });
+      const dbError = Object.assign(new Error('connection lost'), {
+        code: '08006',
+      });
       mockQuery.mockRejectedValueOnce(dbError);
       await expect(repo.createOrg(params)).rejects.toThrow('connection lost');
     });
@@ -194,9 +207,15 @@ describe('AdminOrgDatabaseRepository', () => {
       const [firstSql] = mockQuery.mock.calls[0] as [string];
       expect(firstSql).toContain('INSERT INTO organization');
       expect(mockQuery.mock.calls[2][0]).toContain('INSERT INTO roles');
-      expect(mockQuery.mock.calls[3][0]).toContain('INSERT INTO role_permissions');
-      expect(mockQuery.mock.calls[4][0]).toContain('INSERT INTO role_permissions');
-      expect(mockQuery.mock.calls[5][0]).toContain('INSERT INTO role_permissions');
+      expect(mockQuery.mock.calls[3][0]).toContain(
+        'INSERT INTO role_permissions',
+      );
+      expect(mockQuery.mock.calls[4][0]).toContain(
+        'INSERT INTO role_permissions',
+      );
+      expect(mockQuery.mock.calls[5][0]).toContain(
+        'INSERT INTO role_permissions',
+      );
       expect(mockQuery.mock.calls[4][1]).toEqual([
         'org-1',
         'organization',
@@ -218,7 +237,11 @@ describe('AdminOrgDatabaseRepository', () => {
         'user',
         'update',
       ]);
-      expect(mockQuery.mock.calls[5][1]).toEqual(['org-1', 'organization', 'read']);
+      expect(mockQuery.mock.calls[5][1]).toEqual([
+        'org-1',
+        'organization',
+        'read',
+      ]);
     });
 
     it('skips creator member insertion when member params are omitted', async () => {
@@ -235,10 +258,21 @@ describe('AdminOrgDatabaseRepository', () => {
       expect(mockQuery).toHaveBeenCalledTimes(5);
       expect(mockQuery.mock.calls[0][0]).toContain('INSERT INTO organization');
       expect(mockQuery.mock.calls[1][0]).toContain('INSERT INTO roles');
-      expect(mockQuery.mock.calls[2][0]).toContain('INSERT INTO role_permissions');
-      expect(mockQuery.mock.calls[3][0]).toContain('INSERT INTO role_permissions');
-      expect(mockQuery.mock.calls[4][0]).toContain('INSERT INTO role_permissions');
-      expect(mockQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO member'))).toBe(false);
+      expect(mockQuery.mock.calls[2][0]).toContain(
+        'INSERT INTO role_permissions',
+      );
+      expect(mockQuery.mock.calls[3][0]).toContain(
+        'INSERT INTO role_permissions',
+      );
+      expect(mockQuery.mock.calls[4][0]).toContain(
+        'INSERT INTO role_permissions',
+      );
+      expect(
+        mockQuery.mock.calls.some(
+          ([sql]) =>
+            typeof sql === 'string' && sql.includes('INSERT INTO member'),
+        ),
+      ).toBe(false);
     });
   });
 
@@ -306,7 +340,9 @@ describe('AdminOrgDatabaseRepository', () => {
   describe('findMemberByUserId', () => {
     it('returns id row when found', async () => {
       mockQueryOne.mockResolvedValue({ id: 'mem-1' });
-      expect(await repo.findMemberByUserId('user-1', 'org-1')).toEqual({ id: 'mem-1' });
+      expect(await repo.findMemberByUserId('user-1', 'org-1')).toEqual({
+        id: 'mem-1',
+      });
     });
   });
 
@@ -332,23 +368,34 @@ describe('AdminOrgDatabaseRepository', () => {
   describe('roleGrantsManagePermission', () => {
     it('returns true when role has manage-members permission', async () => {
       mockQueryOne.mockResolvedValue({ has_manage: 'true' });
-      expect(await repo.roleGrantsManagePermission('admin', 'org-1')).toBe(true);
+      expect(await repo.roleGrantsManagePermission('admin', 'org-1')).toBe(
+        true,
+      );
     });
 
     it('returns false when role does not have manage-members permission', async () => {
       mockQueryOne.mockResolvedValue({ has_manage: 'false' });
-      expect(await repo.roleGrantsManagePermission('member', 'org-1')).toBe(false);
+      expect(await repo.roleGrantsManagePermission('member', 'org-1')).toBe(
+        false,
+      );
     });
 
     it('returns false when queryOne returns null', async () => {
       mockQueryOne.mockResolvedValue(null);
-      expect(await repo.roleGrantsManagePermission('unknown', 'org-1')).toBe(false);
+      expect(await repo.roleGrantsManagePermission('unknown', 'org-1')).toBe(
+        false,
+      );
     });
   });
 
   describe('addMember', () => {
     it('inserts and returns the new member row', async () => {
-      const member = { id: 'mem-2', organizationId: 'org-1', userId: 'u-2', role: 'member' };
+      const member = {
+        id: 'mem-2',
+        organizationId: 'org-1',
+        userId: 'u-2',
+        role: 'member',
+      };
       mockQuery.mockResolvedValueOnce(undefined);
       mockQueryOne.mockResolvedValue(member);
       const result = await repo.addMember('mem-2', 'org-1', 'u-2', 'member');
@@ -358,7 +405,9 @@ describe('AdminOrgDatabaseRepository', () => {
     it('throws InternalServerErrorException when SELECT after INSERT returns null', async () => {
       mockQuery.mockResolvedValueOnce(undefined);
       mockQueryOne.mockResolvedValue(null);
-      await expect(repo.addMember('mem-x', 'org-1', 'u-1', 'member')).rejects.toThrow(InternalServerErrorException);
+      await expect(
+        repo.addMember('mem-x', 'org-1', 'u-1', 'member'),
+      ).rejects.toThrow(InternalServerErrorException);
     });
   });
 
@@ -367,7 +416,9 @@ describe('AdminOrgDatabaseRepository', () => {
       const updated = { id: 'mem-1', role: 'manager' };
       mockQuery.mockResolvedValue(undefined);
       mockQueryOne.mockResolvedValue(updated);
-      expect(await repo.updateMemberRole('mem-1', 'org-1', 'manager')).toEqual(updated);
+      expect(await repo.updateMemberRole('mem-1', 'org-1', 'manager')).toEqual(
+        updated,
+      );
     });
   });
 
@@ -397,15 +448,21 @@ describe('AdminOrgDatabaseRepository', () => {
       const result = await repo.findUserById('u-1');
 
       expect(result).toEqual({ id: 'u-1', role: 'member' });
-      expect(mockQueryOne.mock.calls[0][0]).toContain('SELECT id, role FROM "user"');
+      expect(mockQueryOne.mock.calls[0][0]).toContain(
+        'SELECT id, role FROM "user"',
+      );
     });
   });
 
   describe('listMemberCandidates', () => {
     it('queries users not already in the target organization', async () => {
-      mockQuery.mockResolvedValue([{ id: 'u-2', email: 'candidate@example.com' }]);
+      mockQuery.mockResolvedValue([
+        { id: 'u-2', email: 'candidate@example.com' },
+      ]);
 
-      const result = await (repo as any).listMemberCandidates('org-1', { limit: 25 });
+      const result = await (repo as any).listMemberCandidates('org-1', {
+        limit: 25,
+      });
 
       expect(result).toEqual([{ id: 'u-2', email: 'candidate@example.com' }]);
       const [sql, params] = mockQuery.mock.calls[0];
@@ -428,7 +485,10 @@ describe('AdminOrgDatabaseRepository', () => {
     it('filters out superadmin users from candidate queries', async () => {
       mockQuery.mockResolvedValue([]);
 
-      await (repo as any).listMemberCandidates('org-1', { search: 'alice', limit: 10 });
+      await (repo as any).listMemberCandidates('org-1', {
+        search: 'alice',
+        limit: 10,
+      });
 
       const [sql] = mockQuery.mock.calls[0];
       expect(sql).toContain(`COALESCE(u.role, '') NOT LIKE '%superadmin%'`);
@@ -437,7 +497,10 @@ describe('AdminOrgDatabaseRepository', () => {
     it('adds search filtering when provided', async () => {
       mockQuery.mockResolvedValue([]);
 
-      await (repo as any).listMemberCandidates('org-1', { search: 'alice', limit: 10 });
+      await (repo as any).listMemberCandidates('org-1', {
+        search: 'alice',
+        limit: 10,
+      });
 
       const [sql, params] = mockQuery.mock.calls[0];
       expect(sql).toContain('ILIKE');
@@ -448,7 +511,9 @@ describe('AdminOrgDatabaseRepository', () => {
   describe('findPendingInvitation', () => {
     it('returns id row for matching pending invitation', async () => {
       mockQueryOne.mockResolvedValue({ id: 'inv-1' });
-      expect(await repo.findPendingInvitation('org-1', 'a@b.com')).toEqual({ id: 'inv-1' });
+      expect(await repo.findPendingInvitation('org-1', 'a@b.com')).toEqual({
+        id: 'inv-1',
+      });
     });
   });
 
@@ -473,17 +538,31 @@ describe('AdminOrgDatabaseRepository', () => {
       };
       mockQuery.mockResolvedValue(undefined);
       mockQueryOne.mockResolvedValue(inv);
-      const result = await repo.createInvitation('inv-1', 'org-1', 'a@b.com', 'member', inv.expiresAt, 'u-1');
+      const result = await repo.createInvitation(
+        'inv-1',
+        'org-1',
+        'a@b.com',
+        'member',
+        inv.expiresAt,
+        'u-1',
+      );
       expect(result).toEqual(inv);
     });
 
     it('throws InternalServerErrorException when invitation cannot be retrieved after insert (line 486)', async () => {
       const { InternalServerErrorException } = await import('@nestjs/common');
       mockQuery.mockResolvedValue(undefined);
-      mockQueryOne.mockResolvedValue(null);  // invitation not found after insert
+      mockQueryOne.mockResolvedValue(null); // invitation not found after insert
 
       await expect(
-        repo.createInvitation('inv-fail', 'org-1', 'fail@b.com', 'member', new Date(), 'u-1'),
+        repo.createInvitation(
+          'inv-fail',
+          'org-1',
+          'fail@b.com',
+          'member',
+          new Date(),
+          'u-1',
+        ),
       ).rejects.toThrow(InternalServerErrorException);
     });
   });
@@ -512,13 +591,17 @@ describe('AdminOrgDatabaseRepository', () => {
 
   describe('getRoles', () => {
     it('returns org-scoped role rows when organizationId is provided', async () => {
-      const roles = [{ name: 'admin', display_name: 'Admin', is_default: true }];
+      const roles = [
+        { name: 'admin', display_name: 'Admin', is_default: true },
+      ];
       mockQuery.mockResolvedValue(roles);
       expect(await repo.getRoles('org-1')).toEqual(roles);
     });
 
     it('returns global role rows when organizationId is null', async () => {
-      const roles = [{ name: 'superadmin', display_name: 'Superadmin', is_default: true }];
+      const roles = [
+        { name: 'superadmin', display_name: 'Superadmin', is_default: true },
+      ];
       mockQuery.mockResolvedValue(roles);
       expect(await repo.getRoles(null)).toEqual(roles);
     });

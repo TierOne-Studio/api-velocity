@@ -76,16 +76,26 @@ export const ADMIN_USER_REPOSITORY = 'ADMIN_USER_REPOSITORY';
 export interface IAdminUserRepository {
   findUserRole(userId: string): Promise<string | null>;
   findUserById(userId: string): Promise<UserRow | null>;
-  findMemberInOrg(userId: string, organizationId: string): Promise<{ id: string } | null>;
-  findUserOrganization(userId: string): Promise<{ organizationId: string } | null>;
-  updateUser(userId: string, fields: { name?: string }): Promise<UserRow | null>;
+  findMemberInOrg(
+    userId: string,
+    organizationId: string,
+  ): Promise<{ id: string } | null>;
+  findUserOrganization(
+    userId: string,
+  ): Promise<{ organizationId: string } | null>;
+  updateUser(
+    userId: string,
+    fields: { name?: string },
+  ): Promise<UserRow | null>;
   setUserRole(params: SetUserRoleParams): Promise<UserRow | null>;
   banUser(userId: string, banReason?: string): Promise<void>;
   unbanUser(userId: string): Promise<void>;
   setUserPassword(userId: string, hashedPassword: string): Promise<void>;
   removeUser(userId: string): Promise<void>;
   removeUsers(userIds: string[]): Promise<number>;
-  listUsers(params: ListUsersParams): Promise<{ data: UserRow[]; total: number }>;
+  listUsers(
+    params: ListUsersParams,
+  ): Promise<{ data: UserRow[]; total: number }>;
   createUser(params: CreateUserParams): Promise<UserRow>;
 
   findSessionByToken(token: string): Promise<{ userId: string } | null>;

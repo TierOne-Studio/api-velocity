@@ -21,8 +21,18 @@ describe('TypeOrmPermissionRepository', () => {
     repo = new TypeOrmPermissionRepository(mockPermissionRepo as any);
   });
 
-  const permEntity = { id: 'p-1', resource: 'users', action: 'read', description: 'Read users' };
-  const permMapped = { id: 'p-1', resource: 'users', action: 'read', description: 'Read users' };
+  const permEntity = {
+    id: 'p-1',
+    resource: 'users',
+    action: 'read',
+    description: 'Read users',
+  };
+  const permMapped = {
+    id: 'p-1',
+    resource: 'users',
+    action: 'read',
+    description: 'Read users',
+  };
 
   describe('findAll', () => {
     it('returns mapped permission array', async () => {
@@ -51,7 +61,9 @@ describe('TypeOrmPermissionRepository', () => {
   describe('findByResourceAction', () => {
     it('returns mapped permission when found', async () => {
       mockFindOne.mockResolvedValue(permEntity);
-      expect(await repo.findByResourceAction('users', 'read')).toEqual(permMapped);
+      expect(await repo.findByResourceAction('users', 'read')).toEqual(
+        permMapped,
+      );
     });
 
     it('returns null when not found', async () => {

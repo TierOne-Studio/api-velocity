@@ -1,6 +1,10 @@
 import { jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { OrgImpersonationService } from './org-impersonation.service';
 import { DatabaseService } from '../../../../../shared/infrastructure/database/database.module';
 
@@ -74,15 +78,27 @@ describe('OrgImpersonationService', () => {
 
   describe('impersonateUser', () => {
     it('should allow manager to impersonate member in same org', async () => {
-      const impersonatorMembership = { ...mockMembership, userId: 'manager-1', role: 'admin' };
-      const targetMembership = { ...mockMembership, userId: 'user-1', role: 'member' };
+      const impersonatorMembership = {
+        ...mockMembership,
+        userId: 'manager-1',
+        role: 'admin',
+      };
+      const targetMembership = {
+        ...mockMembership,
+        userId: 'user-1',
+        role: 'member',
+      };
 
       dbService.queryOne
         .mockResolvedValueOnce(impersonatorMembership)
         .mockResolvedValueOnce(targetMembership);
       dbService.query.mockResolvedValue([]);
 
-      const result = await service.impersonateUser('manager-1', 'user-1', 'org-1');
+      const result = await service.impersonateUser(
+        'manager-1',
+        'user-1',
+        'org-1',
+      );
 
       expect(result.sessionToken).toBeDefined();
       expect(dbService.query).toHaveBeenCalledWith(
@@ -92,8 +108,16 @@ describe('OrgImpersonationService', () => {
     });
 
     it('should use camelCase column names in INSERT query', async () => {
-      const impersonatorMembership = { ...mockMembership, userId: 'manager-1', role: 'admin' };
-      const targetMembership = { ...mockMembership, userId: 'user-1', role: 'member' };
+      const impersonatorMembership = {
+        ...mockMembership,
+        userId: 'manager-1',
+        role: 'admin',
+      };
+      const targetMembership = {
+        ...mockMembership,
+        userId: 'user-1',
+        role: 'member',
+      };
 
       dbService.queryOne
         .mockResolvedValueOnce(impersonatorMembership)
@@ -102,7 +126,7 @@ describe('OrgImpersonationService', () => {
 
       await service.impersonateUser('manager-1', 'user-1', 'org-1');
 
-      const insertCall = dbService.query.mock.calls[0][0] as string;
+      const insertCall = dbService.query.mock.calls[0][0];
       expect(insertCall).toContain('"userId"');
       expect(insertCall).toContain('"expiresAt"');
       expect(insertCall).toContain('"impersonatedBy"');
@@ -365,7 +389,10 @@ describe('OrgImpersonationService', () => {
 
   describe('stopImpersonation', () => {
     it('should delete impersonation session', async () => {
-      dbService.queryOne.mockResolvedValue({ id: 'session-1', impersonatedBy: 'manager-1' });
+      dbService.queryOne.mockResolvedValue({
+        id: 'session-1',
+        impersonatedBy: 'manager-1',
+      });
       dbService.query.mockResolvedValue([]);
 
       await service.stopImpersonation('token-123');
@@ -379,23 +406,33 @@ describe('OrgImpersonationService', () => {
     it('should throw if session not found', async () => {
       dbService.queryOne.mockResolvedValue(null);
 
-      await expect(service.stopImpersonation('invalid-token')).rejects.toThrow(NotFoundException);
+      await expect(service.stopImpersonation('invalid-token')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should use camelCase column names in SELECT query', async () => {
-      dbService.queryOne.mockResolvedValue({ id: 'session-1', impersonatedBy: 'manager-1' });
+      dbService.queryOne.mockResolvedValue({
+        id: 'session-1',
+        impersonatedBy: 'manager-1',
+      });
       dbService.query.mockResolvedValue([]);
 
       await service.stopImpersonation('token-123');
 
-      const selectCall = dbService.queryOne.mock.calls[0][0] as string;
+      const selectCall = dbService.queryOne.mock.calls[0][0];
       expect(selectCall).toContain('"impersonatedBy"');
     });
 
     it('should throw if session is not an impersonation session', async () => {
-      dbService.queryOne.mockResolvedValue({ id: 'session-1', impersonatedBy: null });
+      dbService.queryOne.mockResolvedValue({
+        id: 'session-1',
+        impersonatedBy: null,
+      });
 
-      await expect(service.stopImpersonation('token-123')).rejects.toThrow(ForbiddenException);
+      await expect(service.stopImpersonation('token-123')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
   });
 
@@ -417,7 +454,7 @@ describe('OrgImpersonationService', () => {
     it('should throw ForbiddenException when superadmin target has no membership in the specified org', async () => {
       dbService.queryOne
         .mockResolvedValueOnce({ role: 'member' }) // target user found
-        .mockResolvedValueOnce(null);              // no membership in specified org
+        .mockResolvedValueOnce(null); // no membership in specified org
 
       await expect(
         (service as any).startImpersonation({
@@ -432,7 +469,7 @@ describe('OrgImpersonationService', () => {
 
     it('should throw BadRequestException when target user has no organization memberships', async () => {
       dbService.queryOne.mockResolvedValueOnce({ role: 'member' }); // target user found
-      dbService.query.mockResolvedValueOnce([]);                     // no memberships
+      dbService.query.mockResolvedValueOnce([]); // no memberships
 
       await expect(
         (service as any).startImpersonation({

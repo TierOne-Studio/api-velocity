@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { DatabaseService } from '../../../../../../shared/infrastructure/database/database.module';
 import type {
   IAdminOrgRepository,
@@ -27,9 +31,7 @@ const MANAGER_ROLE_PERMISSIONS = [
   ['user', 'update'],
 ] as const;
 
-const MEMBER_ROLE_PERMISSIONS = [
-  ['organization', 'read'],
-] as const;
+const MEMBER_ROLE_PERMISSIONS = [['organization', 'read']] as const;
 
 @Injectable()
 export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
@@ -76,7 +78,10 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
        ON CONFLICT DO NOTHING`,
       [
         organizationId,
-        ...MANAGER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [resource, action]),
+        ...MANAGER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [
+          resource,
+          action,
+        ]),
       ],
     );
 
@@ -91,12 +96,19 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
        ON CONFLICT DO NOTHING`,
       [
         organizationId,
-        ...MEMBER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [resource, action]),
+        ...MEMBER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [
+          resource,
+          action,
+        ]),
       ],
     );
   }
 
-  async findAll(search?: string, limit = 20, offset = 0): Promise<OrgWithCountRow[]> {
+  async findAll(
+    search?: string,
+    limit = 20,
+    offset = 0,
+  ): Promise<OrgWithCountRow[]> {
     let whereClause = '';
     const params: unknown[] = [];
     if (search) {
@@ -195,7 +207,10 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     return parseInt(result?.count ?? '0', 10);
   }
 
-  async canUserReadOrganization(userId: string, organizationId: string): Promise<boolean> {
+  async canUserReadOrganization(
+    userId: string,
+    organizationId: string,
+  ): Promise<boolean> {
     const result = await this.db.queryOne<{ id: string }>(
       `SELECT o.id
        FROM organization o
@@ -249,7 +264,13 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
         await query(
           `INSERT INTO organization (id, name, slug, logo, "createdAt", metadata)
            VALUES ($1, $2, $3, $4, NOW(), $5)`,
-          [params.id, params.name, params.slug, params.logo, params.metadataJson],
+          [
+            params.id,
+            params.name,
+            params.slug,
+            params.logo,
+            params.metadataJson,
+          ],
         );
       } catch (err: unknown) {
         if ((err as { code?: string }).code === '23505') {
@@ -270,7 +291,10 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     });
   }
 
-  async updateOrg(id: string, updates: UpdateOrgFields): Promise<OrgRawRow | null> {
+  async updateOrg(
+    id: string,
+    updates: UpdateOrgFields,
+  ): Promise<OrgRawRow | null> {
     const setClauses: string[] = [];
     const values: unknown[] = [];
     let paramIndex = 1;
@@ -359,21 +383,30 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     );
   }
 
-  async findMemberById(memberId: string, organizationId: string): Promise<MemberBasicRow | null> {
+  async findMemberById(
+    memberId: string,
+    organizationId: string,
+  ): Promise<MemberBasicRow | null> {
     return this.db.queryOne<MemberBasicRow>(
       'SELECT id, role, "userId" as "userId" FROM member WHERE id = $1 AND "organizationId" = $2',
       [memberId, organizationId],
     );
   }
 
-  async findMemberByUserId(userId: string, organizationId: string): Promise<{ id: string } | null> {
+  async findMemberByUserId(
+    userId: string,
+    organizationId: string,
+  ): Promise<{ id: string } | null> {
     return this.db.queryOne<{ id: string }>(
       'SELECT id FROM member WHERE "userId" = $1 AND "organizationId" = $2',
       [userId, organizationId],
     );
   }
 
-  async findMemberByEmail(organizationId: string, email: string): Promise<{ id: string } | null> {
+  async findMemberByEmail(
+    organizationId: string,
+    email: string,
+  ): Promise<{ id: string } | null> {
     return this.db.queryOne<{ id: string }>(
       `SELECT m.id
        FROM member m
@@ -383,7 +416,9 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     );
   }
 
-  async countMembersWithManageCapability(organizationId: string): Promise<number> {
+  async countMembersWithManageCapability(
+    organizationId: string,
+  ): Promise<number> {
     const result = await this.db.queryOne<{ count: string }>(
       `SELECT COUNT(DISTINCT m.id)::text as count
        FROM member m
@@ -397,7 +432,10 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     return result ? parseInt(result.count, 10) : 0;
   }
 
-  async roleGrantsManagePermission(roleName: string, organizationId: string): Promise<boolean> {
+  async roleGrantsManagePermission(
+    roleName: string,
+    organizationId: string,
+  ): Promise<boolean> {
     const result = await this.db.queryOne<{ has_manage: string }>(
       `SELECT EXISTS (
          SELECT 1
@@ -412,7 +450,12 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     return result?.has_manage === 'true';
   }
 
-  async addMember(id: string, organizationId: string, userId: string, role: string): Promise<MemberRow> {
+  async addMember(
+    id: string,
+    organizationId: string,
+    userId: string,
+    role: string,
+  ): Promise<MemberRow> {
     await this.db.query(
       `INSERT INTO member (id, "organizationId", "userId", role, "createdAt")
        VALUES ($1, $2, $3, $4, NOW())`,
@@ -422,11 +465,18 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
       'SELECT id, "organizationId", "userId", role, "createdAt" FROM member WHERE id = $1',
       [id],
     );
-    if (!member) throw new InternalServerErrorException(`Failed to retrieve member ${id} after insert into organization ${organizationId}`);
+    if (!member)
+      throw new InternalServerErrorException(
+        `Failed to retrieve member ${id} after insert into organization ${organizationId}`,
+      );
     return member;
   }
 
-  async updateMemberRole(memberId: string, organizationId: string, role: string): Promise<MemberRow | null> {
+  async updateMemberRole(
+    memberId: string,
+    organizationId: string,
+    role: string,
+  ): Promise<MemberRow | null> {
     await this.db.query(
       'UPDATE member SET role = $1 WHERE id = $2 AND "organizationId" = $3',
       [role, memberId, organizationId],
@@ -437,7 +487,10 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     );
   }
 
-  async removeMember(memberId: string, organizationId: string): Promise<boolean> {
+  async removeMember(
+    memberId: string,
+    organizationId: string,
+  ): Promise<boolean> {
     const result = await this.db.query<{ id: string }>(
       'DELETE FROM member WHERE id = $1 AND "organizationId" = $2 RETURNING id',
       [memberId, organizationId],
@@ -445,21 +498,28 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     return result.length > 0;
   }
 
-  async findUserById(userId: string): Promise<{ id: string; role?: string | null } | null> {
+  async findUserById(
+    userId: string,
+  ): Promise<{ id: string; role?: string | null } | null> {
     return this.db.queryOne<{ id: string; role?: string | null }>(
       'SELECT id, role FROM "user" WHERE id = $1',
       [userId],
     );
   }
 
-  async findPendingInvitation(organizationId: string, email: string): Promise<{ id: string } | null> {
+  async findPendingInvitation(
+    organizationId: string,
+    email: string,
+  ): Promise<{ id: string } | null> {
     return this.db.queryOne<{ id: string }>(
       'SELECT id FROM invitation WHERE "organizationId" = $1 AND LOWER(email) = LOWER($2) AND status = $3',
       [organizationId, email, 'pending'],
     );
   }
 
-  async findInvitationById(invitationId: string): Promise<{ id: string } | null> {
+  async findInvitationById(
+    invitationId: string,
+  ): Promise<{ id: string } | null> {
     return this.db.queryOne<{ id: string }>(
       'SELECT id FROM invitation WHERE id = $1',
       [invitationId],
@@ -483,7 +543,10 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
       'SELECT id, "organizationId" as "organizationId", email, role, status, "expiresAt" as "expiresAt", "inviterId" as "inviterId", "createdAt" as "createdAt" FROM invitation WHERE id = $1',
       [id],
     );
-    if (!invitation) throw new InternalServerErrorException(`Failed to retrieve invitation ${id} after insert into organization ${organizationId}`);
+    if (!invitation)
+      throw new InternalServerErrorException(
+        `Failed to retrieve invitation ${id} after insert into organization ${organizationId}`,
+      );
     return invitation;
   }
 
@@ -497,7 +560,10 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     );
   }
 
-  async deleteInvitation(invitationId: string, organizationId: string): Promise<boolean> {
+  async deleteInvitation(
+    invitationId: string,
+    organizationId: string,
+  ): Promise<boolean> {
     const result = await this.db.query<{ id: string }>(
       'DELETE FROM invitation WHERE id = $1 AND "organizationId" = $2 RETURNING id',
       [invitationId, organizationId],

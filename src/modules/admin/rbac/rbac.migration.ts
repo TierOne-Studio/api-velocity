@@ -8,6 +8,10 @@ const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
   { resource: 'organization', action: 'delete' },
   { resource: 'organization', action: 'invite' },
   { resource: 'organization', action: 'manage-members' },
+  { resource: 'project', action: 'create' },
+  { resource: 'project', action: 'read' },
+  { resource: 'project', action: 'update' },
+  { resource: 'project', action: 'delete' },
   { resource: 'role', action: 'read' },
   { resource: 'role', action: 'create' },
   { resource: 'role', action: 'update' },
@@ -29,6 +33,10 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
   { resource: 'organization', action: 'read' },
   { resource: 'organization', action: 'update' },
   { resource: 'organization', action: 'invite' },
+  { resource: 'project', action: 'create' },
+  { resource: 'project', action: 'read' },
+  { resource: 'project', action: 'update' },
+  { resource: 'project', action: 'delete' },
   { resource: 'role', action: 'read' },
   { resource: 'session', action: 'read' },
   { resource: 'session', action: 'revoke' },
@@ -39,6 +47,7 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
 
 const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
   { resource: 'organization', action: 'read' },
+  { resource: 'project', action: 'read' },
 ] as const;
 
 /**
@@ -58,7 +67,10 @@ export class RbacMigrationService implements OnModuleInit {
   async runTrackedMigrations(): Promise<void> {
     const migrations = [
       { name: 'rbac_001_create_tables', up: () => this.createRbacTables() },
-      { name: 'rbac_002_migrate_old_role_names', up: () => this.migrateOldRoleNames() },
+      {
+        name: 'rbac_002_migrate_old_role_names',
+        up: () => this.migrateOldRoleNames(),
+      },
       { name: 'rbac_003_seed_default_data', up: () => this.seedDefaultData() },
       {
         name: 'rbac_004_add_manager_org_create_permission',
@@ -99,6 +111,10 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_013_seed_default_organization',
         up: () => this.seedDefaultOrganization(),
+      },
+      {
+        name: 'rbac_014_add_project_permissions',
+        up: () => this.addProjectPermissions(),
       },
     ];
 
@@ -181,7 +197,7 @@ export class RbacMigrationService implements OnModuleInit {
         updated_at = NOW()
       WHERE name = 'moderator' AND NOT EXISTS (SELECT 1 FROM roles WHERE name = 'manager')
     `);
-    
+
     // Rename 'user' -> 'member' if it exists (and 'member' doesn't exist)
     await this.db.query(`
       UPDATE roles SET name = 'member', display_name = 'Member',
@@ -191,19 +207,29 @@ export class RbacMigrationService implements OnModuleInit {
     `);
 
     // Update user table: rename 'moderator' role to 'manager'
-    await this.db.query(`UPDATE "user" SET role = 'manager' WHERE role = 'moderator'`);
-    
+    await this.db.query(
+      `UPDATE "user" SET role = 'manager' WHERE role = 'moderator'`,
+    );
+
     // Update user table: rename 'user' role to 'member'
-    await this.db.query(`UPDATE "user" SET role = 'member' WHERE role = 'user'`);
+    await this.db.query(
+      `UPDATE "user" SET role = 'member' WHERE role = 'user'`,
+    );
 
     // Update organization member table: rename 'moderator' role to 'manager'
-    await this.db.query(`UPDATE member SET role = 'manager' WHERE role = 'moderator'`);
+    await this.db.query(
+      `UPDATE member SET role = 'manager' WHERE role = 'moderator'`,
+    );
 
     // Update organization member table: rename 'user' role to 'member'
-    await this.db.query(`UPDATE member SET role = 'member' WHERE role = 'user'`);
+    await this.db.query(
+      `UPDATE member SET role = 'member' WHERE role = 'user'`,
+    );
 
     // Ensure fresh Better Auth signups default to the canonical built-in member role
-    await this.db.query(`ALTER TABLE "user" ALTER COLUMN role SET DEFAULT 'member'`);
+    await this.db.query(
+      `ALTER TABLE "user" ALTER COLUMN role SET DEFAULT 'member'`,
+    );
   }
 
   /**
@@ -215,27 +241,71 @@ export class RbacMigrationService implements OnModuleInit {
       // User permissions
       { resource: 'user', action: 'create', description: 'Create new users' },
       { resource: 'user', action: 'read', description: 'View user details' },
-      { resource: 'user', action: 'update', description: 'Update user information' },
+      {
+        resource: 'user',
+        action: 'update',
+        description: 'Update user information',
+      },
       { resource: 'user', action: 'delete', description: 'Delete users' },
       { resource: 'user', action: 'ban', description: 'Ban/unban users' },
-      { resource: 'user', action: 'impersonate', description: 'Impersonate users' },
-      { resource: 'user', action: 'set-role', description: 'Change user roles' },
-      { resource: 'user', action: 'set-password', description: 'Reset user passwords' },
+      {
+        resource: 'user',
+        action: 'impersonate',
+        description: 'Impersonate users',
+      },
+      {
+        resource: 'user',
+        action: 'set-role',
+        description: 'Change user roles',
+      },
+      {
+        resource: 'user',
+        action: 'set-password',
+        description: 'Reset user passwords',
+      },
       // Session permissions
       { resource: 'session', action: 'read', description: 'View sessions' },
       { resource: 'session', action: 'revoke', description: 'Revoke sessions' },
       // Organization permissions
-      { resource: 'organization', action: 'create', description: 'Create organizations' },
-      { resource: 'organization', action: 'read', description: 'View organizations' },
-      { resource: 'organization', action: 'update', description: 'Update organizations' },
-      { resource: 'organization', action: 'delete', description: 'Delete organizations' },
-      { resource: 'organization', action: 'invite', description: 'Invite members' },
+      {
+        resource: 'organization',
+        action: 'create',
+        description: 'Create organizations',
+      },
+      {
+        resource: 'organization',
+        action: 'read',
+        description: 'View organizations',
+      },
+      {
+        resource: 'organization',
+        action: 'update',
+        description: 'Update organizations',
+      },
+      {
+        resource: 'organization',
+        action: 'delete',
+        description: 'Delete organizations',
+      },
+      {
+        resource: 'organization',
+        action: 'invite',
+        description: 'Invite members',
+      },
+      { resource: 'project', action: 'create', description: 'Create projects' },
+      { resource: 'project', action: 'read', description: 'View projects' },
+      { resource: 'project', action: 'update', description: 'Update projects' },
+      { resource: 'project', action: 'delete', description: 'Delete projects' },
       // Role permissions
       { resource: 'role', action: 'create', description: 'Create roles' },
       { resource: 'role', action: 'read', description: 'View roles' },
       { resource: 'role', action: 'update', description: 'Update roles' },
       { resource: 'role', action: 'delete', description: 'Delete roles' },
-      { resource: 'role', action: 'assign', description: 'Assign permissions to roles' },
+      {
+        resource: 'role',
+        action: 'assign',
+        description: 'Assign permissions to roles',
+      },
     ];
 
     for (const perm of permissions) {
@@ -255,21 +325,24 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'admin',
         displayName: 'Admin',
-        description: 'Global platform administrator with full access to all organizations and settings',
+        description:
+          'Global platform administrator with full access to all organizations and settings',
         color: 'red',
         isDefault: true,
       },
       {
         name: 'manager',
         displayName: 'Manager',
-        description: 'Organization manager with full access within their assigned organization',
+        description:
+          'Organization manager with full access within their assigned organization',
         color: 'blue',
         isDefault: true,
       },
       {
         name: 'member',
         displayName: 'Member',
-        description: 'Organization member with basic access within their assigned organization',
+        description:
+          'Organization member with basic access within their assigned organization',
         color: 'gray',
         isDefault: true,
       },
@@ -285,7 +358,13 @@ export class RbacMigrationService implements OnModuleInit {
            color = EXCLUDED.color,
            is_default = EXCLUDED.is_default,
            updated_at = NOW()`,
-        [role.name, role.displayName, role.description, role.color, role.isDefault],
+        [
+          role.name,
+          role.displayName,
+          role.description,
+          role.color,
+          role.isDefault,
+        ],
       );
     }
 
@@ -325,6 +404,10 @@ export class RbacMigrationService implements OnModuleInit {
         { resource: 'organization', action: 'read' },
         { resource: 'organization', action: 'update' },
         { resource: 'organization', action: 'invite' },
+        { resource: 'project', action: 'create' },
+        { resource: 'project', action: 'read' },
+        { resource: 'project', action: 'update' },
+        { resource: 'project', action: 'delete' },
         // Role viewing
         { resource: 'role', action: 'read' },
       ];
@@ -352,6 +435,7 @@ export class RbacMigrationService implements OnModuleInit {
       const memberPermissions = [
         { resource: 'user', action: 'read' },
         { resource: 'organization', action: 'read' },
+        { resource: 'project', action: 'read' },
         { resource: 'role', action: 'read' },
       ];
       for (const perm of memberPermissions) {
@@ -395,7 +479,9 @@ export class RbacMigrationService implements OnModuleInit {
           [adminRole.id, perm.id],
         );
       }
-      console.log(`  ↳ Assigned ${allPermissions.length} permissions to admin role`);
+      console.log(
+        `  ↳ Assigned ${allPermissions.length} permissions to admin role`,
+      );
     }
 
     // Manager: org-level management permissions
@@ -413,6 +499,10 @@ export class RbacMigrationService implements OnModuleInit {
         { resource: 'organization', action: 'read' },
         { resource: 'organization', action: 'update' },
         { resource: 'organization', action: 'invite' },
+        { resource: 'project', action: 'create' },
+        { resource: 'project', action: 'read' },
+        { resource: 'project', action: 'update' },
+        { resource: 'project', action: 'delete' },
         { resource: 'role', action: 'read' },
       ];
       for (const perm of managerPermissions) {
@@ -429,7 +519,9 @@ export class RbacMigrationService implements OnModuleInit {
           );
         }
       }
-      console.log(`  ↳ Assigned ${managerPermissions.length} permissions to manager role`);
+      console.log(
+        `  ↳ Assigned ${managerPermissions.length} permissions to manager role`,
+      );
     }
 
     // Member: basic read access
@@ -440,6 +532,7 @@ export class RbacMigrationService implements OnModuleInit {
       const memberPermissions = [
         { resource: 'user', action: 'read' },
         { resource: 'organization', action: 'read' },
+        { resource: 'project', action: 'read' },
         { resource: 'role', action: 'read' },
       ];
       for (const perm of memberPermissions) {
@@ -456,7 +549,9 @@ export class RbacMigrationService implements OnModuleInit {
           );
         }
       }
-      console.log(`  ↳ Assigned ${memberPermissions.length} permissions to member role`);
+      console.log(
+        `  ↳ Assigned ${memberPermissions.length} permissions to member role`,
+      );
     }
 
     console.log('✅ role_permissions backfill complete');
@@ -553,7 +648,13 @@ export class RbacMigrationService implements OnModuleInit {
            FROM permissions
            WHERE (resource, action) IN (${allowedPermissionTuples})
          )`,
-      [roleId, ...permissions.flatMap((permission) => [permission.resource, permission.action])],
+      [
+        roleId,
+        ...permissions.flatMap((permission) => [
+          permission.resource,
+          permission.action,
+        ]),
+      ],
     );
 
     for (const permissionDescriptor of permissions) {
@@ -573,7 +674,9 @@ export class RbacMigrationService implements OnModuleInit {
   }
 
   async redesignSuperadminAndOrganizationRoles(): Promise<void> {
-    await this.db.query(`UPDATE "user" SET role = 'superadmin' WHERE role = 'admin'`);
+    await this.db.query(
+      `UPDATE "user" SET role = 'superadmin' WHERE role = 'admin'`,
+    );
 
     await this.db.query(
       `DELETE FROM roles WHERE organization_id IS NULL AND name IN ('admin', 'manager', 'member')`,
@@ -597,7 +700,9 @@ export class RbacMigrationService implements OnModuleInit {
       ],
     );
 
-    const allPermissions = await this.db.query<{ id: string }>(`SELECT id FROM permissions`);
+    const allPermissions = await this.db.query<{ id: string }>(
+      `SELECT id FROM permissions`,
+    );
     const superadminRole = await this.db.queryOne<{ id: string }>(
       `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
     );
@@ -613,7 +718,9 @@ export class RbacMigrationService implements OnModuleInit {
       }
     }
 
-    const organizations = await this.db.query<{ id: string }>(`SELECT id FROM organization`);
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
 
     for (const organization of organizations) {
       const defaultRoles = [
@@ -671,7 +778,10 @@ export class RbacMigrationService implements OnModuleInit {
         [organization.id],
       );
       if (managerRole) {
-        await this.syncRolePermissions(managerRole.id, ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS);
+        await this.syncRolePermissions(
+          managerRole.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
       }
 
       const memberRole = await this.db.queryOne<{ id: string }>(
@@ -679,7 +789,10 @@ export class RbacMigrationService implements OnModuleInit {
         [organization.id],
       );
       if (memberRole) {
-        await this.syncRolePermissions(memberRole.id, ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS);
+        await this.syncRolePermissions(
+          memberRole.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
       }
     }
 
@@ -687,7 +800,9 @@ export class RbacMigrationService implements OnModuleInit {
   }
 
   async normalizeOrganizationDefaultRolePermissions(): Promise<void> {
-    const organizations = await this.db.query<{ id: string }>(`SELECT id FROM organization`);
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
 
     for (const organization of organizations) {
       const managerRole = await this.db.queryOne<{ id: string }>(
@@ -695,7 +810,10 @@ export class RbacMigrationService implements OnModuleInit {
         [organization.id],
       );
       if (managerRole) {
-        await this.syncRolePermissions(managerRole.id, ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS);
+        await this.syncRolePermissions(
+          managerRole.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
       }
 
       const memberRole = await this.db.queryOne<{ id: string }>(
@@ -703,7 +821,10 @@ export class RbacMigrationService implements OnModuleInit {
         [organization.id],
       );
       if (memberRole) {
-        await this.syncRolePermissions(memberRole.id, ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS);
+        await this.syncRolePermissions(
+          memberRole.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
       }
     }
 
@@ -730,7 +851,11 @@ export class RbacMigrationService implements OnModuleInit {
       `INSERT INTO permissions (resource, action, description)
        VALUES ($1, $2, $3)
        ON CONFLICT (resource, action) DO NOTHING`,
-      ['organization', 'manage-members', 'Manage organization members and roles'],
+      [
+        'organization',
+        'manage-members',
+        'Manage organization members and roles',
+      ],
     );
 
     // Assign to global superadmin role
@@ -761,7 +886,93 @@ export class RbacMigrationService implements OnModuleInit {
       );
     }
 
-    console.log('✅ organization:manage-members permission added and assigned to org admin roles');
+    console.log(
+      '✅ organization:manage-members permission added and assigned to org admin roles',
+    );
+  }
+
+  async addProjectPermissions(): Promise<void> {
+    const projectPermissions = [
+      ['project', 'create', 'Create projects'],
+      ['project', 'read', 'View projects'],
+      ['project', 'update', 'Update projects'],
+      ['project', 'delete', 'Delete projects'],
+    ] as const;
+
+    for (const [resource, action, description] of projectPermissions) {
+      await this.db.query(
+        `INSERT INTO permissions (resource, action, description)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (resource, action) DO NOTHING`,
+        [resource, action, description],
+      );
+    }
+
+    const globalRoles = await this.db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM roles WHERE organization_id IS NULL AND name IN ('admin', 'manager', 'member')`,
+    );
+
+    for (const role of globalRoles) {
+      if (role.name === 'admin') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      }
+      if (role.name === 'manager') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      }
+      if (role.name === 'member') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
+
+    for (const organization of organizations) {
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [organization.id],
+      );
+      if (adminRole) {
+        await this.syncRolePermissions(
+          adminRole.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(
+          managerRole.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const memberRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'member'`,
+        [organization.id],
+      );
+      if (memberRole) {
+        await this.syncRolePermissions(
+          memberRole.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    console.log('✅ project permissions added and assigned to roles');
   }
 
   /**
@@ -791,7 +1002,12 @@ export class RbacMigrationService implements OnModuleInit {
 
     const orgId = inserted
       ? inserted.id
-      : (await this.db.queryOne<{ id: string }>(`SELECT id FROM organization WHERE slug = $1`, [slug]))!.id;
+      : (
+          await this.db.queryOne<{ id: string }>(
+            `SELECT id FROM organization WHERE slug = $1`,
+            [slug],
+          )
+        ).id;
 
     if (!inserted) {
       console.log(`✅ Default organization "${slug}" already exists`);
@@ -799,9 +1015,9 @@ export class RbacMigrationService implements OnModuleInit {
     }
 
     // Seed roles and permissions atomically using orgId from the UPSERT above
-    const managerTuples = ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS
-      .map((p) => `('${p.resource}','${p.action}')`)
-      .join(', ');
+    const managerTuples = ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS.map(
+      (p) => `('${p.resource}','${p.action}')`,
+    ).join(', ');
     await this.db.transaction(async (query) => {
       await query(
         `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
@@ -841,13 +1057,27 @@ export class RbacMigrationService implements OnModuleInit {
          ON CONFLICT DO NOTHING`,
         [orgId],
       );
+
+      await query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT r.id, p.id
+         FROM roles r
+         JOIN permissions p ON (p.resource, p.action) IN (('organization', 'read'), ('project', 'read'))
+         WHERE r.organization_id = $1 AND r.name = 'member'
+         ON CONFLICT DO NOTHING`,
+        [orgId],
+      );
     });
 
-    console.log(`✅ Default organization "${slug}" (id: ${orgId}) created with default roles`);
+    console.log(
+      `✅ Default organization "${slug}" (id: ${orgId}) created with default roles`,
+    );
   }
 
   async assignAdminFullPermissions(): Promise<void> {
-    const organizations = await this.db.query<{ id: string }>(`SELECT id FROM organization`);
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
 
     for (const org of organizations) {
       const adminRole = await this.db.queryOne<{ id: string }>(
@@ -855,7 +1085,10 @@ export class RbacMigrationService implements OnModuleInit {
         [org.id],
       );
       if (adminRole) {
-        await this.syncRolePermissions(adminRole.id, ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS);
+        await this.syncRolePermissions(
+          adminRole.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
       }
     }
 

@@ -71,7 +71,10 @@ describe('AdminUsersController', () => {
   });
 
   it('applies class-level PermissionsGuard', () => {
-    const guards = Reflect.getMetadata(GUARDS_METADATA, AdminUsersController) as unknown[];
+    const guards = Reflect.getMetadata(
+      GUARDS_METADATA,
+      AdminUsersController,
+    ) as unknown[];
 
     expect(guards).toBeDefined();
     expect(guards).toContain(PermissionsGuard);
@@ -132,7 +135,9 @@ describe('AdminUsersController', () => {
   it('passes actor user id to setUserPassword', async () => {
     adminService.setUserPassword.mockResolvedValue({ status: true } as never);
 
-    await controller.setPassword(baseSession, 'target-1', { newPassword: 'NewPass123!' });
+    await controller.setPassword(baseSession, 'target-1', {
+      newPassword: 'NewPass123!',
+    });
 
     expect(adminService.setUserPassword).toHaveBeenCalledWith(
       { userId: 'target-1', newPassword: 'NewPass123!' },
@@ -156,9 +161,14 @@ describe('AdminUsersController', () => {
   });
 
   it('passes actor user id to removeUsers', async () => {
-    adminService.removeUsers.mockResolvedValue({ success: true, deletedCount: 2 } as never);
+    adminService.removeUsers.mockResolvedValue({
+      success: true,
+      deletedCount: 2,
+    } as never);
 
-    await controller.bulkRemove(baseSession, { userIds: ['target-1', 'target-2'] });
+    await controller.bulkRemove(baseSession, {
+      userIds: ['target-1', 'target-2'],
+    });
 
     expect(adminService.removeUsers).toHaveBeenCalledWith(
       { userIds: ['target-1', 'target-2'] },
@@ -174,11 +184,22 @@ describe('AdminUsersController', () => {
         targetUserId: 'target-1',
         targetRole: 'member',
         isSelf: false,
-        actions: { update: true, setRole: true, ban: true, unban: true, setPassword: true, remove: true, revokeSessions: true, impersonate: true },
+        actions: {
+          update: true,
+          setRole: true,
+          ban: true,
+          unban: true,
+          setPassword: true,
+          remove: true,
+          revokeSessions: true,
+          impersonate: true,
+        },
       },
     } as never);
 
-    await controller.getBatchCapabilities(baseSession, { userIds: ['target-1'] });
+    await controller.getBatchCapabilities(baseSession, {
+      userIds: ['target-1'],
+    });
 
     expect(adminService.getBatchCapabilities).toHaveBeenCalledWith({
       actorUserId: 'actor-superadmin',
@@ -191,7 +212,9 @@ describe('AdminUsersController', () => {
   it('normalizes non-array userIds body to empty array in getBatchCapabilities (line 154)', async () => {
     adminService.getBatchCapabilities.mockResolvedValue({} as never);
 
-    await controller.getBatchCapabilities(baseSession, { userIds: 'not-an-array' as any });
+    await controller.getBatchCapabilities(baseSession, {
+      userIds: 'not-an-array' as any,
+    });
 
     expect(adminService.getBatchCapabilities).toHaveBeenCalledWith(
       expect.objectContaining({ userIds: [] }),
@@ -232,11 +255,17 @@ describe('AdminUsersController', () => {
     } as any;
 
     it('calls getCreateUserMetadata with manager role and activeOrgId', async () => {
-      adminService.getCreateUserMetadata.mockResolvedValue({ roles: [], allowedRoles: [] } as never);
+      adminService.getCreateUserMetadata.mockResolvedValue({
+        roles: [],
+        allowedRoles: [],
+      } as never);
 
       await controller.getCreateMetadata(managerSession);
 
-      expect(adminService.getCreateUserMetadata).toHaveBeenCalledWith('manager', 'org-1');
+      expect(adminService.getCreateUserMetadata).toHaveBeenCalledWith(
+        'manager',
+        'org-1',
+      );
     });
 
     it('passes activeOrgId for manager on update', async () => {
@@ -245,7 +274,10 @@ describe('AdminUsersController', () => {
       await controller.update(managerSession, 'target-1', { name: 'X' });
 
       expect(adminService.updateUser).toHaveBeenCalledWith(
-        expect.anything(), 'manager', 'org-1', 'actor-mgr',
+        expect.anything(),
+        'manager',
+        'org-1',
+        'actor-mgr',
       );
     });
 
@@ -255,34 +287,54 @@ describe('AdminUsersController', () => {
       await controller.remove(managerSession, 'target-1');
 
       expect(adminService.removeUser).toHaveBeenCalledWith(
-        expect.anything(), 'manager', 'org-1', 'actor-mgr',
+        expect.anything(),
+        'manager',
+        'org-1',
+        'actor-mgr',
       );
     });
   });
 
   describe('list', () => {
     it('calls listUsers with parsed pagination and searchValue', async () => {
-      adminService.listUsers.mockResolvedValue({ users: [], total: 0 } as never);
+      adminService.listUsers.mockResolvedValue({
+        users: [],
+        total: 0,
+      } as never);
 
       await controller.list(baseSession, '20', '40', 'alice');
 
       expect(adminService.listUsers).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: 20, offset: 40, searchValue: 'alice' }),
+        expect.objectContaining({
+          limit: 20,
+          offset: 40,
+          searchValue: 'alice',
+        }),
       );
     });
 
     it('calls listUsers without searchValue when omitted', async () => {
-      adminService.listUsers.mockResolvedValue({ users: [], total: 0 } as never);
+      adminService.listUsers.mockResolvedValue({
+        users: [],
+        total: 0,
+      } as never);
 
       await controller.list(baseSession, '10', '0');
 
       expect(adminService.listUsers).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: 10, offset: 0, searchValue: undefined }),
+        expect.objectContaining({
+          limit: 10,
+          offset: 0,
+          searchValue: undefined,
+        }),
       );
     });
 
     it('uses default limit=10 and offset=0 when not supplied (lines 123-124)', async () => {
-      adminService.listUsers.mockResolvedValue({ users: [], total: 0 } as never);
+      adminService.listUsers.mockResolvedValue({
+        users: [],
+        total: 0,
+      } as never);
 
       // Call without explicit limit/offset to trigger default parameter branches
       await (controller as any).list(baseSession);
@@ -293,7 +345,10 @@ describe('AdminUsersController', () => {
     });
 
     it('passes organizationId when provided', async () => {
-      adminService.listUsers.mockResolvedValue({ users: [], total: 0 } as never);
+      adminService.listUsers.mockResolvedValue({
+        users: [],
+        total: 0,
+      } as never);
 
       await controller.list(baseSession, '10', '0', undefined, 'org-2');
 
@@ -308,13 +363,16 @@ describe('AdminUsersController', () => {
       adminService.createUser.mockResolvedValue({ id: 'new-1' } as never);
 
       await controller.create(baseSession, {
-        name: 'Alice', email: 'alice@example.com',
-        password: 'SecurePass1!', role: 'admin',
+        name: 'Alice',
+        email: 'alice@example.com',
+        password: 'SecurePass1!',
+        role: 'admin',
       });
 
       expect(adminService.createUser).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Alice', role: 'admin' }),
-        'superadmin', null,
+        'superadmin',
+        null,
       );
     });
 
@@ -322,13 +380,17 @@ describe('AdminUsersController', () => {
       adminService.createUser.mockResolvedValue({ id: 'new-2' } as never);
 
       await controller.create(baseSession, {
-        name: 'Bob', email: 'bob@example.com',
-        password: 'SecurePass1!', role: 'member', organizationId: 'org-1',
+        name: 'Bob',
+        email: 'bob@example.com',
+        password: 'SecurePass1!',
+        role: 'member',
+        organizationId: 'org-1',
       });
 
       expect(adminService.createUser).toHaveBeenCalledWith(
         expect.objectContaining({ role: 'member', organizationId: 'org-1' }),
-        'superadmin', null,
+        'superadmin',
+        null,
       );
     });
   });
@@ -360,60 +422,94 @@ describe('AdminUsersController', () => {
   });
 
   describe('validateCreatePayload — branch coverage', () => {
-    const validBase = { name: 'Alice', email: 'alice@example.com', password: 'SecurePass1!', role: 'admin' as const };
+    const validBase = {
+      name: 'Alice',
+      email: 'alice@example.com',
+      password: 'SecurePass1!',
+      role: 'admin' as const,
+    };
 
     it('throws when name is missing', async () => {
-      await expect(controller.create(baseSession, { ...validBase, name: '' })).rejects.toThrow('name is required');
+      await expect(
+        controller.create(baseSession, { ...validBase, name: '' }),
+      ).rejects.toThrow('name is required');
     });
 
     it('throws when email is missing', async () => {
-      await expect(controller.create(baseSession, { ...validBase, email: '' })).rejects.toThrow('email is required');
+      await expect(
+        controller.create(baseSession, { ...validBase, email: '' }),
+      ).rejects.toThrow('email is required');
     });
 
     it('throws when password is missing', async () => {
-      await expect(controller.create(baseSession, { ...validBase, password: '' })).rejects.toThrow('password is required');
+      await expect(
+        controller.create(baseSession, { ...validBase, password: '' }),
+      ).rejects.toThrow('password is required');
     });
 
     it('throws when password is too short', async () => {
-      await expect(controller.create(baseSession, { ...validBase, password: 'short' })).rejects.toThrow('password must be at least');
+      await expect(
+        controller.create(baseSession, { ...validBase, password: 'short' }),
+      ).rejects.toThrow('password must be at least');
     });
 
     it('throws when role is invalid', async () => {
-      await expect(controller.create(baseSession, { ...validBase, role: 'superuser' as any })).rejects.toThrow('invalid role');
+      await expect(
+        controller.create(baseSession, {
+          ...validBase,
+          role: 'superuser' as any,
+        }),
+      ).rejects.toThrow('invalid role');
     });
 
     it('throws when non-admin role has no organizationId', async () => {
-      await expect(controller.create(baseSession, { ...validBase, role: 'member' })).rejects.toThrow('organizationId is required');
+      await expect(
+        controller.create(baseSession, { ...validBase, role: 'member' }),
+      ).rejects.toThrow('organizationId is required');
     });
   });
 
   describe('validateSetRolePayload — branch coverage', () => {
     it('throws when role is invalid', async () => {
-      await expect(controller.setRole(baseSession, 'user-1', { role: 'superuser' as any })).rejects.toThrow('invalid role');
+      await expect(
+        controller.setRole(baseSession, 'user-1', { role: 'superuser' as any }),
+      ).rejects.toThrow('invalid role');
     });
   });
 
   describe('validateSetPasswordPayload — branch coverage', () => {
     it('throws when newPassword is empty', async () => {
-      await expect(controller.setPassword(baseSession, 'user-1', { newPassword: '' })).rejects.toThrow('newPassword is required');
+      await expect(
+        controller.setPassword(baseSession, 'user-1', { newPassword: '' }),
+      ).rejects.toThrow('newPassword is required');
     });
 
     it('throws when newPassword is too short', async () => {
-      await expect(controller.setPassword(baseSession, 'user-1', { newPassword: 'short' })).rejects.toThrow('newPassword must be at least');
+      await expect(
+        controller.setPassword(baseSession, 'user-1', { newPassword: 'short' }),
+      ).rejects.toThrow('newPassword must be at least');
     });
   });
 
   describe('validateBulkRemovePayload — branch coverage', () => {
     it('throws when userIds is not an array', async () => {
-      await expect(controller.bulkRemove(baseSession, { userIds: 'not-array' as any })).rejects.toThrow('userIds must be an array');
+      await expect(
+        controller.bulkRemove(baseSession, { userIds: 'not-array' as any }),
+      ).rejects.toThrow('userIds must be an array');
     });
   });
 
   describe('impersonate', () => {
     it('passes actor context and optional organizationId to shared impersonation service', async () => {
-      impersonationService.startImpersonation.mockResolvedValue({ sessionToken: 'imp-token-1' });
+      impersonationService.startImpersonation.mockResolvedValue({
+        sessionToken: 'imp-token-1',
+      });
 
-      const result = await (controller as any).impersonate(baseSession, 'target-1', { organizationId: 'org-1' });
+      const result = await (controller as any).impersonate(
+        baseSession,
+        'target-1',
+        { organizationId: 'org-1' },
+      );
 
       expect(impersonationService.startImpersonation).toHaveBeenCalledWith({
         actorUserId: 'actor-superadmin',
@@ -426,7 +522,9 @@ describe('AdminUsersController', () => {
     });
 
     it('uses manager active organization when organizationId is omitted', async () => {
-      impersonationService.startImpersonation.mockResolvedValue({ sessionToken: 'imp-token-2' });
+      impersonationService.startImpersonation.mockResolvedValue({
+        sessionToken: 'imp-token-2',
+      });
       const managerSession = {
         user: { id: 'actor-mgr', role: 'manager' },
         session: { activeOrganizationId: 'org-77' },
@@ -443,5 +541,4 @@ describe('AdminUsersController', () => {
       });
     });
   });
-
 });

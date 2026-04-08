@@ -10,12 +10,14 @@ describe('DatabaseService - Migration Tracking', () => {
 
   beforeEach(() => {
     mockPool = {
-      query: jest.fn<() => Promise<{ rows: unknown[] }>>().mockResolvedValue({ rows: [] }),
+      query: jest
+        .fn<() => Promise<{ rows: unknown[] }>>()
+        .mockResolvedValue({ rows: [] }),
       end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
       connect: jest.fn(),
     };
 
-    service = new DatabaseService(mockPool as any);
+    service = new DatabaseService(mockPool);
   });
 
   describe('hasMigrationRun', () => {
@@ -24,7 +26,9 @@ describe('DatabaseService - Migration Tracking', () => {
         rows: [{ name: '001_better_auth_core_tables' }],
       });
 
-      const result = await service.hasMigrationRun('001_better_auth_core_tables');
+      const result = await service.hasMigrationRun(
+        '001_better_auth_core_tables',
+      );
 
       expect(result).toBe(true);
       expect(mockPool.query).toHaveBeenCalledWith(
@@ -101,7 +105,9 @@ describe('DatabaseService - Migration Tracking', () => {
         .mockResolvedValueOnce({ rows: [{ name: '009' }] }) // 009_drop_user_role_check_constraint
         .mockResolvedValueOnce({ rows: [{ name: '008' }] }); // 008_rename_is_system_to_is_default
 
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
       await service.runMigrations();
 
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -118,12 +124,16 @@ describe('DatabaseService - Migration Tracking', () => {
         .mockResolvedValueOnce({ rows: [] }) // 002 NOT run
         .mockResolvedValue({ rows: [] }); // all subsequent queries (migration SQL + record)
 
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
       await service.runMigrations();
 
       // Should have logged the applied migration
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Migration 002_better_auth_organization_tables applied'),
+        expect.stringContaining(
+          'Migration 002_better_auth_organization_tables applied',
+        ),
       );
       consoleSpy.mockRestore();
     });
@@ -132,7 +142,9 @@ describe('DatabaseService - Migration Tracking', () => {
   describe('transaction', () => {
     it('should commit on successful callback', async () => {
       const mockClient = {
-        query: jest.fn<() => Promise<{ rows: unknown[] }>>().mockResolvedValue({ rows: [] }),
+        query: jest
+          .fn<() => Promise<{ rows: unknown[] }>>()
+          .mockResolvedValue({ rows: [] }),
         release: jest.fn(),
       };
       mockPool.connect.mockResolvedValue(mockClient);
@@ -150,7 +162,9 @@ describe('DatabaseService - Migration Tracking', () => {
 
     it('should rollback on error and rethrow', async () => {
       const mockClient = {
-        query: jest.fn<() => Promise<{ rows: unknown[] }>>().mockResolvedValue({ rows: [] }),
+        query: jest
+          .fn<() => Promise<{ rows: unknown[] }>>()
+          .mockResolvedValue({ rows: [] }),
         release: jest.fn(),
       };
       mockPool.connect.mockResolvedValue(mockClient);
@@ -183,7 +197,10 @@ describe('DatabaseService - Migration Tracking', () => {
         rows: [{ id: '1', name: 'test' }],
       });
 
-      const result = await service.queryOne('SELECT * FROM "user" WHERE id = $1', ['1']);
+      const result = await service.queryOne(
+        'SELECT * FROM "user" WHERE id = $1',
+        ['1'],
+      );
 
       expect(result).toEqual({ id: '1', name: 'test' });
     });
@@ -191,7 +208,10 @@ describe('DatabaseService - Migration Tracking', () => {
     it('queryOne should return null when no rows', async () => {
       mockPool.query.mockResolvedValueOnce({ rows: [] });
 
-      const result = await service.queryOne('SELECT * FROM "user" WHERE id = $1', ['999']);
+      const result = await service.queryOne(
+        'SELECT * FROM "user" WHERE id = $1',
+        ['999'],
+      );
 
       expect(result).toBeNull();
     });
@@ -209,17 +229,21 @@ describe('DatabaseService - Migration Tracking', () => {
     it('should run all 9 migrations when none have run', async () => {
       // CREATE TABLE _migrations
       mockPool.query
-        .mockResolvedValueOnce({ rows: [] })  // CREATE TABLE _migrations
-        .mockResolvedValueOnce({ rows: [] })  // 001 hasMigrationRun -> not found
-        .mockResolvedValue({ rows: [] });     // all subsequent: migration SQL + recordMigration
+        .mockResolvedValueOnce({ rows: [] }) // CREATE TABLE _migrations
+        .mockResolvedValueOnce({ rows: [] }) // 001 hasMigrationRun -> not found
+        .mockResolvedValue({ rows: [] }); // all subsequent: migration SQL + recordMigration
 
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
       await service.runMigrations();
 
       // Helper to check query was called with SQL containing a substring
       const expectQueryWith = (substring: string) => {
         const calls = mockPool.query.mock.calls as Array<[string, unknown[]]>;
-        const found = calls.some(([sql]) => typeof sql === 'string' && sql.includes(substring));
+        const found = calls.some(
+          ([sql]) => typeof sql === 'string' && sql.includes(substring),
+        );
         expect(found).toBe(true);
       };
 
@@ -244,31 +268,43 @@ describe('DatabaseService - Migration Tracking', () => {
 
       // Verify migration 005 UPDATE + CHECK constraints
       expectQueryWith(`UPDATE member SET role = 'admin' WHERE role = 'owner'`);
-      expectQueryWith(`UPDATE invitation SET role = 'admin' WHERE role = 'owner'`);
+      expectQueryWith(
+        `UPDATE invitation SET role = 'admin' WHERE role = 'owner'`,
+      );
       expectQueryWith('member_role_allowed_values_chk');
       expectQueryWith('invitation_role_allowed_values_chk');
 
       // Should log completed with count
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('9 new'),
-      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('9 new'));
       consoleSpy.mockRestore();
     });
 
     it('should log applied for each pending migration', async () => {
       mockPool.query
-        .mockResolvedValueOnce({ rows: [] })  // CREATE TABLE _migrations
-        .mockResolvedValueOnce({ rows: [] })  // 001 not run
-        .mockResolvedValue({ rows: [] });     // all subsequent
+        .mockResolvedValueOnce({ rows: [] }) // CREATE TABLE _migrations
+        .mockResolvedValueOnce({ rows: [] }) // 001 not run
+        .mockResolvedValue({ rows: [] }); // all subsequent
 
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
       await service.runMigrations();
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('001_better_auth_core_tables applied'));
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('002_better_auth_organization_tables applied'));
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('003_core_indexes applied'));
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('004_jwks_expires_at_column applied'));
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('005_enforce_unified_org_member_roles applied'));
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('001_better_auth_core_tables applied'),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('002_better_auth_organization_tables applied'),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('003_core_indexes applied'),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('004_jwks_expires_at_column applied'),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('005_enforce_unified_org_member_roles applied'),
+      );
       consoleSpy.mockRestore();
     });
   });
@@ -277,7 +313,9 @@ describe('DatabaseService - Migration Tracking', () => {
     it('calls runMigrations on module init', async () => {
       mockPool.query.mockResolvedValue({ rows: [] });
 
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
       await service.onModuleInit();
 
       consoleSpy.mockRestore();

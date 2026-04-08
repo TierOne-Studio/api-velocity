@@ -7,7 +7,7 @@ jest.mock('@thallesp/nestjs-better-auth', () => ({
   BetterAuthModule: { forRoot: jest.fn(() => ({ module: class {} })) },
 }));
 
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { HttpStatus } from '@nestjs/common';
 import { RbacController } from './rbac.controller';
 import { RoleService, PermissionService } from '../../application/services';
 
@@ -45,7 +45,11 @@ describe('RbacController validation', () => {
 
   it('rejects createRole when name is missing', async () => {
     await expect(
-      controller.createRole(session, { displayName: 'Editor' } as any, undefined),
+      controller.createRole(
+        session,
+        { displayName: 'Editor' } as any,
+        undefined,
+      ),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
@@ -61,14 +65,21 @@ describe('RbacController validation', () => {
 
   it('rejects createRole when name is the reserved global superadmin role', async () => {
     await expect(
-      controller.createRole(session, { name: 'superadmin', displayName: 'Superadmin' } as any, undefined),
+      controller.createRole(
+        session,
+        { name: 'superadmin', displayName: 'Superadmin' } as any,
+        undefined,
+      ),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
   });
 
   it('allows updateRole when only name is provided', async () => {
-    roleService.update.mockResolvedValue({ id: 'role-1', name: 'owner' } as any);
+    roleService.update.mockResolvedValue({
+      id: 'role-1',
+      name: 'owner',
+    } as any);
 
     await expect(
       controller.updateRole('role-1', { name: 'owner' }),
@@ -76,9 +87,7 @@ describe('RbacController validation', () => {
   });
 
   it('rejects updateRole when no updatable fields are provided', async () => {
-    await expect(
-      controller.updateRole('role-1', {}),
-    ).rejects.toMatchObject({
+    await expect(controller.updateRole('role-1', {})).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
   });
@@ -87,7 +96,9 @@ describe('RbacController validation', () => {
     roleService.findById.mockResolvedValue({ id: 'role-1' } as any);
 
     await expect(
-      controller.assignPermissions('role-1', { permissionIds: undefined as unknown as string[] }),
+      controller.assignPermissions('role-1', {
+        permissionIds: undefined as unknown as string[],
+      }),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
@@ -105,7 +116,10 @@ describe('RbacController validation', () => {
 
   it('creates role when payload is valid', async () => {
     roleService.findByNameInOrganization.mockResolvedValue(null);
-    roleService.create.mockResolvedValue({ id: 'role-1', name: 'editor' } as any);
+    roleService.create.mockResolvedValue({
+      id: 'role-1',
+      name: 'editor',
+    } as any);
 
     const result = await controller.createRole(
       session,

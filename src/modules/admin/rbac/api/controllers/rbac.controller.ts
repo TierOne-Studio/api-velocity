@@ -17,7 +17,10 @@ import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { PermissionsGuard, RequirePermissions } from '../../../../../shared';
 import { RoleService, PermissionService } from '../../application/services';
 import { CreateRoleDto, UpdateRoleDto, AssignPermissionsDto } from '../dto';
-import { getActiveOrganizationId, getPlatformRole } from '../../../utils/admin.utils';
+import {
+  getActiveOrganizationId,
+  getPlatformRole,
+} from '../../../utils/admin.utils';
 
 /**
  * Controller for RBAC management endpoints
@@ -38,10 +41,16 @@ export class RbacController {
       throw new HttpException('Role name is required', HttpStatus.BAD_REQUEST);
     }
     if (reservedNames.has(normalizedName)) {
-      throw new HttpException(`Role name ${normalizedName} is reserved`, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        `Role name ${normalizedName} is reserved`,
+        HttpStatus.BAD_REQUEST,
+      );
     }
     if (!dto?.displayName?.trim()) {
-      throw new HttpException('Role displayName is required', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'Role displayName is required',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
@@ -55,7 +64,10 @@ export class RbacController {
       dto.color !== undefined;
 
     if (!hasAnyField) {
-      throw new HttpException('At least one field is required to update a role', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'At least one field is required to update a role',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     if (normalizedName !== undefined && !normalizedName) {
@@ -63,22 +75,34 @@ export class RbacController {
     }
 
     if (normalizedName && reservedNames.has(normalizedName)) {
-      throw new HttpException(`Role name ${normalizedName} is reserved`, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        `Role name ${normalizedName} is reserved`,
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
   private validateAssignPermissionsPayload(dto: AssignPermissionsDto): void {
     if (!Array.isArray(dto?.permissionIds)) {
-      throw new HttpException('permissionIds must be an array', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'permissionIds must be an array',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
-  private resolveTargetOrganizationId(session: UserSession, organizationId?: string): string {
+  private resolveTargetOrganizationId(
+    session: UserSession,
+    organizationId?: string,
+  ): string {
     const platformRole = getPlatformRole(session);
 
     if (platformRole === 'superadmin') {
       if (!organizationId?.trim()) {
-        throw new HttpException('organizationId is required for superadmin role management', HttpStatus.BAD_REQUEST);
+        throw new HttpException(
+          'organizationId is required for superadmin role management',
+          HttpStatus.BAD_REQUEST,
+        );
       }
 
       return organizationId.trim();
@@ -86,13 +110,19 @@ export class RbacController {
 
     const activeOrganizationId = getActiveOrganizationId(session);
     if (!activeOrganizationId) {
-      throw new HttpException('Active organization required', HttpStatus.FORBIDDEN);
+      throw new HttpException(
+        'Active organization required',
+        HttpStatus.FORBIDDEN,
+      );
     }
 
     return activeOrganizationId;
   }
 
-  private resolveRoleListOrganizationId(session: UserSession, organizationId?: string): string | null {
+  private resolveRoleListOrganizationId(
+    session: UserSession,
+    organizationId?: string,
+  ): string | null {
     const platformRole = getPlatformRole(session);
 
     if (platformRole === 'superadmin') {
@@ -102,7 +132,10 @@ export class RbacController {
 
     const activeOrganizationId = getActiveOrganizationId(session);
     if (!activeOrganizationId) {
-      throw new HttpException('Active organization required', HttpStatus.FORBIDDEN);
+      throw new HttpException(
+        'Active organization required',
+        HttpStatus.FORBIDDEN,
+      );
     }
 
     return activeOrganizationId;
@@ -139,11 +172,17 @@ export class RbacController {
     // user.role is NULL for non-superadmins after Phase 0 migration; resolve actual org membership role
     let effectiveRole: string = userRole;
     if (session.user.id) {
-      const memberRole = await this.roleService.getUserActiveMemberRole(session.user.id, activeOrganizationId);
+      const memberRole = await this.roleService.getUserActiveMemberRole(
+        session.user.id,
+        activeOrganizationId,
+      );
       if (memberRole) effectiveRole = memberRole;
     }
 
-    const permissions = await this.roleService.getUserPermissions(effectiveRole, activeOrganizationId);
+    const permissions = await this.roleService.getUserPermissions(
+      effectiveRole,
+      activeOrganizationId,
+    );
     return {
       data: permissions.map((p) => `${p.resource}:${p.action}`),
     };
@@ -160,7 +199,10 @@ export class RbacController {
     @Session() session: UserSession,
     @Query('organizationId') organizationId?: string,
   ) {
-    const targetOrganizationId = this.resolveRoleListOrganizationId(session, organizationId);
+    const targetOrganizationId = this.resolveRoleListOrganizationId(
+      session,
+      organizationId,
+    );
     const roles = await this.roleService.findAll(targetOrganizationId);
     return { data: roles };
   }
@@ -191,10 +233,16 @@ export class RbacController {
   ) {
     this.validateCreateRolePayload(dto);
     dto.name = dto.name.trim().toLowerCase();
-    const targetOrganizationId = this.resolveTargetOrganizationId(session, organizationId);
+    const targetOrganizationId = this.resolveTargetOrganizationId(
+      session,
+      organizationId,
+    );
 
     // Check if role name already exists
-    const existing = await this.roleService.findByNameInOrganization(dto.name, targetOrganizationId);
+    const existing = await this.roleService.findByNameInOrganization(
+      dto.name,
+      targetOrganizationId,
+    );
     if (existing) {
       throw new HttpException('Role name already exists', HttpStatus.CONFLICT);
     }
@@ -305,7 +353,10 @@ export class RbacController {
    */
   @Get('users/:roleName/permissions')
   @RequirePermissions('role:read')
-  async getUserPermissions(@Session() session: UserSession, @Param('roleName') roleName: string) {
+  async getUserPermissions(
+    @Session() session: UserSession,
+    @Param('roleName') roleName: string,
+  ) {
     const permissions = await this.roleService.getUserPermissions(
       roleName,
       getActiveOrganizationId(session),

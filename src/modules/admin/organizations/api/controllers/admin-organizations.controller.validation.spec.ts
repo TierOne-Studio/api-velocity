@@ -45,7 +45,12 @@ describe('AdminOrganizationsController validation', () => {
   } as unknown as UserSession;
 
   it('rejects addMember when userId is missing', async () => {
-    await expect(controller.addMember(adminSession, 'org-1', { userId: '', role: 'member' })).rejects.toMatchObject({
+    await expect(
+      controller.addMember(adminSession, 'org-1', {
+        userId: '',
+        role: 'member',
+      }),
+    ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
   });
@@ -53,7 +58,9 @@ describe('AdminOrganizationsController validation', () => {
   it('rejects addMember when role does not exist (service-layer validation)', async () => {
     orgService.findById.mockResolvedValue({ id: 'org-1' } as never);
     orgService.addMember.mockRejectedValue(
-      Object.assign(new Error('Role does not exist in this organization'), { status: HttpStatus.BAD_REQUEST }),
+      Object.assign(new Error('Role does not exist in this organization'), {
+        status: HttpStatus.BAD_REQUEST,
+      }),
     );
     await expect(
       controller.addMember(adminSession, 'org-1', {
@@ -67,7 +74,9 @@ describe('AdminOrganizationsController validation', () => {
 
   it('rejects updateMemberRole when role does not exist (service-layer validation)', async () => {
     orgService.updateMemberRole.mockRejectedValue(
-      Object.assign(new Error('Role does not exist in this organization'), { status: HttpStatus.BAD_REQUEST }),
+      Object.assign(new Error('Role does not exist in this organization'), {
+        status: HttpStatus.BAD_REQUEST,
+      }),
     );
     await expect(
       controller.updateMemberRole(adminSession, 'org-1', 'member-1', {
@@ -112,7 +121,14 @@ describe('AdminOrganizationsController validation', () => {
   });
 
   it('rejects listMemberCandidates when limit is invalid', async () => {
-    await expect((controller as any).listMemberCandidates(adminSession, 'org-1', undefined, '0')).rejects.toMatchObject({
+    await expect(
+      (controller as any).listMemberCandidates(
+        adminSession,
+        'org-1',
+        undefined,
+        '0',
+      ),
+    ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
   });

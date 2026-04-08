@@ -3,11 +3,10 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
-import { DatabaseService } from '../src/shared/infrastructure/database/database.module';
 
 /**
  * E2E tests for Platform Admin endpoints.
- * 
+ *
  * Note: These tests require a test database with seeded data.
  * In a real setup, you would:
  * 1. Use a dedicated test database
@@ -17,7 +16,6 @@ import { DatabaseService } from '../src/shared/infrastructure/database/database.
  */
 describe('Platform Admin (e2e)', () => {
   let app: INestApplication<App>;
-  let dbService: DatabaseService;
 
   beforeAll(async () => {
     const moduleFixture = await Test.createTestingModule({
@@ -25,7 +23,6 @@ describe('Platform Admin (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    dbService = moduleFixture.get<DatabaseService>(DatabaseService);
     await app.init();
   });
 

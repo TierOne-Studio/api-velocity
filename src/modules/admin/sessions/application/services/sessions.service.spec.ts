@@ -34,25 +34,46 @@ describe('SessionsService', () => {
   describe('listUserSessions', () => {
     it('should list sessions for superadmin', async () => {
       const sessions = [
-        { id: 's1', userId: 'u1', token: 't1', expiresAt: new Date(), createdAt: new Date(), updatedAt: new Date(), ipAddress: null, userAgent: null },
+        {
+          id: 's1',
+          userId: 'u1',
+          token: 't1',
+          expiresAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          ipAddress: null,
+          userAgent: null,
+        },
       ];
       sessionRepo.listUserSessions.mockResolvedValue(sessions);
 
-      const result = await service.listUserSessions({ userId: 'u1', platformRole: 'superadmin', activeOrganizationId: null });
+      const result = await service.listUserSessions({
+        userId: 'u1',
+        platformRole: 'superadmin',
+        activeOrganizationId: null,
+      });
       expect(result).toEqual(sessions);
       expect(sessionRepo.listUserSessions).toHaveBeenCalledWith('u1');
     });
 
     it('should require active org for manager', async () => {
       await expect(
-        service.listUserSessions({ userId: 'u1', platformRole: 'manager', activeOrganizationId: null }),
+        service.listUserSessions({
+          userId: 'u1',
+          platformRole: 'manager',
+          activeOrganizationId: null,
+        }),
       ).rejects.toThrow(ForbiddenException);
     });
 
     it('should check user membership for manager', async () => {
       sessionRepo.findMemberInOrg.mockResolvedValue(null);
       await expect(
-        service.listUserSessions({ userId: 'u1', platformRole: 'manager', activeOrganizationId: 'org1' }),
+        service.listUserSessions({
+          userId: 'u1',
+          platformRole: 'manager',
+          activeOrganizationId: 'org1',
+        }),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -60,14 +81,22 @@ describe('SessionsService', () => {
       sessionRepo.findMemberInOrg.mockResolvedValue({ id: 'm1' });
       sessionRepo.listUserSessions.mockResolvedValue([]);
 
-      const result = await service.listUserSessions({ userId: 'u1', platformRole: 'manager', activeOrganizationId: 'org1' });
+      const result = await service.listUserSessions({
+        userId: 'u1',
+        platformRole: 'manager',
+        activeOrganizationId: 'org1',
+      });
       expect(result).toEqual([]);
     });
   });
 
   describe('revokeSession', () => {
     it('should revoke session for superadmin', async () => {
-      const result = await service.revokeSession({ sessionToken: 'token1' }, 'superadmin', null);
+      const result = await service.revokeSession(
+        { sessionToken: 'token1' },
+        'superadmin',
+        null,
+      );
       expect(result).toEqual({ success: true });
       expect(sessionRepo.revokeSession).toHaveBeenCalledWith('token1');
     });
@@ -89,14 +118,22 @@ describe('SessionsService', () => {
 
     it('should return success if session not found for manager', async () => {
       sessionRepo.findSessionByToken.mockResolvedValue(null);
-      const result = await service.revokeSession({ sessionToken: 'token1' }, 'manager', 'org1');
+      const result = await service.revokeSession(
+        { sessionToken: 'token1' },
+        'manager',
+        'org1',
+      );
       expect(result).toEqual({ success: true });
     });
   });
 
   describe('revokeAllSessions', () => {
     it('should revoke all sessions for superadmin', async () => {
-      const result = await service.revokeAllSessions({ userId: 'u1' }, 'superadmin', null);
+      const result = await service.revokeAllSessions(
+        { userId: 'u1' },
+        'superadmin',
+        null,
+      );
       expect(result).toEqual({ success: true });
       expect(sessionRepo.revokeAllSessions).toHaveBeenCalledWith('u1');
     });

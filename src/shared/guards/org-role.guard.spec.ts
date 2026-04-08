@@ -37,34 +37,51 @@ describe('OrgRoleGuard', () => {
   describe('when no org roles are required', () => {
     it('should allow access when no roles metadata', () => {
       jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
-      const context = createMockExecutionContext({ user: { role: 'member' } }, 'member');
+      const context = createMockExecutionContext(
+        { user: { role: 'member' } },
+        'member',
+      );
       expect(guard.canActivate(context)).toBe(true);
     });
 
     it('should allow access when empty roles array', () => {
       jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue([]);
-      const context = createMockExecutionContext({ user: { role: 'member' } }, 'member');
+      const context = createMockExecutionContext(
+        { user: { role: 'member' } },
+        'member',
+      );
       expect(guard.canActivate(context)).toBe(true);
     });
   });
 
   describe('when org roles are required', () => {
     beforeEach(() => {
-      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['admin', 'manager']);
+      jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockReturnValue(['admin', 'manager']);
     });
 
     it('should allow access for user with matching org role (admin)', () => {
-      const context = createMockExecutionContext({ user: { role: 'admin' } }, 'admin');
+      const context = createMockExecutionContext(
+        { user: { role: 'admin' } },
+        'admin',
+      );
       expect(guard.canActivate(context)).toBe(true);
     });
 
     it('should allow access for user with matching org role (manager)', () => {
-      const context = createMockExecutionContext({ user: { role: 'manager' } }, 'manager');
+      const context = createMockExecutionContext(
+        { user: { role: 'manager' } },
+        'manager',
+      );
       expect(guard.canActivate(context)).toBe(true);
     });
 
     it('should deny access for user without matching org role', () => {
-      const context = createMockExecutionContext({ user: { role: 'member' } }, 'member');
+      const context = createMockExecutionContext(
+        { user: { role: 'member' } },
+        'member',
+      );
       expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
     });
 
@@ -79,7 +96,10 @@ describe('OrgRoleGuard', () => {
     });
 
     it('should deny access when orgMemberRole is missing', () => {
-      const context = createMockExecutionContext({ user: { role: 'admin' } }, undefined);
+      const context = createMockExecutionContext(
+        { user: { role: 'admin' } },
+        undefined,
+      );
       expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
     });
   });
@@ -102,7 +122,7 @@ describe('OrgRoles decorator', () => {
       descriptor,
     );
 
-    const metadata = Reflect.getMetadata(ORG_ROLES_KEY, descriptor!.value);
+    const metadata = Reflect.getMetadata(ORG_ROLES_KEY, descriptor.value);
     expect(metadata).toEqual(['admin', 'manager']);
   });
 

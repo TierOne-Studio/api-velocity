@@ -10,13 +10,17 @@ describe('buildTypeOrmConfig', () => {
   });
 
   it('includes the expected entity classes', () => {
-    const config = buildTypeOrmConfig('postgres://localhost/db') as { entities: unknown[] };
+    const config = buildTypeOrmConfig('postgres://localhost/db') as {
+      entities: unknown[];
+    };
     expect(Array.isArray(config.entities)).toBe(true);
     expect(config.entities.length).toBeGreaterThan(0);
   });
 
   it('sets migrations to an empty array', () => {
-    const config = buildTypeOrmConfig('postgres://localhost/db') as { migrations: unknown[] };
+    const config = buildTypeOrmConfig('postgres://localhost/db') as {
+      migrations: unknown[];
+    };
     expect(config.migrations).toEqual([]);
   });
 });

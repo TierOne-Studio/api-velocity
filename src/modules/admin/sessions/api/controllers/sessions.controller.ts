@@ -24,15 +24,24 @@ export class SessionsController {
 
   private validateRevokeSessionPayload(body: { sessionToken: string }): void {
     if (!body?.sessionToken?.trim()) {
-      throw new HttpException('sessionToken is required', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'sessionToken is required',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
   @Get(':userId/sessions')
   @RequirePermissions('session:read')
-  async listSessions(@Session() session: UserSession, @Param('userId') userId: string) {
+  async listSessions(
+    @Session() session: UserSession,
+    @Param('userId') userId: string,
+  ) {
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
     return this.sessionsService.listUserSessions({
       userId,
       platformRole,
@@ -42,19 +51,39 @@ export class SessionsController {
 
   @Post('sessions/revoke')
   @RequirePermissions('session:revoke')
-  async revokeSession(@Session() session: UserSession, @Body() body: { sessionToken: string }) {
+  async revokeSession(
+    @Session() session: UserSession,
+    @Body() body: { sessionToken: string },
+  ) {
     this.validateRevokeSessionPayload(body);
 
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
-    return this.sessionsService.revokeSession({ sessionToken: body.sessionToken }, platformRole, activeOrgId);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
+    return this.sessionsService.revokeSession(
+      { sessionToken: body.sessionToken },
+      platformRole,
+      activeOrgId,
+    );
   }
 
   @Post(':userId/sessions/revoke-all')
   @RequirePermissions('session:revoke')
-  async revokeAll(@Session() session: UserSession, @Param('userId') userId: string) {
+  async revokeAll(
+    @Session() session: UserSession,
+    @Param('userId') userId: string,
+  ) {
     const platformRole = getPlatformRole(session);
-    const activeOrgId = requireActiveOrganizationIdForManager(platformRole, session);
-    return this.sessionsService.revokeAllSessions({ userId }, platformRole, activeOrgId);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
+    return this.sessionsService.revokeAllSessions(
+      { userId },
+      platformRole,
+      activeOrgId,
+    );
   }
 }

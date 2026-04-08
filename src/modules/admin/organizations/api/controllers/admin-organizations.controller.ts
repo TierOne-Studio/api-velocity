@@ -31,21 +31,33 @@ export class AdminOrganizationsController {
 
   private readonly slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-  private getSessionInfo(session: UserSession): { role: PlatformRole; activeOrgId: string | null } {
-    const activeOrgId = (session?.session as { activeOrganizationId?: string })?.activeOrganizationId ?? null;
+  private getSessionInfo(session: UserSession): {
+    role: PlatformRole;
+    activeOrgId: string | null;
+  } {
+    const activeOrgId =
+      (session?.session as { activeOrganizationId?: string })
+        ?.activeOrganizationId ?? null;
     return {
       role: getPlatformRole(session),
       activeOrgId,
     };
   }
 
-  private requireActiveOrgForManager(role: PlatformRole, activeOrgId: string | null): void {
+  private requireActiveOrgForManager(
+    role: PlatformRole,
+    activeOrgId: string | null,
+  ): void {
     if (role !== 'superadmin' && !activeOrgId) {
       throw new ForbiddenException('Active organization required');
     }
   }
 
-  private assertManagerCanAccessOrg(role: PlatformRole, activeOrgId: string | null, targetOrgId: string): void {
+  private assertManagerCanAccessOrg(
+    role: PlatformRole,
+    activeOrgId: string | null,
+    targetOrgId: string,
+  ): void {
     if (role !== 'superadmin' && activeOrgId !== targetOrgId) {
       throw new ForbiddenException('You can only access your own organization');
     }
@@ -63,13 +75,19 @@ export class AdminOrganizationsController {
       return;
     }
 
-    const canRead = await this.orgService.canUserReadOrganization(session.user.id, targetOrgId);
+    const canRead = await this.orgService.canUserReadOrganization(
+      session.user.id,
+      targetOrgId,
+    );
     if (!canRead) {
       throw new ForbiddenException('You can only access your own organization');
     }
   }
 
-  private validateAddMemberPayload(body: { userId: string; role: string }): void {
+  private validateAddMemberPayload(body: {
+    userId: string;
+    role: string;
+  }): void {
     if (!body?.userId?.trim()) {
       throw new HttpException('userId is required', HttpStatus.BAD_REQUEST);
     }
@@ -92,13 +110,19 @@ export class AdminOrganizationsController {
 
     const parsedLimit = parseInt(limit, 10);
     if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
-      throw new HttpException('limit must be a positive integer', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'limit must be a positive integer',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     return parsedLimit;
   }
 
-  private validateCreateInvitationPayload(body: { email: string; role: string }): void {
+  private validateCreateInvitationPayload(body: {
+    email: string;
+    role: string;
+  }): void {
     if (!body?.email?.trim()) {
       throw new HttpException('email is required', HttpStatus.BAD_REQUEST);
     }
@@ -142,7 +166,13 @@ export class AdminOrganizationsController {
   @RequirePermissions('organization:create')
   async create(
     @Session() session: UserSession,
-    @Body() body: { name: string; slug: string; logo?: string; metadata?: Record<string, unknown> },
+    @Body()
+    body: {
+      name: string;
+      slug: string;
+      logo?: string;
+      metadata?: Record<string, unknown>;
+    },
   ) {
     this.validateCreateOrganizationPayload(body);
     const { role } = this.getSessionInfo(session);
@@ -174,7 +204,10 @@ export class AdminOrganizationsController {
     @Query('organizationId') organizationId?: string,
   ) {
     const { role, activeOrgId } = this.getSessionInfo(session);
-    const targetOrgId = role === 'superadmin' && organizationId?.trim() ? organizationId.trim() : activeOrgId;
+    const targetOrgId =
+      role === 'superadmin' && organizationId?.trim()
+        ? organizationId.trim()
+        : activeOrgId;
     return this.orgService.getRoles(targetOrgId, role);
   }
 
@@ -193,7 +226,11 @@ export class AdminOrganizationsController {
     const search = query.search;
 
     if (role !== 'superadmin') {
-      return this.orgService.findAllForUser(session.user.id, { page, limit, search });
+      return this.orgService.findAllForUser(session.user.id, {
+        page,
+        limit,
+        search,
+      });
     }
 
     const result = await this.orgService.findAll({ page, limit, search });
@@ -258,7 +295,10 @@ export class AdminOrganizationsController {
    */
   @Get(':id/invitations')
   @RequirePermissions('organization:read')
-  async getInvitations(@Session() session: UserSession, @Param('id') id: string) {
+  async getInvitations(
+    @Session() session: UserSession,
+    @Param('id') id: string,
+  ) {
     const { role, activeOrgId } = this.getSessionInfo(session);
     await this.assertCanReadOrg(session, role, activeOrgId, id);
 
@@ -360,7 +400,12 @@ export class AdminOrganizationsController {
     this.requireActiveOrgForManager(role, activeOrgId);
     this.assertManagerCanAccessOrg(role, activeOrgId, id);
 
-    const updated = await this.orgService.updateMemberRole(id, memberId, body.role, role);
+    const updated = await this.orgService.updateMemberRole(
+      id,
+      memberId,
+      body.role,
+      role,
+    );
     return { data: updated };
   }
 
@@ -386,7 +431,11 @@ export class AdminOrganizationsController {
    */
   @Put(':id')
   @RequirePermissions('organization:update')
-  async update(@Session() session: UserSession, @Param('id') id: string, @Body() dto: UpdateOrganizationDto) {
+  async update(
+    @Session() session: UserSession,
+    @Param('id') id: string,
+    @Body() dto: UpdateOrganizationDto,
+  ) {
     const { role, activeOrgId } = this.getSessionInfo(session);
     this.requireActiveOrgForManager(role, activeOrgId);
     this.assertManagerCanAccessOrg(role, activeOrgId, id);
@@ -411,7 +460,10 @@ export class AdminOrganizationsController {
       await this.orgService.delete(id);
       return { success: true };
     } catch (error) {
-      if (error instanceof Error && error.message === 'Organization not found') {
+      if (
+        error instanceof Error &&
+        error.message === 'Organization not found'
+      ) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
       }
       throw error;

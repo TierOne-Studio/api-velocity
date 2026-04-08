@@ -11,6 +11,8 @@ import { DatabaseModule } from './shared/infrastructure/database/database.module
 import { AppTypeOrmModule } from './shared/infrastructure/database/typeorm.module';
 import { SharedModule } from './shared/shared.module';
 import { AdminModule, RbacModule } from './modules/admin';
+import { AirweaveModule } from './modules/airweave/airweave.module';
+import { ChatModule } from './modules/chat';
 
 @Module({
   imports: [
@@ -21,6 +23,8 @@ import { AdminModule, RbacModule } from './modules/admin';
     SharedModule,
     RbacModule,
     AdminModule,
+    AirweaveModule,
+    ChatModule,
     AuthModule.forRoot({ auth }),
   ],
   controllers: [AppController],
@@ -42,7 +46,9 @@ export class AppModule implements OnModuleInit {
     console.log('✅ Email service connected to Better Auth');
 
     // Wire up post-signup callback for self-serve onboarding
-    setPostSignupCallback((userId) => this.postSignupService.addUserToDefaultOrg(userId));
+    setPostSignupCallback((userId) =>
+      this.postSignupService.addUserToDefaultOrg(userId),
+    );
     console.log('✅ Post-signup callback connected to Better Auth');
   }
 }

@@ -1,6 +1,6 @@
 # Default agents to run when --agents is not specified
 # Uses case-insensitive substring matching
-default_agents = ["copilot", "claude", "windsurf", "cursor", "codex"]
+default_agents = ["copilot", "claude", "codex"]
 
 # --- Global MCP Server Configuration ---
 [mcp]
@@ -45,10 +45,3 @@ enabled = true
 output_path = "AGENTS.md"
 output_path_config = ".codex/config.toml"
 
-[agents.cursor]
-enabled = true
-output_path = "AGENTS.md"
-
-[agents.windsurf]
-enabled = true
-output_path = "AGENTS.md"

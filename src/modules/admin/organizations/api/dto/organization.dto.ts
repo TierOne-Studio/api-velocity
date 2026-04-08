@@ -47,7 +47,9 @@ export function rowToOrganization(row: OrganizationRow): Organization {
     name: row.name,
     slug: row.slug,
     logo: row.logo,
-    metadata: row.metadata ? JSON.parse(row.metadata) : null,
+    metadata: row.metadata
+      ? (JSON.parse(row.metadata) as Record<string, unknown>)
+      : null,
     createdAt: row.createdAt,
   };
 }

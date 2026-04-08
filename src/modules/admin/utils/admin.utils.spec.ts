@@ -25,7 +25,10 @@ describe('admin.utils', () => {
     });
 
     it('should allow manager to create manager/member', () => {
-      expect(getAllowedRoleNamesForCreator('manager')).toEqual(['manager', 'member']);
+      expect(getAllowedRoleNamesForCreator('manager')).toEqual([
+        'manager',
+        'member',
+      ]);
     });
 
     it('should return only member for member platform role', () => {
@@ -39,44 +42,60 @@ describe('admin.utils', () => {
     });
 
     it('should return superadmin for superadmin role', () => {
-      expect(getPlatformRole({ user: { role: 'superadmin' } } as any)).toBe('superadmin');
+      expect(getPlatformRole({ user: { role: 'superadmin' } } as any)).toBe(
+        'superadmin',
+      );
     });
 
     it('should return manager for manager role', () => {
-      expect(getPlatformRole({ user: { role: 'manager' } } as any)).toBe('manager');
-    });
-
-    it('should default to member for unknown role', () => {
-      expect(getPlatformRole({ user: { role: 'something-else' } } as any)).toBe('member');
-    });
-
-    it('should handle role arrays — superadmin wins', () => {
-      expect(getPlatformRole({ user: { role: ['superadmin', 'admin'] } } as any)).toBe('superadmin');
-    });
-
-    it('should handle role arrays — admin wins when no superadmin', () => {
-      expect(getPlatformRole({ user: { role: ['admin', 'member'] } } as any)).toBe('admin');
-    });
-
-    it('should handle role arrays — manager when no admin', () => {
-      expect(getPlatformRole({ user: { role: ['manager', 'member'] } } as any)).toBe(
+      expect(getPlatformRole({ user: { role: 'manager' } } as any)).toBe(
         'manager',
       );
     });
 
+    it('should default to member for unknown role', () => {
+      expect(getPlatformRole({ user: { role: 'something-else' } } as any)).toBe(
+        'member',
+      );
+    });
+
+    it('should handle role arrays — superadmin wins', () => {
+      expect(
+        getPlatformRole({ user: { role: ['superadmin', 'admin'] } } as any),
+      ).toBe('superadmin');
+    });
+
+    it('should handle role arrays — admin wins when no superadmin', () => {
+      expect(
+        getPlatformRole({ user: { role: ['admin', 'member'] } } as any),
+      ).toBe('admin');
+    });
+
+    it('should handle role arrays — manager when no admin', () => {
+      expect(
+        getPlatformRole({ user: { role: ['manager', 'member'] } } as any),
+      ).toBe('manager');
+    });
+
     it('should handle role arrays — falls back to member when no superadmin/admin/manager (line 12)', () => {
-      expect(getPlatformRole({ user: { role: ['member', 'viewer'] } } as any)).toBe('member');
+      expect(
+        getPlatformRole({ user: { role: ['member', 'viewer'] } } as any),
+      ).toBe('member');
     });
 
     it('should return member for role string member', () => {
-      expect(getPlatformRole({ user: { role: 'member' } } as any)).toBe('member');
+      expect(getPlatformRole({ user: { role: 'member' } } as any)).toBe(
+        'member',
+      );
     });
   });
 
   describe('getActiveOrganizationId', () => {
     it('should read activeOrganizationId from session.session', () => {
       expect(
-        getActiveOrganizationId({ session: { activeOrganizationId: 'org-1' } } as any),
+        getActiveOrganizationId({
+          session: { activeOrganizationId: 'org-1' },
+        } as any),
       ).toBe('org-1');
     });
 
@@ -84,7 +103,6 @@ describe('admin.utils', () => {
       expect(getActiveOrganizationId({} as any)).toBeNull();
     });
   });
-
 
   describe('requireActiveOrganizationIdForManager', () => {
     it('should return null for superadmin regardless of session', () => {

@@ -11,7 +11,9 @@ describe('resendTestEmail', () => {
   });
 
   it('builds a labeled resend address using normalized label', () => {
-    expect(resendTestEmail('delivered', 'Sign Up Flow')).toBe('delivered+sign-up-flow@resend.dev');
+    expect(resendTestEmail('delivered', 'Sign Up Flow')).toBe(
+      'delivered+sign-up-flow@resend.dev',
+    );
   });
 
   it('falls back to event-only when label normalizes to empty', () => {
@@ -27,7 +29,9 @@ describe('uniqueResendDeliveredEmail', () => {
   });
 
   it('keeps a stable default e2e test user email', () => {
-    expect(DEFAULT_E2E_TEST_USER_EMAIL).toBe('delivered+e2e-test-user@resend.dev');
+    expect(DEFAULT_E2E_TEST_USER_EMAIL).toBe(
+      'delivered+e2e-test-user@resend.dev',
+    );
   });
 });
 

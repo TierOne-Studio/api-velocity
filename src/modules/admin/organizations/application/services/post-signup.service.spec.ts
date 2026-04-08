@@ -4,7 +4,10 @@ import { DatabaseService } from '../../../../../shared/infrastructure/database/d
 
 describe('PostSignupService', () => {
   let service: PostSignupService;
-  let db: { queryOne: ReturnType<typeof jest.fn>; query: ReturnType<typeof jest.fn> };
+  let db: {
+    queryOne: ReturnType<typeof jest.fn>;
+    query: ReturnType<typeof jest.fn>;
+  };
 
   beforeEach(() => {
     db = {
@@ -21,7 +24,9 @@ describe('PostSignupService', () => {
   it("falls back to slug 'default' when DEFAULT_ORGANIZATION_SLUG is not set", async () => {
     db.queryOne.mockResolvedValueOnce(null); // org not found — just need it to not throw
 
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warnSpy = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
     await service.addUserToDefaultOrg('user-1');
     warnSpy.mockRestore();
 
@@ -35,7 +40,9 @@ describe('PostSignupService', () => {
     process.env.DEFAULT_ORGANIZATION_SLUG = 'my-org';
     db.queryOne.mockResolvedValueOnce(null);
 
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warnSpy = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
     await service.addUserToDefaultOrg('user-1');
     warnSpy.mockRestore();
 

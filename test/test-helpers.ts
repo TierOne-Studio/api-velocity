@@ -109,9 +109,11 @@ export class TestHelpers {
     }
   }
 
-  private async seedDefaultOrganizationRoles(organizationId: string): Promise<void> {
+  private async seedDefaultOrganizationRoles(
+    organizationId: string,
+  ): Promise<void> {
     await this.dbService.query(
-      `INSERT INTO roles (name, display_name, description, color, is_system, organization_id)
+      `INSERT INTO roles (name, display_name, description, color, is_default, organization_id)
        VALUES
          ('admin', 'Admin', 'Organization administrator with full access within their organization', 'red', true, $1),
          ('manager', 'Manager', 'Organization manager with elevated operational access within their organization', 'blue', true, $1),
@@ -120,7 +122,7 @@ export class TestHelpers {
          display_name = EXCLUDED.display_name,
          description = EXCLUDED.description,
          color = EXCLUDED.color,
-         is_system = EXCLUDED.is_system,
+         is_default = EXCLUDED.is_default,
          updated_at = NOW()`,
       [organizationId],
     );
@@ -147,7 +149,10 @@ export class TestHelpers {
        ON CONFLICT DO NOTHING`,
       [
         organizationId,
-        ...MANAGER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [resource, action]),
+        ...MANAGER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [
+          resource,
+          action,
+        ]),
       ],
     );
 
@@ -162,7 +167,10 @@ export class TestHelpers {
        ON CONFLICT DO NOTHING`,
       [
         organizationId,
-        ...MEMBER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [resource, action]),
+        ...MEMBER_ROLE_PERMISSIONS.flatMap(([resource, action]) => [
+          resource,
+          action,
+        ]),
       ],
     );
   }
@@ -182,14 +190,18 @@ export class TestHelpers {
       });
 
     if (signUpRes.status !== 200) {
-      throw new Error(`Sign up failed: ${signUpRes.status} ${JSON.stringify(signUpRes.body)}`);
+      throw new Error(
+        `Sign up failed: ${signUpRes.status} ${JSON.stringify(signUpRes.body)}`,
+      );
     }
 
     // Extract session cookie from response
     const cookies = signUpRes.headers['set-cookie'];
     const sessionCookie = Array.isArray(cookies)
       ? cookies.find((c: string) => c.includes('better-auth.session_token'))
-      : cookies?.includes('better-auth.session_token') ? cookies : null;
+      : cookies?.includes('better-auth.session_token')
+        ? cookies
+        : null;
 
     if (!sessionCookie) {
       throw new Error('No session cookie returned from sign up');
@@ -201,11 +213,14 @@ export class TestHelpers {
     };
   }
 
-  async setUserRole(userId: string, role: 'superadmin' | 'admin' | 'manager' | 'member'): Promise<void> {
-    await this.dbService.query(
-      `UPDATE "user" SET role = $1 WHERE id = $2`,
-      [role, userId]
-    );
+  async setUserRole(
+    userId: string,
+    role: 'superadmin' | 'admin' | 'manager' | 'member',
+  ): Promise<void> {
+    await this.dbService.query(`UPDATE "user" SET role = $1 WHERE id = $2`, [
+      role,
+      userId,
+    ]);
   }
 
   async createTestOrganization(data: {
@@ -218,7 +233,7 @@ export class TestHelpers {
     await this.dbService.query(
       `INSERT INTO organization (id, name, slug, "createdAt")
        VALUES ($1, $2, $3, $4)`,
-      [id, data.name, data.slug, now]
+      [id, data.name, data.slug, now],
     );
 
     await this.seedDefaultOrganizationRoles(id);
@@ -229,7 +244,7 @@ export class TestHelpers {
   async addUserToOrganization(
     userId: string,
     organizationId: string,
-    role: string = 'member'
+    role: string = 'member',
   ): Promise<void> {
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -237,14 +252,17 @@ export class TestHelpers {
     await this.dbService.query(
       `INSERT INTO member (id, "userId", "organizationId", role, "createdAt")
        VALUES ($1, $2, $3, $4, $5)`,
-      [id, userId, organizationId, role, now]
+      [id, userId, organizationId, role, now],
     );
   }
 
-  async setActiveOrganization(userId: string, organizationId: string): Promise<void> {
+  async setActiveOrganization(
+    userId: string,
+    organizationId: string,
+  ): Promise<void> {
     await this.dbService.query(
       `UPDATE session SET "activeOrganizationId" = $1 WHERE "userId" = $2`,
-      [organizationId, userId]
+      [organizationId, userId],
     );
   }
 
@@ -290,7 +308,11 @@ export class TestHelpers {
 
     // Add org-scoped actors to the organization
     await this.addUserToOrganization(adminSignUp.userId, testOrg.id, 'admin');
-    await this.addUserToOrganization(managerSignUp.userId, testOrg.id, 'manager');
+    await this.addUserToOrganization(
+      managerSignUp.userId,
+      testOrg.id,
+      'manager',
+    );
     await this.addUserToOrganization(memberSignUp.userId, testOrg.id, 'member');
 
     // Set active organization for org-scoped actors
@@ -301,19 +323,19 @@ export class TestHelpers {
     // Get user details
     const [superadminUser] = await this.dbService.query<TestUser>(
       `SELECT id, name, email, role FROM "user" WHERE id = $1`,
-      [superadminSignUp.userId]
+      [superadminSignUp.userId],
     );
     const [adminUser] = await this.dbService.query<TestUser>(
       `SELECT id, name, email, role FROM "user" WHERE id = $1`,
-      [adminSignUp.userId]
+      [adminSignUp.userId],
     );
     const [managerUser] = await this.dbService.query<TestUser>(
       `SELECT id, name, email, role FROM "user" WHERE id = $1`,
-      [managerSignUp.userId]
+      [managerSignUp.userId],
     );
     const [memberUser] = await this.dbService.query<TestUser>(
       `SELECT id, name, email, role FROM "user" WHERE id = $1`,
-      [memberSignUp.userId]
+      [memberSignUp.userId],
     );
 
     return {

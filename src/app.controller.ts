@@ -6,7 +6,7 @@ import { PASSWORD_POLICY } from './shared/utils/password-policy';
 
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) { }
+  constructor(private readonly appService: AppService) {}
 
   @Get('api/hello')
   @AllowAnonymous()
