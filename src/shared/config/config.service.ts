@@ -1,8 +1,15 @@
 import { Injectable } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import 'dotenv/config';
+
+const BUILT_IN_CHAT_SYSTEM_PROMPT_FALLBACK =
+  'You answer questions about an organization knowledge base. Use only the provided source context. Be concise, factual, and explicitly note when context is insufficient.';
 
 @Injectable()
 export class ConfigService {
+  private cachedDefaultChatPrompt: string | null = null;
+
   getPort(): number {
     return parseInt(process.env.PORT || '3000', 10);
   }
@@ -63,14 +70,84 @@ export class ConfigService {
   }
 
   getOpenAiModel(): string {
-    return process.env.OPENAI_MODEL || 'gpt-4o';
+    return process.env.OPENAI_MODEL || 'gpt-5.4-nano';
   }
 
   getChatSystemPrompt(): string {
-    return (
-      process.env.CHAT_SYSTEM_PROMPT ||
-      'You answer questions about organization knowledge bases. Use only the provided source context. Respond in structured markdown with sections ## Answer, ### Key Findings, and ### Sources. Keep attribution brief and factual.'
+    const inlineOverride = process.env.CHAT_SYSTEM_PROMPT?.trim();
+    if (inlineOverride) {
+      return inlineOverride;
+    }
+
+    const overridePath = process.env.CHAT_SYSTEM_PROMPT_PATH?.trim();
+    if (overridePath) {
+      const fromOverridePath = this.tryReadPromptFile(
+        overridePath,
+        'CHAT_SYSTEM_PROMPT_PATH',
+      );
+      if (fromOverridePath) {
+        return fromOverridePath;
+      }
+    }
+
+    return this.getDefaultChatSystemPrompt();
+  }
+
+  private getDefaultChatSystemPrompt(): string {
+    if (this.cachedDefaultChatPrompt !== null) {
+      return this.cachedDefaultChatPrompt;
+    }
+
+    // Resolve from process.cwd() rather than __dirname so the same code works
+    // under CJS (production: node dist/main) and ESM jest (useESM: true) where
+    // __dirname is undefined. dist/ is tried first so production never picks
+    // up a stale src/ file when both happen to exist.
+    const cwd = process.cwd();
+    const candidates = [
+      resolve(cwd, 'dist/modules/chat/prompts/expert-persona-system.md'),
+      resolve(cwd, 'src/modules/chat/prompts/expert-persona-system.md'),
+    ];
+
+    for (const candidate of candidates) {
+      const fromFile = this.tryReadPromptFile(
+        candidate,
+        'default chat prompt',
+        {
+          warnOnError: false,
+        },
+      );
+      if (fromFile) {
+        this.cachedDefaultChatPrompt = fromFile;
+        return fromFile;
+      }
+    }
+
+    console.warn(
+      '[ConfigService] Could not load default chat system prompt from any known location. Using built-in fallback.',
+      { tried: candidates },
     );
+    this.cachedDefaultChatPrompt = BUILT_IN_CHAT_SYSTEM_PROMPT_FALLBACK;
+    return this.cachedDefaultChatPrompt;
+  }
+
+  private tryReadPromptFile(
+    filePath: string,
+    label: string,
+    options: { warnOnError?: boolean } = {},
+  ): string | null {
+    const { warnOnError = true } = options;
+    try {
+      const content = readFileSync(filePath, 'utf-8').trim();
+      return content.length > 0 ? content : null;
+    } catch (error) {
+      if (warnOnError) {
+        console.warn(
+          `[ConfigService] Failed to load chat system prompt (${label}) from ${filePath}. Falling back.`,
+          { error: error instanceof Error ? error.message : String(error) },
+        );
+      }
+      return null;
+    }
   }
 
   getChatRateLimitTtl(): number {

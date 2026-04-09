@@ -5,7 +5,8 @@
   "description": "Nest TypeScript starter repository",
   "license": "MIT",
   "scripts": {
-    "build": "nest build",
+    "build": "nest build && npm run copy:assets",
+    "copy:assets": "node -e \"const{mkdirSync,readdirSync,copyFileSync}=require('fs');const{join}=require('path');const src='src/modules/chat/prompts',dst='dist/modules/chat/prompts';mkdirSync(dst,{recursive:true});for(const f of readdirSync(src))if(f.endsWith('.md'))copyFileSync(join(src,f),join(dst,f));console.log('[copy:assets] copied chat prompts to '+dst);\"",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

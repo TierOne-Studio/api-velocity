@@ -10,7 +10,9 @@ describe('ChatDatabaseRepository', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockTransaction.mockImplementation(async (callback: any) => callback(mockQuery));
+    mockTransaction.mockImplementation(async (callback: any) =>
+      callback(mockQuery),
+    );
     repository = new ChatDatabaseRepository({
       query: mockQuery,
       queryOne: mockQueryOne,
@@ -79,14 +81,16 @@ describe('ChatDatabaseRepository', () => {
 
   it('creates a message and touches the parent conversation timestamp inside a transaction', async () => {
     mockQuery
-      .mockResolvedValueOnce([{
-        id: 'message-1',
-        conversation_id: 'conversation-1',
-        role: 'assistant',
-        content: 'Hello',
-        metadata: { generator: 'fallback' },
-        created_at: new Date(),
-      }])
+      .mockResolvedValueOnce([
+        {
+          id: 'message-1',
+          conversation_id: 'conversation-1',
+          role: 'assistant',
+          content: 'Hello',
+          metadata: { generator: 'fallback' },
+          created_at: new Date(),
+        },
+      ])
       .mockResolvedValueOnce([]);
 
     await repository.createMessage({

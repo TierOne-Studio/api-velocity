@@ -53,6 +53,34 @@ export class ChatAgentService {
   }
 
   async generateReply(params: GenerateReplyParams): Promise<ChatReply> {
+    const startedAt = Date.now();
+    try {
+      const reply = await this.generateReplyInternal(params);
+      this.logReplySummary(reply, startedAt);
+      return reply;
+    } catch (error) {
+      console.error('[ChatAgentService] generateReply threw', {
+        error: error instanceof Error ? error.message : String(error),
+        durationMs: Date.now() - startedAt,
+      });
+      throw error;
+    }
+  }
+
+  private logReplySummary(reply: ChatReply, startedAt: number): void {
+    const metadata = reply.metadata;
+    const sources = metadata.sources;
+    console.info('[ChatAgentService] reply generated', {
+      generator: metadata.generator,
+      sourceCount: Array.isArray(sources) ? sources.length : 0,
+      resultCount: metadata.resultCount,
+      durationMs: Date.now() - startedAt,
+    });
+  }
+
+  private async generateReplyInternal(
+    params: GenerateReplyParams,
+  ): Promise<ChatReply> {
     const searchResponse = await this.airweaveService.searchCollection(
       params.collectionId,
       {
@@ -148,10 +176,7 @@ export class ChatAgentService {
       .join('\n\n');
 
     const prompt = ChatPromptTemplate.fromMessages([
-      [
-        'system',
-        this.configService.getChatSystemPrompt(),
-      ],
+      ['system', this.configService.getChatSystemPrompt()],
       [
         'human',
         [

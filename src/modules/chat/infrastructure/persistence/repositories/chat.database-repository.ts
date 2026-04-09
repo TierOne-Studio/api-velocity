@@ -190,10 +190,9 @@ export class ChatDatabaseRepository implements IChatRepository {
         ],
       );
 
-      await query(
-        'UPDATE conversation SET updated_at = NOW() WHERE id = $1',
-        [params.conversationId],
-      );
+      await query('UPDATE conversation SET updated_at = NOW() WHERE id = $1', [
+        params.conversationId,
+      ]);
 
       const row = rows[0] ?? null;
       if (!row) {

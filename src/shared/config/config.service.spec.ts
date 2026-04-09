@@ -1,3 +1,7 @@
+import { jest } from '@jest/globals';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ConfigService } from './config.service';
 
 describe('ConfigService', () => {
@@ -209,32 +213,97 @@ describe('ConfigService', () => {
       expect(configService.getOpenAiModel()).toBe('gpt-4o-mini');
     });
 
-    it('returns gpt-4o by default', () => {
+    it('returns gpt-5.4-nano by default', () => {
       delete process.env.OPENAI_MODEL;
 
       const configService = new ConfigService();
 
-      expect(configService.getOpenAiModel()).toBe('gpt-4o');
+      expect(configService.getOpenAiModel()).toBe('gpt-5.4-nano');
     });
   });
 
   describe('getChatSystemPrompt', () => {
-    it('returns CHAT_SYSTEM_PROMPT when set', () => {
-      process.env.CHAT_SYSTEM_PROMPT = 'custom prompt';
+    let tempDir: string;
+    let warnSpy: jest.SpiedFunction<typeof console.warn>;
 
-      const configService = new ConfigService();
-
-      expect(configService.getChatSystemPrompt()).toBe('custom prompt');
+    beforeEach(() => {
+      tempDir = mkdtempSync(join(tmpdir(), 'config-service-prompt-'));
+      warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     });
 
-    it('returns the default prompt when not set', () => {
-      delete process.env.CHAT_SYSTEM_PROMPT;
+    afterEach(() => {
+      warnSpy.mockRestore();
+      rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('returns CHAT_SYSTEM_PROMPT when set inline', () => {
+      process.env.CHAT_SYSTEM_PROMPT = 'inline override';
+      delete process.env.CHAT_SYSTEM_PROMPT_PATH;
 
       const configService = new ConfigService();
 
-      expect(configService.getChatSystemPrompt()).toContain(
-        'You answer questions about organization knowledge bases',
+      expect(configService.getChatSystemPrompt()).toBe('inline override');
+    });
+
+    it('returns the file content when CHAT_SYSTEM_PROMPT_PATH is set', () => {
+      delete process.env.CHAT_SYSTEM_PROMPT;
+      const promptPath = join(tempDir, 'custom-prompt.md');
+      writeFileSync(promptPath, '   custom prompt from file   \n', 'utf-8');
+      process.env.CHAT_SYSTEM_PROMPT_PATH = promptPath;
+
+      const configService = new ConfigService();
+
+      expect(configService.getChatSystemPrompt()).toBe(
+        'custom prompt from file',
       );
+    });
+
+    it('inline CHAT_SYSTEM_PROMPT takes precedence over CHAT_SYSTEM_PROMPT_PATH', () => {
+      process.env.CHAT_SYSTEM_PROMPT = 'inline wins';
+      const promptPath = join(tempDir, 'ignored.md');
+      writeFileSync(promptPath, 'should not be read', 'utf-8');
+      process.env.CHAT_SYSTEM_PROMPT_PATH = promptPath;
+
+      const configService = new ConfigService();
+
+      expect(configService.getChatSystemPrompt()).toBe('inline wins');
+    });
+
+    it('falls back to the default prompt file when CHAT_SYSTEM_PROMPT_PATH points to a missing file', () => {
+      delete process.env.CHAT_SYSTEM_PROMPT;
+      process.env.CHAT_SYSTEM_PROMPT_PATH = join(tempDir, 'does-not-exist.md');
+
+      const configService = new ConfigService();
+
+      const prompt = configService.getChatSystemPrompt();
+      expect(prompt).toContain('senior software engineer');
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('CHAT_SYSTEM_PROMPT_PATH'),
+        expect.objectContaining({ error: expect.any(String) }),
+      );
+    });
+
+    it('returns the default expert persona prompt from the bundled file when no env override is set', () => {
+      delete process.env.CHAT_SYSTEM_PROMPT;
+      delete process.env.CHAT_SYSTEM_PROMPT_PATH;
+
+      const configService = new ConfigService();
+
+      const prompt = configService.getChatSystemPrompt();
+      expect(prompt).toContain('senior software engineer');
+      expect(prompt).toContain('grounded **only** in the source context');
+    });
+
+    it('caches the default prompt file read across calls', () => {
+      delete process.env.CHAT_SYSTEM_PROMPT;
+      delete process.env.CHAT_SYSTEM_PROMPT_PATH;
+
+      const configService = new ConfigService();
+
+      const first = configService.getChatSystemPrompt();
+      const second = configService.getChatSystemPrompt();
+
+      expect(first).toBe(second);
     });
   });
 
