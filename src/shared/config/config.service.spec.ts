@@ -276,7 +276,7 @@ describe('ConfigService', () => {
       const configService = new ConfigService();
 
       const prompt = configService.getChatSystemPrompt();
-      expect(prompt).toContain('senior software engineer');
+      expect(prompt).toContain('expert knowledge assistant');
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('CHAT_SYSTEM_PROMPT_PATH'),
         expect.objectContaining({ error: expect.any(String) }),
@@ -290,8 +290,9 @@ describe('ConfigService', () => {
       const configService = new ConfigService();
 
       const prompt = configService.getChatSystemPrompt();
-      expect(prompt).toContain('senior software engineer');
+      expect(prompt).toContain('expert knowledge assistant');
       expect(prompt).toContain('grounded **only** in the source context');
+      expect(prompt).toContain('When context is insufficient');
     });
 
     it('caches the default prompt file read across calls', () => {
