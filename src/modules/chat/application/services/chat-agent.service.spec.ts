@@ -18,6 +18,7 @@ describe('ChatAgentService', () => {
     getChatSystemPrompt: any;
   };
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
+  let consoleInfoSpy: jest.SpiedFunction<typeof console.info>;
 
   beforeEach(() => {
     airweaveService = {
@@ -39,10 +40,14 @@ describe('ChatAgentService', () => {
     consoleErrorSpy = jest
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
+    consoleInfoSpy = jest
+      .spyOn(console, 'info')
+      .mockImplementation(() => undefined);
   });
 
   afterEach(() => {
     consoleErrorSpy.mockRestore();
+    consoleInfoSpy.mockRestore();
   });
 
   it('returns a helpful empty-state answer when search yields no results', async () => {
@@ -186,37 +191,40 @@ describe('ChatAgentService', () => {
     );
   });
 
-  it('reads system prompt from the config service', async () => {
-    configService.getOpenAiApiKey.mockReturnValue('sk-openai');
-    configService.getChatSystemPrompt.mockReturnValue('custom prompt');
+  it('logs a reply summary with generator and source count', async () => {
     airweaveService.searchCollection.mockResolvedValue({
       results: [
         {
           entityId: 'entity-1',
-          name: 'Guide',
-          relevanceScore: 0.9,
+          name: 'Deploy Guide',
+          relevanceScore: 0.95,
           breadcrumbs: [],
           createdAt: null,
           updatedAt: null,
-          text: 'content',
+          text: 'CI deploys via Elastic Beanstalk.',
           sourceName: 'github',
           entityType: 'file',
-          webUrl: 'https://example.com',
+          webUrl: 'https://example.com/deploy-guide',
         },
       ],
     });
-    jest
-      .spyOn(service as ChatAgentServiceWithLangChain, 'generateLangChainReply')
-      .mockResolvedValue('## Answer\n\nOK');
 
     await service.generateReply({
-      organizationName: 'Test',
-      collectionId: 'test',
-      question: 'test?',
+      organizationName: 'Champion Velocity',
+      collectionId: 'champion-velocity',
+      question: 'How do deployments work?',
       previousMessages: [],
     });
 
-    expect(configService.getChatSystemPrompt).toHaveBeenCalled();
+    expect(consoleInfoSpy).toHaveBeenCalledWith(
+      '[ChatAgentService] reply generated',
+      expect.objectContaining({
+        generator: 'fallback-search-summary',
+        sourceCount: 1,
+        resultCount: 1,
+        durationMs: expect.any(Number),
+      }),
+    );
   });
 
   it('reuses the same ChatOpenAI instance for identical config', () => {
