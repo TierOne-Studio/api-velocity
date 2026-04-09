@@ -150,6 +150,25 @@ export class ConfigService {
     }
   }
 
+  getChatAgentMaxIterations(): number {
+    const raw = parseInt(process.env.CHAT_AGENT_MAX_ITERATIONS || '5', 10);
+    if (Number.isNaN(raw) || raw < 1) {
+      return 5;
+    }
+    return raw;
+  }
+
+  getChatAgentToolResultCharCap(): number {
+    const raw = parseInt(
+      process.env.CHAT_AGENT_TOOL_RESULT_CHAR_CAP || '1500',
+      10,
+    );
+    if (Number.isNaN(raw) || raw < 200) {
+      return 1500;
+    }
+    return raw;
+  }
+
   getChatRateLimitTtl(): number {
     return parseInt(process.env.CHAT_RATE_LIMIT_TTL || '60000', 10);
   }

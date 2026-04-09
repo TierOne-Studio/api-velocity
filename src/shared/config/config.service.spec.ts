@@ -308,6 +308,52 @@ describe('ConfigService', () => {
     });
   });
 
+  describe('getChatAgentMaxIterations', () => {
+    it('returns CHAT_AGENT_MAX_ITERATIONS when set', () => {
+      process.env.CHAT_AGENT_MAX_ITERATIONS = '8';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentMaxIterations()).toBe(8);
+    });
+
+    it('returns 5 by default', () => {
+      delete process.env.CHAT_AGENT_MAX_ITERATIONS;
+      const configService = new ConfigService();
+      expect(configService.getChatAgentMaxIterations()).toBe(5);
+    });
+
+    it('returns the default when the value is non-numeric', () => {
+      process.env.CHAT_AGENT_MAX_ITERATIONS = 'not-a-number';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentMaxIterations()).toBe(5);
+    });
+
+    it('returns the default when the value is below 1', () => {
+      process.env.CHAT_AGENT_MAX_ITERATIONS = '0';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentMaxIterations()).toBe(5);
+    });
+  });
+
+  describe('getChatAgentToolResultCharCap', () => {
+    it('returns CHAT_AGENT_TOOL_RESULT_CHAR_CAP when set', () => {
+      process.env.CHAT_AGENT_TOOL_RESULT_CHAR_CAP = '2000';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentToolResultCharCap()).toBe(2000);
+    });
+
+    it('returns 1500 by default', () => {
+      delete process.env.CHAT_AGENT_TOOL_RESULT_CHAR_CAP;
+      const configService = new ConfigService();
+      expect(configService.getChatAgentToolResultCharCap()).toBe(1500);
+    });
+
+    it('returns the default when the value is too small to be useful', () => {
+      process.env.CHAT_AGENT_TOOL_RESULT_CHAR_CAP = '100';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentToolResultCharCap()).toBe(1500);
+    });
+  });
+
   describe('getChatRateLimitTtl', () => {
     it('returns CHAT_RATE_LIMIT_TTL when set', () => {
       process.env.CHAT_RATE_LIMIT_TTL = '30000';
