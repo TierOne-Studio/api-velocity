@@ -27,6 +27,22 @@ describe('createSearchKnowledgeBaseTool', () => {
   let airweaveService: { searchCollection: any };
   let sourcesSink: AirweaveSearchResultSummary[];
 
+  function makeToolParams(
+    overrides: Partial<
+      Parameters<typeof createSearchKnowledgeBaseTool>[0]
+    > = {},
+  ) {
+    return {
+      collectionId: 'col-1',
+      airweaveService: airweaveService as never,
+      sourcesSink,
+      resultLimit: 12,
+      resultCharCap: 3000,
+      searchTier: 'classic' as const,
+      ...overrides,
+    };
+  }
+
   beforeEach(() => {
     airweaveService = {
       searchCollection: jest.fn(),
@@ -35,11 +51,7 @@ describe('createSearchKnowledgeBaseTool', () => {
   });
 
   it('declares the expected name and description', () => {
-    const tool = createSearchKnowledgeBaseTool({
-      collectionId: 'col-1',
-      airweaveService: airweaveService as never,
-      sourcesSink,
-    });
+    const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
     expect(tool.name).toBe('search_knowledge_base');
     expect(tool.description).toContain('MULTIPLE');
@@ -47,11 +59,7 @@ describe('createSearchKnowledgeBaseTool', () => {
   });
 
   it('does not advertise an entityType parameter (regression: client-side filter caused zero-result bug)', () => {
-    const tool = createSearchKnowledgeBaseTool({
-      collectionId: 'col-1',
-      airweaveService: airweaveService as never,
-      sourcesSink,
-    });
+    const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
     expect(tool.description).not.toContain('entityType');
     // Schema should also not accept entityType. We assert by passing one and
@@ -60,19 +68,16 @@ describe('createSearchKnowledgeBaseTool', () => {
 
   it('forwards the query to airweaveService.searchCollection with the configured collection', async () => {
     airweaveService.searchCollection.mockResolvedValue({ results: [] });
-    const tool = createSearchKnowledgeBaseTool({
-      collectionId: 'col-1',
-      airweaveService: airweaveService as never,
-      sourcesSink,
-    });
+    const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
     await tool.invoke({ query: 'deploy flow' });
 
     expect(airweaveService.searchCollection).toHaveBeenCalledWith('col-1', {
       query: 'deploy flow',
       tier: 'classic',
-      limit: 8,
+      limit: 12,
       offset: 0,
+      retrievalStrategy: undefined,
     });
   });
 
@@ -82,11 +87,7 @@ describe('createSearchKnowledgeBaseTool', () => {
       makeResult({ entityId: 'b', name: 'B' }),
     ];
     airweaveService.searchCollection.mockResolvedValue({ results });
-    const tool = createSearchKnowledgeBaseTool({
-      collectionId: 'col-1',
-      airweaveService: airweaveService as never,
-      sourcesSink,
-    });
+    const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
     await tool.invoke({ query: 'anything' });
 
@@ -104,11 +105,7 @@ describe('createSearchKnowledgeBaseTool', () => {
       makeResult({ entityId: 'c', entityType: 'JiraIssueEntity' }),
     ];
     airweaveService.searchCollection.mockResolvedValue({ results });
-    const tool = createSearchKnowledgeBaseTool({
-      collectionId: 'col-1',
-      airweaveService: airweaveService as never,
-      sourcesSink,
-    });
+    const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
     const raw = await tool.invoke({ query: 'projects' });
     const parsed = JSON.parse(raw) as {
@@ -136,11 +133,7 @@ describe('createSearchKnowledgeBaseTool', () => {
           makeResult({ entityId: 'b', name: 'Release Notes' }),
         ],
       });
-      const tool = createSearchKnowledgeBaseTool({
-        collectionId: 'col-1',
-        airweaveService: airweaveService as never,
-        sourcesSink,
-      });
+      const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
       await tool.invoke({ query: 'deploy flow' });
 
@@ -197,11 +190,7 @@ describe('createSearchKnowledgeBaseTool', () => {
       }),
     ];
     airweaveService.searchCollection.mockResolvedValue({ results });
-    const tool = createSearchKnowledgeBaseTool({
-      collectionId: 'col-1',
-      airweaveService: airweaveService as never,
-      sourcesSink,
-    });
+    const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
     const raw = await tool.invoke({ query: 'pages' });
     const parsed = JSON.parse(raw) as {
@@ -232,12 +221,9 @@ describe('createSearchKnowledgeBaseTool', () => {
     airweaveService.searchCollection.mockResolvedValue({
       results: [makeResult({ text: longText })],
     });
-    const tool = createSearchKnowledgeBaseTool({
-      collectionId: 'col-1',
-      airweaveService: airweaveService as never,
-      sourcesSink,
-      resultCharCap: 200,
-    });
+    const tool = createSearchKnowledgeBaseTool(
+      makeToolParams({ resultCharCap: 200 }),
+    );
 
     const raw = await tool.invoke({ query: 'anything' });
     const parsed = JSON.parse(raw) as {
@@ -250,11 +236,7 @@ describe('createSearchKnowledgeBaseTool', () => {
 
   it('returns a helpful empty-results note when the search yields nothing', async () => {
     airweaveService.searchCollection.mockResolvedValue({ results: [] });
-    const tool = createSearchKnowledgeBaseTool({
-      collectionId: 'col-1',
-      airweaveService: airweaveService as never,
-      sourcesSink,
-    });
+    const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
     const raw = await tool.invoke({ query: 'nothing' });
     const parsed = JSON.parse(raw) as {
@@ -271,12 +253,9 @@ describe('createSearchKnowledgeBaseTool', () => {
 
   it('respects a custom resultLimit in the search params', async () => {
     airweaveService.searchCollection.mockResolvedValue({ results: [] });
-    const tool = createSearchKnowledgeBaseTool({
-      collectionId: 'col-1',
-      airweaveService: airweaveService as never,
-      sourcesSink,
-      resultLimit: 3,
-    });
+    const tool = createSearchKnowledgeBaseTool(
+      makeToolParams({ resultLimit: 3 }),
+    );
 
     await tool.invoke({ query: 'anything' });
 

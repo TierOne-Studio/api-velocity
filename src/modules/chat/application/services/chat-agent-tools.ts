@@ -3,10 +3,9 @@ import { z } from 'zod';
 import type {
   AirweaveService,
   AirweaveSearchResultSummary,
+  AirweaveSearchTier,
+  AirweaveSearchRetrievalStrategy,
 } from '../../../airweave/application/services/airweave.service';
-
-const DEFAULT_TOOL_RESULT_CHAR_CAP = 3000;
-const DEFAULT_TOOL_RESULT_LIMIT = 8;
 
 const searchKnowledgeBaseSchema = z.object({
   query: z
@@ -20,39 +19,25 @@ const searchKnowledgeBaseSchema = z.object({
 export type CreateSearchKnowledgeBaseToolParams = {
   collectionId: string;
   airweaveService: AirweaveService;
-  /**
-   * Mutated across tool calls. Deduped and capped by the caller before being
-   * emitted as response metadata.sources.
-   */
+  /** Mutated across tool calls. Deduped and capped by the caller. */
   sourcesSink: AirweaveSearchResultSummary[];
-  /**
-   * Per-call search limit passed to Airweave. Defaults to 8.
-   */
-  resultLimit?: number;
-  /**
-   * Per-chunk character cap applied before the text is handed back to the LLM.
-   * Prevents a single long chunk from dominating the context window. Defaults
-   * to 1500 chars.
-   */
-  resultCharCap?: number;
+  /** Per-call search limit passed to Airweave. */
+  resultLimit: number;
+  /** Per-chunk character cap before handing text to the LLM. */
+  resultCharCap: number;
+  /** Airweave search tier: 'classic' (accurate) or 'instant' (fast). */
+  searchTier: AirweaveSearchTier;
+  /** Airweave retrieval strategy. Undefined = Airweave default. */
+  retrievalStrategy?: AirweaveSearchRetrievalStrategy;
 };
 
 /**
  * Builds a `search_knowledge_base` tool bound to a single chat request.
  *
- * The LLM is expected to call this tool multiple times with different
- * natural-language queries to assemble whole-picture context before answering.
- * Each call's results are pushed into `sourcesSink` so the caller can aggregate
- * and dedupe across all tool calls at the end of the request.
- *
- * Important: this tool does NOT accept an `entityType` filter. A previous
- * version did, with fake example values ("file", "doc", "spec") that never
- * matched Airweave's real entity_type strings (e.g. `ConfluencePageEntity`,
- * `GithubFileEntity`). The agent happily passed the fake values and every tool
- * call returned zero results because the client-side filter stripped
- * everything. The feature was pure harm and has been removed. If Airweave
- * later exposes a server-side filter API with documented type values, we can
- * reintroduce it properly.
+ * The LLM calls this tool multiple times with different natural-language
+ * queries. Each call's results are pushed into `sourcesSink` for cross-call
+ * metadata aggregation, then deduped by entityId before being returned to
+ * the LLM so each entity gets exactly one slot in the response.
  */
 export function createSearchKnowledgeBaseTool(
   params: CreateSearchKnowledgeBaseToolParams,
@@ -61,8 +46,10 @@ export function createSearchKnowledgeBaseTool(
     collectionId,
     airweaveService,
     sourcesSink,
-    resultLimit = DEFAULT_TOOL_RESULT_LIMIT,
-    resultCharCap = DEFAULT_TOOL_RESULT_CHAR_CAP,
+    resultLimit,
+    resultCharCap,
+    searchTier,
+    retrievalStrategy,
   } = params;
 
   return tool(
@@ -71,31 +58,23 @@ export function createSearchKnowledgeBaseTool(
 
       const response = await airweaveService.searchCollection(collectionId, {
         query,
-        tier: 'classic',
+        tier: searchTier,
         limit: resultLimit,
         offset: 0,
+        retrievalStrategy,
       });
 
       const results = response.results;
 
-      // Push raw (un-deduped) results into the sink so cross-tool-call
-      // metadata aggregation in the service layer sees every chunk Airweave
-      // returned. Dedup for the LLM is done separately below.
       sourcesSink.push(...results);
 
-      // Airweave often returns multiple chunks of the same entity (e.g. a
-      // long Confluence page split into 4 chunks, or a space overview that
-      // matches a query 5 different ways). When that happens the top-k
-      // gets dominated by 1-2 entities and individual sibling pages get
-      // pushed out, which makes the agent describe a container instead of
-      // its contents. Dedupe by entityId before handing results to the LLM
-      // so each entity gets exactly one slot, and the agent can see more
-      // distinct material in the same call.
       const dedupedForLlm = dedupeAndCapSources(results, results.length);
 
       console.info('[chat-agent-tools] search_knowledge_base called', {
         collectionId,
         query,
+        searchTier,
+        retrievalStrategy: retrievalStrategy ?? 'default',
         rawResultCount: results.length,
         dedupedResultCount: dedupedForLlm.length,
         resultNames: dedupedForLlm.map((r) => r.name),
@@ -148,8 +127,7 @@ export function createSearchKnowledgeBaseTool(
 
 /**
  * Dedupes search results by entityId (highest relevance wins), sorts by
- * relevance descending, and caps at `limit` entries. Used by the agent path
- * to normalize sourcesSink before emitting as response metadata.
+ * relevance descending, and caps at `limit` entries.
  */
 export function dedupeAndCapSources(
   results: AirweaveSearchResultSummary[],

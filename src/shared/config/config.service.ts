@@ -173,6 +173,50 @@ export class ConfigService {
     return raw;
   }
 
+  getChatAgentToolResultLimit(): number {
+    const raw = parseInt(process.env.CHAT_AGENT_TOOL_RESULT_LIMIT || '12', 10);
+    if (Number.isNaN(raw) || raw < 1) {
+      return 12;
+    }
+    return raw;
+  }
+
+  getChatAgentMaxSources(): number {
+    const raw = parseInt(process.env.CHAT_AGENT_MAX_SOURCES || '15', 10);
+    if (Number.isNaN(raw) || raw < 1) {
+      return 15;
+    }
+    return raw;
+  }
+
+  getChatAgentHistoryWindow(): number {
+    const raw = parseInt(process.env.CHAT_AGENT_HISTORY_WINDOW || '6', 10);
+    if (Number.isNaN(raw) || raw < 0) {
+      return 6;
+    }
+    return raw;
+  }
+
+  getChatAgentSearchTier(): 'classic' | 'instant' {
+    const val = process.env.CHAT_AGENT_SEARCH_TIER?.trim().toLowerCase();
+    if (val === 'instant') {
+      return 'instant';
+    }
+    return 'classic';
+  }
+
+  getChatAgentRetrievalStrategy():
+    | 'semantic'
+    | 'keyword'
+    | 'hybrid'
+    | undefined {
+    const val = process.env.CHAT_AGENT_RETRIEVAL_STRATEGY?.trim().toLowerCase();
+    if (val === 'semantic' || val === 'keyword' || val === 'hybrid') {
+      return val;
+    }
+    return undefined;
+  }
+
   getChatRateLimitTtl(): number {
     return parseInt(process.env.CHAT_RATE_LIMIT_TTL || '60000', 10);
   }

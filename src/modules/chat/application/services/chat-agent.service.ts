@@ -154,7 +154,10 @@ export class ChatAgentService {
       collectionId: params.collectionId,
       airweaveService: this.airweaveService,
       sourcesSink: collectedSources,
+      resultLimit: this.configService.getChatAgentToolResultLimit(),
       resultCharCap: this.configService.getChatAgentToolResultCharCap(),
+      searchTier: this.configService.getChatAgentSearchTier(),
+      retrievalStrategy: this.configService.getChatAgentRetrievalStrategy(),
     });
 
     const systemPrompt = this.buildAgentSystemPrompt(params);
@@ -166,8 +169,9 @@ export class ChatAgentService {
       systemPrompt,
     });
 
+    const historyWindow = this.configService.getChatAgentHistoryWindow();
     const historyMessages: BaseMessage[] = params.previousMessages
-      .slice(-6)
+      .slice(-historyWindow)
       .map((message) =>
         message.role === 'assistant'
           ? new AIMessage(message.content)
@@ -198,7 +202,8 @@ export class ChatAgentService {
     }
 
     const toolCallCount = this.countToolMessages(resultMessages);
-    const uniqueSources = dedupeAndCapSources(collectedSources, 10);
+    const maxSources = this.configService.getChatAgentMaxSources();
+    const uniqueSources = dedupeAndCapSources(collectedSources, maxSources);
 
     return {
       content: finalContent,

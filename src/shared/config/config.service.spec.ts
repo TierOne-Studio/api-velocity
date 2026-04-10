@@ -354,6 +354,112 @@ describe('ConfigService', () => {
     });
   });
 
+  describe('getChatAgentToolResultLimit', () => {
+    it('returns CHAT_AGENT_TOOL_RESULT_LIMIT when set', () => {
+      process.env.CHAT_AGENT_TOOL_RESULT_LIMIT = '20';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentToolResultLimit()).toBe(20);
+    });
+
+    it('returns 12 by default', () => {
+      delete process.env.CHAT_AGENT_TOOL_RESULT_LIMIT;
+      const configService = new ConfigService();
+      expect(configService.getChatAgentToolResultLimit()).toBe(12);
+    });
+
+    it('returns the default for invalid values', () => {
+      process.env.CHAT_AGENT_TOOL_RESULT_LIMIT = '0';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentToolResultLimit()).toBe(12);
+    });
+  });
+
+  describe('getChatAgentMaxSources', () => {
+    it('returns CHAT_AGENT_MAX_SOURCES when set', () => {
+      process.env.CHAT_AGENT_MAX_SOURCES = '25';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentMaxSources()).toBe(25);
+    });
+
+    it('returns 15 by default', () => {
+      delete process.env.CHAT_AGENT_MAX_SOURCES;
+      const configService = new ConfigService();
+      expect(configService.getChatAgentMaxSources()).toBe(15);
+    });
+  });
+
+  describe('getChatAgentHistoryWindow', () => {
+    it('returns CHAT_AGENT_HISTORY_WINDOW when set', () => {
+      process.env.CHAT_AGENT_HISTORY_WINDOW = '10';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentHistoryWindow()).toBe(10);
+    });
+
+    it('returns 6 by default', () => {
+      delete process.env.CHAT_AGENT_HISTORY_WINDOW;
+      const configService = new ConfigService();
+      expect(configService.getChatAgentHistoryWindow()).toBe(6);
+    });
+
+    it('allows 0 to disable history', () => {
+      process.env.CHAT_AGENT_HISTORY_WINDOW = '0';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentHistoryWindow()).toBe(0);
+    });
+  });
+
+  describe('getChatAgentSearchTier', () => {
+    it('returns instant when CHAT_AGENT_SEARCH_TIER is set to instant', () => {
+      process.env.CHAT_AGENT_SEARCH_TIER = 'instant';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentSearchTier()).toBe('instant');
+    });
+
+    it('returns classic by default', () => {
+      delete process.env.CHAT_AGENT_SEARCH_TIER;
+      const configService = new ConfigService();
+      expect(configService.getChatAgentSearchTier()).toBe('classic');
+    });
+
+    it('returns classic for unknown values', () => {
+      process.env.CHAT_AGENT_SEARCH_TIER = 'turbo';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentSearchTier()).toBe('classic');
+    });
+  });
+
+  describe('getChatAgentRetrievalStrategy', () => {
+    it('returns the strategy when set to a valid value', () => {
+      process.env.CHAT_AGENT_RETRIEVAL_STRATEGY = 'hybrid';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentRetrievalStrategy()).toBe('hybrid');
+    });
+
+    it('accepts semantic', () => {
+      process.env.CHAT_AGENT_RETRIEVAL_STRATEGY = 'semantic';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentRetrievalStrategy()).toBe('semantic');
+    });
+
+    it('accepts keyword', () => {
+      process.env.CHAT_AGENT_RETRIEVAL_STRATEGY = 'keyword';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentRetrievalStrategy()).toBe('keyword');
+    });
+
+    it('returns undefined by default (uses Airweave default)', () => {
+      delete process.env.CHAT_AGENT_RETRIEVAL_STRATEGY;
+      const configService = new ConfigService();
+      expect(configService.getChatAgentRetrievalStrategy()).toBeUndefined();
+    });
+
+    it('returns undefined for unknown values', () => {
+      process.env.CHAT_AGENT_RETRIEVAL_STRATEGY = 'quantum';
+      const configService = new ConfigService();
+      expect(configService.getChatAgentRetrievalStrategy()).toBeUndefined();
+    });
+  });
+
   describe('getChatRateLimitTtl', () => {
     it('returns CHAT_RATE_LIMIT_TTL when set', () => {
       process.env.CHAT_RATE_LIMIT_TTL = '30000';
