@@ -19,6 +19,11 @@ describe('ChatAgentService', () => {
     getChatSystemPrompt: any;
     getChatAgentMaxIterations: any;
     getChatAgentToolResultCharCap: any;
+    getChatAgentToolResultLimit: any;
+    getChatAgentMaxSources: any;
+    getChatAgentHistoryWindow: any;
+    getChatAgentSearchTier: any;
+    getChatAgentRetrievalStrategy: any;
   };
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
   let consoleInfoSpy: jest.SpiedFunction<typeof console.info>;
@@ -33,6 +38,11 @@ describe('ChatAgentService', () => {
       getChatSystemPrompt: jest.fn().mockReturnValue('expert prompt'),
       getChatAgentMaxIterations: jest.fn().mockReturnValue(5),
       getChatAgentToolResultCharCap: jest.fn().mockReturnValue(3000),
+      getChatAgentToolResultLimit: jest.fn().mockReturnValue(12),
+      getChatAgentMaxSources: jest.fn().mockReturnValue(15),
+      getChatAgentHistoryWindow: jest.fn().mockReturnValue(6),
+      getChatAgentSearchTier: jest.fn().mockReturnValue('classic'),
+      getChatAgentRetrievalStrategy: jest.fn().mockReturnValue(undefined),
     };
     service = new ChatAgentService(
       airweaveService as never,
