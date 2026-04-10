@@ -1,8 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { Document } from '@langchain/core/documents';
-import { StringOutputParser } from '@langchain/core/output_parsers';
-import { ChatPromptTemplate } from '@langchain/core/prompts';
-import { RunnableSequence } from '@langchain/core/runnables';
 import { ChatOpenAI } from '@langchain/openai';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
@@ -110,18 +106,15 @@ export class ChatAgentService {
   }
 
   /**
-   * Three-tier fallback dispatcher.
+   * Two-tier dispatcher.
    *
-   *   1. no OpenAI key              → keyless fallback (raw search summary)
-   *   2. agent path (Phase 2)       → multi-retrieval tool-calling agent
-   *       on error →
-   *   3. single-shot path (Phase 1) → one retrieval + one LLM call
-   *           on error →
-   *   4. keyless fallback           → raw search summary (last resort)
+   *   1. no OpenAI key  → keyless fallback (raw search summary)
+   *   2. agent path     → multi-retrieval tool-calling agent
+   *       on error      → keyless fallback (raw search summary)
    *
    * Each tier sets `metadata.generator` to a distinct value so downstream
    * observability can distinguish the healthy agentic path from the
-   * degraded paths.
+   * degraded fallback.
    */
   private async generateReplyInternal(
     params: GenerateReplyParams,
@@ -135,8 +128,8 @@ export class ChatAgentService {
     try {
       return await this.generateAgentReply(apiKey, params);
     } catch (agentError) {
-      console.warn(
-        '[ChatAgentService] Agent path failed, falling back to single-shot',
+      console.error(
+        '[ChatAgentService] Agent path failed, falling back to raw search',
         {
           error:
             agentError instanceof Error
@@ -144,27 +137,13 @@ export class ChatAgentService {
               : String(agentError),
         },
       );
-
-      try {
-        return await this.generateSingleShotReply(apiKey, params);
-      } catch (singleShotError) {
-        console.error(
-          '[ChatAgentService] Single-shot path also failed, falling back to raw search',
-          {
-            error:
-              singleShotError instanceof Error
-                ? singleShotError.message
-                : String(singleShotError),
-          },
-        );
-        return this.generateKeylessFallback(params);
-      }
+      return this.generateKeylessFallback(params);
     }
   }
 
   /**
-   * Phase 2 agent path. Gives the LLM a `search_knowledge_base` tool and
-   * lets it drive multiple retrievals, then synthesize a grounded answer.
+   * Agent path. Gives the LLM a `search_knowledge_base` tool and lets it
+   * drive multiple retrievals, then synthesize a grounded answer.
    */
   async generateAgentReply(
     apiKey: string,
@@ -320,159 +299,42 @@ export class ChatAgentService {
   }
 
   /**
-   * Phase 1 single-shot path. Kept as a mid-tier fallback when the agent
-   * path errors. Does one retrieval with the raw user query, stuffs the
-   * top results into a single LLM prompt, returns the response.
-   */
-  async generateSingleShotReply(
-    apiKey: string,
-    params: GenerateReplyParams,
-  ): Promise<ChatReply> {
-    const results = await this.runSingleSearch(
-      params.collectionId,
-      params.question,
-    );
-
-    if (results.length === 0) {
-      return this.buildNoResultsReply(params.organizationName);
-    }
-
-    const content = await this.generateLangChainReply(apiKey, params, results);
-
-    return {
-      content,
-      metadata: {
-        generator: 'langchain-openai',
-        sources: this.mapSources(results),
-        resultCount: results.length,
-      },
-    };
-  }
-
-  /**
    * Keyless fallback path. Retrieves once, emits raw search summary if
    * results exist, or an explicit no-results message if not.
    */
   private async generateKeylessFallback(
     params: GenerateReplyParams,
   ): Promise<ChatReply> {
-    const results = await this.runSingleSearch(
+    const response = await this.airweaveService.searchCollection(
       params.collectionId,
-      params.question,
+      {
+        query: params.question,
+        tier: 'classic',
+        limit: 5,
+        offset: 0,
+      },
     );
+    const results = response.results;
 
     if (results.length === 0) {
-      return this.buildNoResultsReply(params.organizationName);
+      return {
+        content: [
+          '## Answer',
+          '',
+          `I could not find relevant indexed material for this question in ${params.organizationName} yet.`,
+          '',
+          '### Suggested Next Step',
+          '',
+          '- Try a more specific query, or configure additional indexed sources for this organization.',
+        ].join('\n'),
+        metadata: {
+          generator: 'fallback-no-results',
+          sources: [],
+          resultCount: 0,
+        },
+      };
     }
 
-    return this.buildFallbackReply(params.question, results);
-  }
-
-  private async runSingleSearch(
-    collectionId: string,
-    query: string,
-  ): Promise<AirweaveSearchResultSummary[]> {
-    const response = await this.airweaveService.searchCollection(collectionId, {
-      query,
-      tier: 'classic',
-      limit: 5,
-      offset: 0,
-    });
-    return response.results;
-  }
-
-  private buildNoResultsReply(organizationName: string): ChatReply {
-    return {
-      content: [
-        '## Answer',
-        '',
-        `I could not find relevant indexed material for this question in ${organizationName} yet.`,
-        '',
-        '### Suggested Next Step',
-        '',
-        '- Try a more specific query, or configure additional indexed sources for this organization.',
-      ].join('\n'),
-      metadata: {
-        generator: 'fallback-no-results',
-        sources: [],
-        resultCount: 0,
-      },
-    };
-  }
-
-  async generateLangChainReply(
-    apiKey: string,
-    params: GenerateReplyParams,
-    results: AirweaveSearchResultSummary[],
-  ): Promise<string> {
-    const documents = results.map(
-      (result) =>
-        new Document({
-          pageContent: result.text,
-          metadata: {
-            name: result.name,
-            sourceName: result.sourceName,
-            entityType: result.entityType,
-            webUrl: result.webUrl,
-            relevanceScore: result.relevanceScore,
-          },
-        }),
-    );
-
-    const context = documents
-      .map((document, index) => {
-        return [
-          `Source ${index + 1}: ${String(document.metadata.name ?? 'Unknown source')}`,
-          `Type: ${String(document.metadata.entityType ?? 'unknown')}`,
-          `Connector: ${String(document.metadata.sourceName ?? 'unknown')}`,
-          `URL: ${String(document.metadata.webUrl ?? '')}`,
-          `Excerpt: ${document.pageContent}`,
-        ].join('\n');
-      })
-      .join('\n\n');
-
-    const history = params.previousMessages
-      .slice(-6)
-      .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
-      .join('\n\n');
-
-    const prompt = ChatPromptTemplate.fromMessages([
-      ['system', this.configService.getChatSystemPrompt()],
-      [
-        'human',
-        [
-          'Organization: {organizationName}',
-          'Conversation history:\n{history}',
-          'Question: {question}',
-          'Source context:\n{context}',
-        ].join('\n\n'),
-      ],
-    ]);
-
-    const chain = RunnableSequence.from([
-      prompt,
-      this.getOrCreateLlm(apiKey),
-      new StringOutputParser(),
-    ]);
-
-    const content = await chain.invoke({
-      organizationName: params.organizationName,
-      history: history || 'none',
-      question: params.question,
-      context,
-    });
-
-    if (!content.trim()) {
-      throw new Error('LangChain returned an empty response');
-    }
-
-    return content.trim();
-  }
-
-  private buildFallbackReply(
-    question: string,
-    results: AirweaveSearchResultSummary[],
-  ): ChatReply {
     const topResults = results.slice(0, 3);
     const findings = topResults.map((result) => {
       const excerpt = result.text.replace(/\s+/g, ' ').trim();
@@ -489,7 +351,7 @@ export class ChatAgentService {
       content: [
         '## Answer',
         '',
-        `Here are the most relevant indexed findings for: ${question}`,
+        `Here are the most relevant indexed findings for: ${params.question}`,
         '',
         '### Key Findings',
         ...findings,

@@ -8,10 +8,6 @@ type ChatReply = {
 
 type ChatAgentServiceInternals = ChatAgentService & {
   generateAgentReply: (apiKey: string, params: unknown) => Promise<ChatReply>;
-  generateSingleShotReply: (
-    apiKey: string,
-    params: unknown,
-  ) => Promise<ChatReply>;
 };
 
 describe('ChatAgentService', () => {
@@ -25,7 +21,6 @@ describe('ChatAgentService', () => {
     getChatAgentToolResultCharCap: any;
   };
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
-  let consoleWarnSpy: jest.SpiedFunction<typeof console.warn>;
   let consoleInfoSpy: jest.SpiedFunction<typeof console.info>;
 
   beforeEach(() => {
@@ -37,7 +32,7 @@ describe('ChatAgentService', () => {
       getOpenAiModel: jest.fn().mockReturnValue('gpt-4o'),
       getChatSystemPrompt: jest.fn().mockReturnValue('expert prompt'),
       getChatAgentMaxIterations: jest.fn().mockReturnValue(5),
-      getChatAgentToolResultCharCap: jest.fn().mockReturnValue(1500),
+      getChatAgentToolResultCharCap: jest.fn().mockReturnValue(3000),
     };
     service = new ChatAgentService(
       airweaveService as never,
@@ -46,9 +41,6 @@ describe('ChatAgentService', () => {
     consoleErrorSpy = jest
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
-    consoleWarnSpy = jest
-      .spyOn(console, 'warn')
-      .mockImplementation(() => undefined);
     consoleInfoSpy = jest
       .spyOn(console, 'info')
       .mockImplementation(() => undefined);
@@ -56,7 +48,6 @@ describe('ChatAgentService', () => {
 
   afterEach(() => {
     consoleErrorSpy.mockRestore();
-    consoleWarnSpy.mockRestore();
     consoleInfoSpy.mockRestore();
   });
 
@@ -76,7 +67,7 @@ describe('ChatAgentService', () => {
     };
   }
 
-  describe('three-tier fallback dispatcher', () => {
+  describe('two-tier fallback dispatcher', () => {
     it('uses the keyless fallback path when OpenAI is not configured', async () => {
       airweaveService.searchCollection.mockResolvedValue({
         results: [makeSearchResult()],
@@ -161,47 +152,11 @@ describe('ChatAgentService', () => {
           toolCallCount: 2,
         }),
       );
-      // Dispatcher must not call the single-shot path on the happy agent path.
+      // Dispatcher must not call Airweave directly on the agent happy path.
       expect(airweaveService.searchCollection).not.toHaveBeenCalled();
     });
 
-    it('falls through from the failed agent path to the single-shot path', async () => {
-      configService.getOpenAiApiKey.mockReturnValue('sk-openai');
-      jest
-        .spyOn(service as ChatAgentServiceInternals, 'generateAgentReply')
-        .mockRejectedValue(new Error('agent exploded'));
-      const singleShotSpy = jest
-        .spyOn(service as ChatAgentServiceInternals, 'generateSingleShotReply')
-        .mockResolvedValue({
-          content: 'Single-shot answer',
-          metadata: {
-            generator: 'langchain-openai',
-            sources: [],
-            resultCount: 0,
-          },
-        });
-
-      const result = await service.generateReply({
-        organizationName: 'Champion Velocity',
-        collectionId: 'champion-velocity',
-        question: 'How do deployments work?',
-        previousMessages: [],
-      });
-
-      expect(singleShotSpy).toHaveBeenCalledWith(
-        'sk-openai',
-        expect.any(Object),
-      );
-      expect(result.metadata).toEqual(
-        expect.objectContaining({ generator: 'langchain-openai' }),
-      );
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
-        '[ChatAgentService] Agent path failed, falling back to single-shot',
-        expect.objectContaining({ error: 'agent exploded' }),
-      );
-    });
-
-    it('falls all the way through to the keyless fallback when both agent and single-shot fail', async () => {
+    it('falls back to keyless when the agent path fails', async () => {
       configService.getOpenAiApiKey.mockReturnValue('sk-openai');
       airweaveService.searchCollection.mockResolvedValue({
         results: [makeSearchResult()],
@@ -209,9 +164,6 @@ describe('ChatAgentService', () => {
       jest
         .spyOn(service as ChatAgentServiceInternals, 'generateAgentReply')
         .mockRejectedValue(new Error('agent exploded'));
-      jest
-        .spyOn(service as ChatAgentServiceInternals, 'generateSingleShotReply')
-        .mockRejectedValue(new Error('single-shot exploded'));
 
       const result = await service.generateReply({
         organizationName: 'Champion Velocity',
@@ -227,8 +179,8 @@ describe('ChatAgentService', () => {
         }),
       );
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        '[ChatAgentService] Single-shot path also failed, falling back to raw search',
-        expect.objectContaining({ error: 'single-shot exploded' }),
+        '[ChatAgentService] Agent path failed, falling back to raw search',
+        expect.objectContaining({ error: 'agent exploded' }),
       );
     });
   });
@@ -290,10 +242,6 @@ describe('ChatAgentService', () => {
 
   describe('agent prompt construction', () => {
     it('returns the raw user question as the agent user message (no Organization prefix)', () => {
-      // Regression: a previous version prefixed the user message with
-      // "Organization: foo\n\nQuestion: ..." which the agent then copied
-      // verbatim into search_knowledge_base, polluting the retrieval query
-      // and causing semantic match quality to drop noticeably.
       const message = (
         service as unknown as {
           buildAgentUserMessage: (params: { question: string }) => string;
