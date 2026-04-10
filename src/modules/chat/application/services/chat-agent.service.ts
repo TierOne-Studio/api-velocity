@@ -32,6 +32,12 @@ type ChatReply = {
   metadata: Record<string, unknown>;
 };
 
+export type ChatStreamEvent =
+  | { type: 'thinking' }
+  | { type: 'searching'; query: string }
+  | { type: 'chunk'; content: string }
+  | { type: 'done'; reply: ChatReply };
+
 // Appended to the configured expert-persona system prompt only in the agent
 // path. Lives inline (rather than in the markdown prompt file) because it is
 // tightly coupled to the `search_knowledge_base` tool schema defined in
@@ -214,6 +220,183 @@ export class ChatAgentService {
         toolCallCount,
       },
     };
+  }
+
+  /**
+   * Streaming version of generateAgentReply. Uses agent.stream() to yield
+   * events in real time as the agent reasons, calls tools, and generates
+   * the final answer. Falls back to generateAgentReply + fake chunking
+   * if streaming fails.
+   */
+  async *generateReplyStreaming(
+    params: GenerateReplyParams,
+  ): AsyncGenerator<ChatStreamEvent> {
+    const apiKey = this.configService.getOpenAiApiKey();
+
+    if (!apiKey) {
+      const fallback = await this.generateKeylessFallback(params);
+      for (const chunk of this.fakeChunkContent(fallback.content)) {
+        yield { type: 'chunk', content: chunk };
+      }
+      yield { type: 'done', reply: fallback };
+      return;
+    }
+
+    const collectedSources: AirweaveSearchResultSummary[] = [];
+    const searchTool = createSearchKnowledgeBaseTool({
+      collectionId: params.collectionId,
+      airweaveService: this.airweaveService,
+      sourcesSink: collectedSources,
+      resultLimit: this.configService.getChatAgentToolResultLimit(),
+      resultCharCap: this.configService.getChatAgentToolResultCharCap(),
+      searchTier: this.configService.getChatAgentSearchTier(),
+      retrievalStrategy: this.configService.getChatAgentRetrievalStrategy(),
+    });
+
+    const systemPrompt = this.buildAgentSystemPrompt(params);
+    const maxIterations = this.configService.getChatAgentMaxIterations();
+
+    const agent = createAgent({
+      model: this.getOrCreateLlm(apiKey) as BaseChatModel,
+      tools: [searchTool],
+      systemPrompt,
+    });
+
+    const historyWindow = this.configService.getChatAgentHistoryWindow();
+    const historyMessages: BaseMessage[] = params.previousMessages
+      .slice(-historyWindow)
+      .map((message) =>
+        message.role === 'assistant'
+          ? new AIMessage(message.content)
+          : new HumanMessage(message.content),
+      );
+    const messages: BaseMessage[] = [
+      ...historyMessages,
+      new HumanMessage(this.buildAgentUserMessage(params)),
+    ];
+
+    const recursionLimit = Math.max(10, maxIterations * 4);
+    let emittedThinking = false;
+    let finalContent = '';
+    let toolCallCount = 0;
+
+    try {
+      const stream = await agent.stream(
+        { messages } as Parameters<typeof agent.stream>[0],
+        {
+          recursionLimit,
+          streamMode: 'messages',
+        },
+      );
+
+      for await (const rawChunk of stream) {
+        // stream mode "messages" yields [message, metadata] tuples
+        const [message, metadata] = rawChunk as unknown as [
+          BaseMessage,
+          Record<string, unknown>,
+        ];
+
+        if (!message) continue;
+
+        const messageType = this.getMessageType(message);
+
+        // Tool messages = search tool completed
+        if (messageType === 'tool') {
+          toolCallCount++;
+          continue;
+        }
+
+        // AI messages with tool_calls = agent deciding to search
+        if (messageType === 'ai' || messageType === 'assistant') {
+          const aiMsg = message as AIMessage;
+
+          // Check if this is a tool-calling step
+          if (aiMsg.tool_calls && aiMsg.tool_calls.length > 0) {
+            for (const toolCall of aiMsg.tool_calls) {
+              const input = toolCall.args as { query?: string } | undefined;
+              const query = input?.query ?? '';
+              yield { type: 'searching', query };
+            }
+            continue;
+          }
+
+          // This is content generation (final synthesis)
+          const text = this.stringifyMessageContent(message.content);
+          if (text.length > 0) {
+            if (!emittedThinking) {
+              yield { type: 'thinking' };
+              emittedThinking = true;
+            }
+
+            // Only yield if this is new content (langgraph can re-emit full state)
+            const isLanggraphNode = metadata?.langgraph_node !== undefined;
+            if (isLanggraphNode) {
+              // In messages mode, each chunk is a single message with the new content
+              finalContent = text;
+              yield { type: 'chunk', content: text };
+            }
+          }
+        }
+      }
+    } catch (streamError) {
+      console.warn(
+        '[ChatAgentService] Streaming failed, falling back to invoke',
+        {
+          error:
+            streamError instanceof Error
+              ? streamError.message
+              : String(streamError),
+        },
+      );
+
+      // Fall back to non-streaming invoke
+      try {
+        const fallbackReply = await this.generateAgentReply(apiKey, params);
+        for (const chunk of this.fakeChunkContent(fallbackReply.content)) {
+          yield { type: 'chunk', content: chunk };
+        }
+        yield { type: 'done', reply: fallbackReply };
+        return;
+      } catch (invokeError) {
+        console.error('[ChatAgentService] Invoke fallback also failed', {
+          error:
+            invokeError instanceof Error
+              ? invokeError.message
+              : String(invokeError),
+        });
+        const keylessFallback = await this.generateKeylessFallback(params);
+        for (const chunk of this.fakeChunkContent(keylessFallback.content)) {
+          yield { type: 'chunk', content: chunk };
+        }
+        yield { type: 'done', reply: keylessFallback };
+        return;
+      }
+    }
+
+    const maxSources = this.configService.getChatAgentMaxSources();
+    const uniqueSources = dedupeAndCapSources(collectedSources, maxSources);
+
+    const reply: ChatReply = {
+      content: finalContent,
+      metadata: {
+        generator: 'langchain-agent',
+        sources: this.mapSources(uniqueSources),
+        resultCount: uniqueSources.length,
+        toolCallCount,
+      },
+    };
+
+    this.logReplySummary(reply, Date.now());
+    yield { type: 'done', reply };
+  }
+
+  private fakeChunkContent(content: string, chunkSize = 120): string[] {
+    if (!content) return [];
+    const chunks: string[] = [];
+    for (let i = 0; i < content.length; i += chunkSize) {
+      chunks.push(content.slice(i, i + chunkSize));
+    }
+    return chunks;
   }
 
   /**
