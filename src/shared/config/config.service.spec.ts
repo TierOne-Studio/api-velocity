@@ -341,16 +341,16 @@ describe('ConfigService', () => {
       expect(configService.getChatAgentToolResultCharCap()).toBe(2000);
     });
 
-    it('returns 1500 by default', () => {
+    it('returns 3000 by default', () => {
       delete process.env.CHAT_AGENT_TOOL_RESULT_CHAR_CAP;
       const configService = new ConfigService();
-      expect(configService.getChatAgentToolResultCharCap()).toBe(1500);
+      expect(configService.getChatAgentToolResultCharCap()).toBe(3000);
     });
 
     it('returns the default when the value is too small to be useful', () => {
       process.env.CHAT_AGENT_TOOL_RESULT_CHAR_CAP = '100';
       const configService = new ConfigService();
-      expect(configService.getChatAgentToolResultCharCap()).toBe(1500);
+      expect(configService.getChatAgentToolResultCharCap()).toBe(3000);
     });
   });
 

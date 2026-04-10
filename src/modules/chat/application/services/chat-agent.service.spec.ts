@@ -288,6 +288,44 @@ describe('ChatAgentService', () => {
     });
   });
 
+  describe('agent prompt construction', () => {
+    it('returns the raw user question as the agent user message (no Organization prefix)', () => {
+      // Regression: a previous version prefixed the user message with
+      // "Organization: foo\n\nQuestion: ..." which the agent then copied
+      // verbatim into search_knowledge_base, polluting the retrieval query
+      // and causing semantic match quality to drop noticeably.
+      const message = (
+        service as unknown as {
+          buildAgentUserMessage: (params: { question: string }) => string;
+        }
+      ).buildAgentUserMessage({
+        question: 'what projects do you see?',
+      });
+
+      expect(message).toBe('what projects do you see?');
+      expect(message).not.toContain('Organization');
+      expect(message).not.toContain('Question:');
+    });
+
+    it('puts organization context in the system prompt, not the user message', () => {
+      configService.getChatSystemPrompt.mockReturnValue('expert persona body');
+
+      const systemPrompt = (
+        service as unknown as {
+          buildAgentSystemPrompt: (params: {
+            organizationName: string;
+          }) => string;
+        }
+      ).buildAgentSystemPrompt({
+        organizationName: 'TierOne',
+      });
+
+      expect(systemPrompt).toContain('expert persona body');
+      expect(systemPrompt).toContain('TierOne');
+      expect(systemPrompt).toContain('Tool usage protocol');
+    });
+  });
+
   describe('LLM caching', () => {
     it('reuses the same ChatOpenAI instance for identical config', () => {
       const serviceInstance = service as unknown as {

@@ -6,6 +6,9 @@ import 'dotenv/config';
 const BUILT_IN_CHAT_SYSTEM_PROMPT_FALLBACK =
   'You answer questions about an organization knowledge base. Use only the provided source context. Be concise, factual, and explicitly note when context is insufficient.';
 
+const DEFAULT_CHAT_AGENT_TOOL_RESULT_CHAR_CAP = 3000;
+const MIN_CHAT_AGENT_TOOL_RESULT_CHAR_CAP = 200;
+
 @Injectable()
 export class ConfigService {
   private cachedDefaultChatPrompt: string | null = null;
@@ -160,11 +163,12 @@ export class ConfigService {
 
   getChatAgentToolResultCharCap(): number {
     const raw = parseInt(
-      process.env.CHAT_AGENT_TOOL_RESULT_CHAR_CAP || '1500',
+      process.env.CHAT_AGENT_TOOL_RESULT_CHAR_CAP ||
+        String(DEFAULT_CHAT_AGENT_TOOL_RESULT_CHAR_CAP),
       10,
     );
-    if (Number.isNaN(raw) || raw < 200) {
-      return 1500;
+    if (Number.isNaN(raw) || raw < MIN_CHAT_AGENT_TOOL_RESULT_CHAR_CAP) {
+      return DEFAULT_CHAT_AGENT_TOOL_RESULT_CHAR_CAP;
     }
     return raw;
   }

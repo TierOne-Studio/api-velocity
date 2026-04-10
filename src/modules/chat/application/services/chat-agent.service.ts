@@ -46,13 +46,13 @@ const AGENT_TOOL_USAGE_PROTOCOL = `
 
 You have access to a \`search_knowledge_base\` tool that queries this organization's indexed sources via Airweave. Use it aggressively before answering any non-trivial question.
 
-1. Silently decompose the question into 2-5 specific sub-queries that together would give a complete picture.
-2. Call \`search_knowledge_base\` once per sub-query. Prefer narrow, specific queries over broad ones. Use the \`entityType\` filter when the question clearly targets one kind of source.
-3. Read each tool result. If coverage is incomplete, issue additional searches with refined queries.
+1. **Always start with the user's original question verbatim as your first \`search_knowledge_base\` call.** The retrieval model is tuned for natural-language phrasing, and short keyword decompositions ("projects", "deploy", "auth") often return worse results than the full question. Do not skip this step.
+2. After the first call, decide whether the results cover the question. If they do, synthesize the answer.
+3. If coverage is incomplete, issue follow-up searches that rephrase or focus on specific aspects of the question. Prefer natural-language phrases over short keywords. Do not repeat a query you have already issued.
 4. Synthesize a single coherent expert answer grounded only in the tool results you received.
 5. If after several varied queries the information is still insufficient, follow the "When context is insufficient" protocol from the section above — say so explicitly, describe what you did find, and suggest what additional source material would answer the question.
 
-Never repeat a query you have already issued. Do not answer non-trivial organization-specific questions from memory — the tool is your only authoritative source for facts about this organization's code, docs, specs, and other indexed material.
+Do not answer non-trivial organization-specific questions from memory — the tool is your only authoritative source for facts about this organization's code, docs, specs, and other indexed material.
 `.trim();
 
 @Injectable()
@@ -178,7 +178,7 @@ export class ChatAgentService {
       resultCharCap: this.configService.getChatAgentToolResultCharCap(),
     });
 
-    const systemPrompt = `${this.configService.getChatSystemPrompt()}\n\n${AGENT_TOOL_USAGE_PROTOCOL}`;
+    const systemPrompt = this.buildAgentSystemPrompt(params);
     const maxIterations = this.configService.getChatAgentMaxIterations();
 
     const agent = createAgent({
@@ -233,16 +233,31 @@ export class ChatAgentService {
   }
 
   /**
-   * The human message handed to the agent. Includes the current question
-   * and lightweight context about the organization — history is injected
-   * separately via the messages array.
+   * The system prompt for the agent path. Combines the configured expert
+   * persona prompt, the tool usage protocol, and per-request organization
+   * context. Org context lives here (not in the human message) so the
+   * retrieval tool never sees it: when the agent copies the user's question
+   * verbatim into search_knowledge_base, the embedded query is the clean
+   * natural-language question rather than `Organization: foo\n\nQuestion: ...`,
+   * which dense retrieval models match much better.
    */
-  private buildAgentUserMessage(params: GenerateReplyParams): string {
+  buildAgentSystemPrompt(params: GenerateReplyParams): string {
     return [
-      `Organization: ${params.organizationName}`,
-      '',
-      `Question: ${params.question}`,
-    ].join('\n');
+      this.configService.getChatSystemPrompt(),
+      AGENT_TOOL_USAGE_PROTOCOL,
+      `## Context\n\nYou are answering questions for the organization: ${params.organizationName}. Every question is implicitly scoped to that organization's indexed sources.`,
+    ].join('\n\n');
+  }
+
+  /**
+   * The human message handed to the agent. Returns the raw user question
+   * with no prefix or wrapper, because the agent is instructed to copy this
+   * verbatim into its first `search_knowledge_base` call. Any structural
+   * noise here (e.g. "Organization: ..." prefix) gets embedded into the
+   * retrieval query and degrades semantic match quality.
+   */
+  buildAgentUserMessage(params: GenerateReplyParams): string {
+    return params.question;
   }
 
   private extractFinalAssistantText(messages: BaseMessage[]): string {

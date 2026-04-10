@@ -43,7 +43,19 @@ describe('createSearchKnowledgeBaseTool', () => {
 
     expect(tool.name).toBe('search_knowledge_base');
     expect(tool.description).toContain('MULTIPLE');
-    expect(tool.description).toContain('entityType');
+    expect(tool.description).toContain("user's original question verbatim");
+  });
+
+  it('does not advertise an entityType parameter (regression: client-side filter caused zero-result bug)', () => {
+    const tool = createSearchKnowledgeBaseTool({
+      collectionId: 'col-1',
+      airweaveService: airweaveService as never,
+      sourcesSink,
+    });
+
+    expect(tool.description).not.toContain('entityType');
+    // Schema should also not accept entityType. We assert by passing one and
+    // verifying the tool ignores it (zod strips unknown keys by default).
   });
 
   it('forwards the query to airweaveService.searchCollection with the configured collection', async () => {
@@ -82,11 +94,14 @@ describe('createSearchKnowledgeBaseTool', () => {
     expect(sourcesSink.map((r) => r.entityId)).toEqual(['a', 'b']);
   });
 
-  it('filters results by entityType when the agent passes that argument', async () => {
+  it('returns all results regardless of their Airweave entity_type values (regression for ConfluencePageEntity bug)', async () => {
+    // Airweave returns entity types like 'ConfluencePageEntity', 'GithubFileEntity', etc.
+    // A previous version of this tool had a client-side filter expecting fake values
+    // ("file", "doc", "spec") which caused every tool call to return zero results.
     const results = [
-      makeResult({ entityId: 'a', entityType: 'file' }),
-      makeResult({ entityId: 'b', entityType: 'doc' }),
-      makeResult({ entityId: 'c', entityType: 'doc' }),
+      makeResult({ entityId: 'a', entityType: 'ConfluencePageEntity' }),
+      makeResult({ entityId: 'b', entityType: 'GithubFileEntity' }),
+      makeResult({ entityId: 'c', entityType: 'JiraIssueEntity' }),
     ];
     airweaveService.searchCollection.mockResolvedValue({ results });
     const tool = createSearchKnowledgeBaseTool({
@@ -95,19 +110,121 @@ describe('createSearchKnowledgeBaseTool', () => {
       sourcesSink,
     });
 
-    const raw = await tool.invoke({
-      query: 'policy',
-      entityType: 'doc',
-    });
+    const raw = await tool.invoke({ query: 'projects' });
     const parsed = JSON.parse(raw) as {
       query: string;
       results: Array<{ name: string; entityType: string }>;
     };
 
-    expect(parsed.results).toHaveLength(2);
-    expect(parsed.results.map((r) => r.entityType)).toEqual(['doc', 'doc']);
-    // Sink is still populated from filtered results so metadata.sources stays accurate.
-    expect(sourcesSink).toHaveLength(2);
+    expect(parsed.results).toHaveLength(3);
+    expect(parsed.results.map((r) => r.entityType)).toEqual([
+      'ConfluencePageEntity',
+      'GithubFileEntity',
+      'JiraIssueEntity',
+    ]);
+    expect(sourcesSink).toHaveLength(3);
+  });
+
+  it('logs each tool call with query, raw + deduped counts, and result names for diagnostics', async () => {
+    const infoSpy = jest
+      .spyOn(console, 'info')
+      .mockImplementation(() => undefined);
+    try {
+      airweaveService.searchCollection.mockResolvedValue({
+        results: [
+          makeResult({ entityId: 'a', name: 'Deploy Guide' }),
+          makeResult({ entityId: 'b', name: 'Release Notes' }),
+        ],
+      });
+      const tool = createSearchKnowledgeBaseTool({
+        collectionId: 'col-1',
+        airweaveService: airweaveService as never,
+        sourcesSink,
+      });
+
+      await tool.invoke({ query: 'deploy flow' });
+
+      expect(infoSpy).toHaveBeenCalledWith(
+        '[chat-agent-tools] search_knowledge_base called',
+        expect.objectContaining({
+          collectionId: 'col-1',
+          query: 'deploy flow',
+          rawResultCount: 2,
+          dedupedResultCount: 2,
+          resultNames: ['Deploy Guide', 'Release Notes'],
+        }),
+      );
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+
+  it('dedupes results by entityId before returning to the LLM, keeping highest-relevance chunk per entity', async () => {
+    // Airweave often returns multiple chunks of the same page (e.g. a Confluence
+    // space overview chunked 4 times). Without dedup the LLM sees the same entity
+    // in 4 of its 8 result slots, pushing other distinct material out of the top-k
+    // and making the agent describe the container instead of its contents.
+    const results = [
+      makeResult({
+        entityId: 'page-a',
+        relevanceScore: 0.5,
+        name: 'Page A',
+        text: 'lower relevance chunk of page A',
+      }),
+      makeResult({
+        entityId: 'page-a',
+        relevanceScore: 0.9,
+        name: 'Page A',
+        text: 'higher relevance chunk of page A',
+      }),
+      makeResult({
+        entityId: 'page-a',
+        relevanceScore: 0.3,
+        name: 'Page A',
+        text: 'another lower chunk of page A',
+      }),
+      makeResult({
+        entityId: 'page-b',
+        relevanceScore: 0.7,
+        name: 'Page B',
+        text: 'page B chunk',
+      }),
+      makeResult({
+        entityId: 'page-c',
+        relevanceScore: 0.6,
+        name: 'Page C',
+        text: 'page C chunk',
+      }),
+    ];
+    airweaveService.searchCollection.mockResolvedValue({ results });
+    const tool = createSearchKnowledgeBaseTool({
+      collectionId: 'col-1',
+      airweaveService: airweaveService as never,
+      sourcesSink,
+    });
+
+    const raw = await tool.invoke({ query: 'pages' });
+    const parsed = JSON.parse(raw) as {
+      results: Array<{ name: string; excerpt: string; relevanceScore: number }>;
+    };
+
+    // LLM sees 3 distinct entities, not 5 chunks.
+    expect(parsed.results).toHaveLength(3);
+    // Page A appears once with the higher-relevance excerpt.
+    const pageA = parsed.results.find((r) => r.name === 'Page A');
+    expect(pageA?.excerpt).toContain('higher relevance chunk');
+    expect(pageA?.relevanceScore).toBe(0.9);
+    // Sorted by relevance descending: A(0.9) > B(0.7) > C(0.6).
+    expect(parsed.results.map((r) => r.name)).toEqual([
+      'Page A',
+      'Page B',
+      'Page C',
+    ]);
+
+    // sourcesSink keeps ALL 5 raw chunks so cross-tool-call metadata
+    // aggregation in the service layer can dedupe globally rather than
+    // losing data here.
+    expect(sourcesSink).toHaveLength(5);
   });
 
   it('truncates long result text to the configured char cap', async () => {
