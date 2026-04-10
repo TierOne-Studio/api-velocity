@@ -276,6 +276,7 @@ export class ChatAgentService {
     ];
 
     const recursionLimit = Math.max(10, maxIterations * 4);
+    const startedAt = Date.now();
     let emittedThinking = false;
     let finalContent = '';
     let toolCallCount = 0;
@@ -331,8 +332,8 @@ export class ChatAgentService {
             // Only yield if this is new content (langgraph can re-emit full state)
             const isLanggraphNode = metadata?.langgraph_node !== undefined;
             if (isLanggraphNode) {
-              // In messages mode, each chunk is a single message with the new content
-              finalContent = text;
+              // In messages streamMode, each chunk is a delta token — accumulate
+              finalContent += text;
               yield { type: 'chunk', content: text };
             }
           }
@@ -386,7 +387,7 @@ export class ChatAgentService {
       },
     };
 
-    this.logReplySummary(reply, Date.now());
+    this.logReplySummary(reply, startedAt);
     yield { type: 'done', reply };
   }
 

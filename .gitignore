@@ -408,7 +408,6 @@ cookies.txt
 /.codex/config.toml
 /.codex/config.toml.bak
 /.codex/skills
-/.cursor/skills
 /.github/copilot-instructions.md
 /.github/copilot-instructions.md.bak
 /AGENTS.md
