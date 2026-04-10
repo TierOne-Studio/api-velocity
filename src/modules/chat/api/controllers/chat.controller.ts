@@ -43,19 +43,6 @@ export class ChatController {
     (response as Response & { flush?: () => void }).flush?.();
   }
 
-  private chunkContent(content: string, chunkSize = 120): string[] {
-    if (!content) {
-      return [];
-    }
-
-    const chunks: string[] = [];
-    for (let index = 0; index < content.length; index += chunkSize) {
-      chunks.push(content.slice(index, index + chunkSize));
-    }
-
-    return chunks;
-  }
-
   private requireTrimmedString(
     value: string | undefined,
     fieldName: string,
@@ -174,26 +161,83 @@ export class ChatController {
     response.flushHeaders?.();
 
     try {
-      const result = await this.chatService.sendMessage({
-        ...this.getScope(session, body.organizationId),
-        conversationId: this.requireTrimmedString(
-          conversationId,
-          'conversationId',
-        ),
-        content: this.requireTrimmedString(body.content, 'content'),
+      const scope = this.getScope(session, body.organizationId);
+      const validatedConversationId = this.requireTrimmedString(
+        conversationId,
+        'conversationId',
+      );
+      const validatedContent = this.requireTrimmedString(
+        body.content,
+        'content',
+      );
+
+      const stream = this.chatService.sendMessageStreaming({
+        ...scope,
+        conversationId: validatedConversationId,
+        content: validatedContent,
         userId: session.user.id,
       });
 
-      this.writeSseEvent(response, 'start', {
-        conversation: result.conversation,
-        userMessage: result.userMessage,
-      });
+      let finalReply: {
+        content: string;
+        metadata: Record<string, unknown>;
+      } | null = null;
+      let startConversation: unknown = null;
+      let startUserMessage: unknown = null;
 
-      for (const chunk of this.chunkContent(result.assistantMessage.content)) {
-        this.writeSseEvent(response, 'chunk', { content: chunk });
+      for await (const event of stream) {
+        if (event.type === 'start') {
+          startConversation = event.conversation;
+          startUserMessage = event.userMessage;
+          this.writeSseEvent(response, 'start', {
+            conversation: event.conversation,
+            userMessage: event.userMessage,
+          });
+          continue;
+        }
+
+        if (event.type === 'thinking') {
+          this.writeSseEvent(response, 'thinking', {});
+          continue;
+        }
+
+        if (event.type === 'searching') {
+          this.writeSseEvent(response, 'searching', { query: event.query });
+          continue;
+        }
+
+        if (event.type === 'chunk') {
+          this.writeSseEvent(response, 'chunk', { content: event.content });
+          continue;
+        }
+
+        if (event.type === 'done') {
+          finalReply = event.reply;
+
+          // Persist the assistant message to DB
+          const assistantMessage =
+            await this.chatService.persistAssistantMessage(
+              validatedConversationId,
+              session.user.id,
+              scope.organizationId,
+              finalReply,
+            );
+
+          // Refetch conversation for the complete event
+          const updatedConversation =
+            await this.chatService.getConversationForComplete(
+              validatedConversationId,
+              session.user.id,
+              scope.organizationId,
+            );
+
+          this.writeSseEvent(response, 'complete', {
+            conversation: updatedConversation ?? startConversation,
+            userMessage: startUserMessage,
+            assistantMessage,
+          });
+        }
       }
-
-      this.writeSseEvent(response, 'complete', result);
     } catch (error) {
       const statusCode =
         error instanceof HttpException

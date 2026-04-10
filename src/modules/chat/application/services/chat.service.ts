@@ -12,7 +12,7 @@ import {
   CHAT_REPOSITORY,
   type IChatRepository,
 } from '../../domain/repositories/chat.repository.interface';
-import { ChatAgentService } from './chat-agent.service';
+import { ChatAgentService, type ChatStreamEvent } from './chat-agent.service';
 
 type ChatScopeParams = {
   platformRole: 'superadmin' | 'admin' | 'manager' | 'member';
@@ -151,6 +151,129 @@ export class ChatService {
       userMessage: rowToMessage(userMessageRow),
       assistantMessage: rowToMessage(assistantMessageRow),
     };
+  }
+
+  /**
+   * Streaming version of sendMessage. Performs the same pre-work (validate
+   * org, create user message, set title) then delegates to the agent's
+   * streaming generator. The controller iterates the returned generator
+   * and writes SSE events in real time. The final 'done' event carries
+   * the complete reply which the controller persists to DB.
+   */
+  async *sendMessageStreaming(
+    params: ChatScopeParams & {
+      conversationId: string;
+      userId: string;
+      content: string;
+    },
+  ): AsyncGenerator<
+    | ChatStreamEvent
+    | {
+        type: 'start';
+        conversation: ReturnType<typeof rowToConversationSummary>;
+        userMessage: ReturnType<typeof rowToMessage>;
+      }
+  > {
+    const conversation = await this.requireConversation(params);
+    const scopedOrganizationId = this.resolveScopedOrganizationId(
+      params,
+      'read',
+    );
+    const existingMessages = await this.chatRepository.listMessages(
+      conversation.id,
+      params.userId,
+      scopedOrganizationId,
+    );
+
+    const organization = await this.requireOrganization(
+      conversation.organizationId,
+    );
+    const collectionId = this.getOrganizationCollectionId(
+      organization.metadata,
+    );
+
+    if (!collectionId) {
+      throw new BadRequestException(
+        'Organization does not have an Airweave collection configured. Set one in Admin > Organizations.',
+      );
+    }
+
+    const userMessageRow = await this.chatRepository.createMessage({
+      id: randomUUID(),
+      conversationId: conversation.id,
+      role: 'user',
+      content: params.content,
+      metadata: null,
+    });
+
+    if (!conversation.title) {
+      await this.chatRepository.updateConversationTitle(
+        conversation.id,
+        params.userId,
+        scopedOrganizationId,
+        this.buildConversationTitle(params.content),
+      );
+    }
+
+    // Emit start event immediately so the frontend can display the user message
+    const updatedConversationForStart =
+      await this.chatRepository.findConversationById(
+        conversation.id,
+        params.userId,
+        scopedOrganizationId,
+      );
+
+    yield {
+      type: 'start' as const,
+      conversation: updatedConversationForStart
+        ? rowToConversationSummary(updatedConversationForStart)
+        : conversation,
+      userMessage: rowToMessage(userMessageRow),
+    };
+
+    // Stream agent events
+    const agentStream = this.chatAgentService.generateReplyStreaming({
+      organizationName: organization.name,
+      collectionId,
+      question: params.content,
+      previousMessages: existingMessages.map((message) => ({
+        role: message.role,
+        content: message.content,
+      })),
+    });
+
+    for await (const event of agentStream) {
+      yield event;
+    }
+  }
+
+  async persistAssistantMessage(
+    conversationId: string,
+    _userId: string,
+    _organizationId: string | undefined,
+    reply: { content: string; metadata: Record<string, unknown> },
+  ) {
+    const row = await this.chatRepository.createMessage({
+      id: randomUUID(),
+      conversationId,
+      role: 'assistant',
+      content: reply.content,
+      metadata: reply.metadata,
+    });
+    return rowToMessage(row);
+  }
+
+  async getConversationForComplete(
+    conversationId: string,
+    userId: string,
+    organizationId: string | undefined,
+  ) {
+    const row = await this.chatRepository.findConversationById(
+      conversationId,
+      userId,
+      organizationId?.trim() || null,
+    );
+    return row ? rowToConversationSummary(row) : null;
   }
 
   async deleteConversation(

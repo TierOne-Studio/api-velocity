@@ -29,6 +29,9 @@ describe('ChatController', () => {
       createConversation: jest.fn(),
       listMessages: jest.fn(),
       sendMessage: jest.fn(),
+      sendMessageStreaming: jest.fn(),
+      persistAssistantMessage: jest.fn(),
+      getConversationForComplete: jest.fn(),
       deleteConversation: jest.fn(),
     } as never;
 
@@ -146,7 +149,7 @@ describe('ChatController', () => {
     expect(result).toEqual({ success: true });
   });
 
-  it('streams assistant message chunks over SSE', async () => {
+  it('streams thinking, searching, chunk, and complete SSE events from the agent', async () => {
     const response: MockSseResponse = {
       setHeader: jest.fn(),
       flushHeaders: jest.fn(),
@@ -155,13 +158,32 @@ describe('ChatController', () => {
       flush: jest.fn(),
     };
 
-    chatService.sendMessage.mockResolvedValue({
-      conversation: { id: 'conversation-1' },
-      userMessage: { id: 'message-user-1', content: 'hello' },
-      assistantMessage: {
-        id: 'message-assistant-1',
-        content: 'streamed assistant answer',
-      },
+    // Mock sendMessageStreaming as an async generator
+    async function* fakeStream() {
+      yield {
+        type: 'start' as const,
+        conversation: { id: 'conversation-1' },
+        userMessage: { id: 'message-user-1', content: 'hello' },
+      };
+      yield { type: 'thinking' as const };
+      yield { type: 'searching' as const, query: 'hello world' };
+      yield { type: 'chunk' as const, content: 'answer text' };
+      yield {
+        type: 'done' as const,
+        reply: {
+          content: 'answer text',
+          metadata: { generator: 'langchain-agent', sources: [] },
+        },
+      };
+    }
+
+    chatService.sendMessageStreaming.mockReturnValue(fakeStream() as never);
+    chatService.persistAssistantMessage.mockResolvedValue({
+      id: 'message-assistant-1',
+      content: 'answer text',
+    } as never);
+    chatService.getConversationForComplete.mockResolvedValue({
+      id: 'conversation-1',
     } as never);
 
     await controller.streamMessage(
@@ -171,13 +193,6 @@ describe('ChatController', () => {
       response as never,
     );
 
-    expect(chatService.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        conversationId: 'conversation-1',
-        content: 'hello',
-        userId: 'user-1',
-      }),
-    );
     expect(response.setHeader).toHaveBeenCalledWith(
       'Content-Type',
       'text/event-stream',
@@ -186,15 +201,25 @@ describe('ChatController', () => {
       expect.stringContaining('event: start'),
     );
     expect(response.write).toHaveBeenCalledWith(
+      expect.stringContaining('event: thinking'),
+    );
+    expect(response.write).toHaveBeenCalledWith(
+      expect.stringContaining('event: searching'),
+    );
+    expect(response.write).toHaveBeenCalledWith(
+      expect.stringContaining('hello world'),
+    );
+    expect(response.write).toHaveBeenCalledWith(
       expect.stringContaining('event: chunk'),
     );
     expect(response.write).toHaveBeenCalledWith(
       expect.stringContaining('event: complete'),
     );
+    expect(chatService.persistAssistantMessage).toHaveBeenCalled();
     expect(response.end).toHaveBeenCalled();
   });
 
-  it('streams SSE error events when message generation fails', async () => {
+  it('streams SSE error events when the streaming generator throws', async () => {
     const response: MockSseResponse = {
       setHeader: jest.fn(),
       flushHeaders: jest.fn(),
@@ -203,7 +228,12 @@ describe('ChatController', () => {
       flush: jest.fn(),
     };
 
-    chatService.sendMessage.mockRejectedValue(new Error('stream failure'));
+    async function* failingStream() {
+      yield* [] as never[];
+      throw new Error('stream failure');
+    }
+
+    chatService.sendMessageStreaming.mockReturnValue(failingStream() as never);
 
     await controller.streamMessage(
       managerSession,
