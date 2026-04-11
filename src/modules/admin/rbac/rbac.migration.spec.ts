@@ -74,7 +74,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_011 already run
         .mockResolvedValueOnce(true) // rbac_012 already run
         .mockResolvedValueOnce(true) // rbac_013 already run
-        .mockResolvedValueOnce(true); // rbac_014 already run
+        .mockResolvedValueOnce(true) // rbac_014 already run
+        .mockResolvedValueOnce(true); // rbac_015 already run
 
       const consoleSpy = jest
         .spyOn(console, 'log')
@@ -103,7 +104,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false) // rbac_011 NOT run
         .mockResolvedValueOnce(false) // rbac_012 NOT run
         .mockResolvedValueOnce(false) // rbac_013 NOT run
-        .mockResolvedValueOnce(false); // rbac_014 NOT run
+        .mockResolvedValueOnce(false) // rbac_014 NOT run
+        .mockResolvedValueOnce(false); // rbac_015 NOT run
 
       // rbac_013 calls seedDefaultOrganization → UPSERT returns new org id.
       // Use mockImplementation so it isn't consumed by earlier migrations that also call queryOne.
@@ -151,8 +153,11 @@ describe('RbacMigrationService', () => {
       expect(dbService.recordMigration).toHaveBeenCalledWith(
         'rbac_014_add_project_permissions',
       );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_015_add_chat_permissions',
+      );
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('11 new'),
+        expect.stringContaining('12 new'),
       );
       consoleSpy.mockRestore();
     });
@@ -204,6 +209,9 @@ describe('RbacMigrationService', () => {
       );
       expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
         'rbac_014_add_project_permissions',
+      );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_015_add_chat_permissions',
       );
     });
   });
@@ -405,6 +413,10 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce({ id: 'perm-project-read' })
         .mockResolvedValueOnce({ id: 'perm-project-update' })
         .mockResolvedValueOnce({ id: 'perm-project-delete' })
+        .mockResolvedValueOnce({ id: 'perm-chat-read' })
+        .mockResolvedValueOnce({ id: 'perm-chat-create' })
+        .mockResolvedValueOnce({ id: 'perm-chat-stream' })
+        .mockResolvedValueOnce({ id: 'perm-chat-delete' })
         .mockResolvedValueOnce({ id: 'perm-role-read' })
         .mockResolvedValueOnce({ id: 'perm-session-read' })
         .mockResolvedValueOnce({ id: 'perm-session-revoke' })
@@ -413,7 +425,10 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce({ id: 'perm-user-update' })
         .mockResolvedValueOnce({ id: 'member-role-1' })
         .mockResolvedValueOnce({ id: 'perm-member-org-read' })
-        .mockResolvedValueOnce({ id: 'perm-member-project-read' });
+        .mockResolvedValueOnce({ id: 'perm-member-project-read' })
+        .mockResolvedValueOnce({ id: 'perm-member-chat-read' })
+        .mockResolvedValueOnce({ id: 'perm-member-chat-create' })
+        .mockResolvedValueOnce({ id: 'perm-member-chat-stream' });
 
       await service.normalizeOrganizationDefaultRolePermissions();
 
@@ -435,6 +450,14 @@ describe('RbacMigrationService', () => {
           'update',
           'project',
           'delete',
+          'chat',
+          'read',
+          'chat',
+          'create',
+          'chat',
+          'stream',
+          'chat',
+          'delete',
           'role',
           'read',
           'session',
@@ -451,7 +474,19 @@ describe('RbacMigrationService', () => {
       );
       expect(dbService.query).toHaveBeenCalledWith(
         expect.stringContaining('DELETE FROM role_permissions'),
-        ['member-role-1', 'organization', 'read', 'project', 'read'],
+        [
+          'member-role-1',
+          'organization',
+          'read',
+          'project',
+          'read',
+          'chat',
+          'read',
+          'chat',
+          'create',
+          'chat',
+          'stream',
+        ],
       );
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining(
@@ -980,7 +1015,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_011 already run
         .mockResolvedValueOnce(true) // rbac_012 already run
         .mockResolvedValueOnce(true) // rbac_013 already run
-        .mockResolvedValueOnce(true); // rbac_014 already run
+        .mockResolvedValueOnce(true) // rbac_014 already run
+        .mockResolvedValueOnce(true); // rbac_015 already run
 
       // Needed by backfillRolePermissions and assignAllPermissionsToAdmin
       dbService.queryOne.mockResolvedValue(null);

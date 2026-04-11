@@ -11,6 +11,7 @@ export const statement = {
   ...defaultStatements,
   organization: ['create', 'list', 'get', 'update', 'invite'],
   role: ['list', 'get'],
+  chat: ['read', 'create', 'stream', 'delete'],
 } as const;
 
 /**
@@ -45,6 +46,7 @@ export const adminRole = ac.newRole({
   session: ['list', 'revoke'],
   organization: ['create', 'list', 'get', 'update', 'invite'],
   role: ['list', 'get'],
+  chat: ['read', 'create', 'stream', 'delete'],
 });
 
 // Manager role - can manage users/sessions within their organization
@@ -53,12 +55,14 @@ export const managerRole = ac.newRole({
   session: ['list', 'revoke'],
   organization: ['create', 'list', 'get', 'update', 'invite'],
   role: ['list', 'get'],
+  chat: ['read', 'create', 'stream', 'delete'],
 });
 
 // Member role - basic org member
 export const memberRole = ac.newRole({
   organization: ['list', 'get'],
   role: ['list', 'get'],
+  chat: ['read', 'create', 'stream'],
 });
 
 /**
