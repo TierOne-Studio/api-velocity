@@ -12,6 +12,10 @@ const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
   { resource: 'project', action: 'read' },
   { resource: 'project', action: 'update' },
   { resource: 'project', action: 'delete' },
+  { resource: 'chat', action: 'read' },
+  { resource: 'chat', action: 'create' },
+  { resource: 'chat', action: 'stream' },
+  { resource: 'chat', action: 'delete' },
   { resource: 'role', action: 'read' },
   { resource: 'role', action: 'create' },
   { resource: 'role', action: 'update' },
@@ -37,6 +41,10 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
   { resource: 'project', action: 'read' },
   { resource: 'project', action: 'update' },
   { resource: 'project', action: 'delete' },
+  { resource: 'chat', action: 'read' },
+  { resource: 'chat', action: 'create' },
+  { resource: 'chat', action: 'stream' },
+  { resource: 'chat', action: 'delete' },
   { resource: 'role', action: 'read' },
   { resource: 'session', action: 'read' },
   { resource: 'session', action: 'revoke' },
@@ -48,6 +56,9 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
 const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
   { resource: 'organization', action: 'read' },
   { resource: 'project', action: 'read' },
+  { resource: 'chat', action: 'read' },
+  { resource: 'chat', action: 'create' },
+  { resource: 'chat', action: 'stream' },
 ] as const;
 
 /**
@@ -115,6 +126,10 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_014_add_project_permissions',
         up: () => this.addProjectPermissions(),
+      },
+      {
+        name: 'rbac_015_add_chat_permissions',
+        up: () => this.addChatPermissions(),
       },
     ];
 
@@ -1093,5 +1108,87 @@ export class RbacMigrationService implements OnModuleInit {
     }
 
     console.log('✅ Org admin roles updated with full permission set');
+  }
+
+  /**
+   * Add chat permissions (read, create, stream, delete) and assign them
+   * to superadmin + all org-scoped roles using their default permission sets.
+   */
+  async addChatPermissions(): Promise<void> {
+    const chatPermissions = [
+      ['chat', 'read', 'View chat conversations and messages'],
+      ['chat', 'create', 'Create chat conversations'],
+      ['chat', 'stream', 'Send messages and stream chat responses'],
+      ['chat', 'delete', 'Delete chat conversations'],
+    ] as const;
+
+    for (const [resource, action, description] of chatPermissions) {
+      await this.db.query(
+        `INSERT INTO permissions (resource, action, description)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (resource, action) DO NOTHING`,
+        [resource, action, description],
+      );
+    }
+
+    // Assign all chat permissions to global superadmin role
+    const superadminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
+    );
+    if (superadminRole) {
+      const chatPerms = await this.db.query<{ id: string }>(
+        `SELECT id FROM permissions WHERE resource = 'chat'`,
+      );
+      for (const perm of chatPerms) {
+        await this.db.query(
+          `INSERT INTO role_permissions (role_id, permission_id)
+           VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [superadminRole.id, perm.id],
+        );
+      }
+    }
+
+    // Sync all org-scoped roles with their updated default permission sets
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
+
+    for (const organization of organizations) {
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [organization.id],
+      );
+      if (adminRole) {
+        await this.syncRolePermissions(
+          adminRole.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(
+          managerRole.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const memberRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'member'`,
+        [organization.id],
+      );
+      if (memberRole) {
+        await this.syncRolePermissions(
+          memberRole.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    console.log('✅ Chat permissions added and assigned to roles');
   }
 }

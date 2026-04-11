@@ -78,7 +78,7 @@ export class ChatController {
   }
 
   @Get('conversations')
-  @RequirePermissions('organization:read')
+  @RequirePermissions('chat:read')
   async listConversations(
     @Session() session: UserSession,
     @Query('organizationId') organizationId?: string,
@@ -92,7 +92,7 @@ export class ChatController {
   }
 
   @Post('conversations')
-  @RequirePermissions('organization:read')
+  @RequirePermissions('chat:create')
   async createConversation(
     @Session() session: UserSession,
     @Body() body: CreateConversationBody,
@@ -107,7 +107,7 @@ export class ChatController {
   }
 
   @Get('conversations/:conversationId/messages')
-  @RequirePermissions('organization:read')
+  @RequirePermissions('chat:read')
   async listMessages(
     @Session() session: UserSession,
     @Param('conversationId') conversationId: string,
@@ -126,7 +126,7 @@ export class ChatController {
   }
 
   @Post('conversations/:conversationId/messages')
-  @RequirePermissions('organization:read')
+  @RequirePermissions('chat:stream')
   @Throttle({ chat: {} })
   async sendMessage(
     @Session() session: UserSession,
@@ -147,7 +147,7 @@ export class ChatController {
   }
 
   @Post('conversations/:conversationId/messages/stream')
-  @RequirePermissions('organization:read')
+  @RequirePermissions('chat:stream')
   @Throttle({ chat: {} })
   async streamMessage(
     @Session() session: UserSession,
@@ -256,7 +256,7 @@ export class ChatController {
   }
 
   @Delete('conversations/:conversationId')
-  @RequirePermissions('organization:read')
+  @RequirePermissions('chat:delete')
   async deleteConversation(
     @Session() session: UserSession,
     @Param('conversationId') conversationId: string,
