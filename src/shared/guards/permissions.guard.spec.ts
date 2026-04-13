@@ -4,6 +4,7 @@ import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PermissionsGuard } from './permissions.guard';
 import { RoleService } from '../../modules/admin/rbac/application/services';
+import { DatabaseService } from '../infrastructure/database/database.module';
 
 describe('PermissionsGuard', () => {
   let guard: PermissionsGuard;
@@ -11,6 +12,7 @@ describe('PermissionsGuard', () => {
   let roleService: jest.Mocked<
     Pick<RoleService, 'getUserPermissions' | 'getUserActiveMemberRole'>
   >;
+  let dbService: jest.Mocked<Pick<DatabaseService, 'queryOne'>>;
 
   const createMockExecutionContext = (session: unknown): ExecutionContext => {
     return {
@@ -37,17 +39,25 @@ describe('PermissionsGuard', () => {
         .mockResolvedValue(null),
     };
 
+    const mockDbService = {
+      queryOne: jest
+        .fn<() => Promise<{ approvalStatus: string } | null>>()
+        .mockResolvedValue({ approvalStatus: 'approved' }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PermissionsGuard,
         Reflector,
         { provide: RoleService, useValue: mockRoleService },
+        { provide: DatabaseService, useValue: mockDbService },
       ],
     }).compile();
 
     guard = module.get<PermissionsGuard>(PermissionsGuard);
     reflector = module.get<Reflector>(Reflector);
     roleService = module.get(RoleService);
+    dbService = module.get(DatabaseService);
   });
 
   it('should be defined', () => {

@@ -92,7 +92,7 @@ describe('DatabaseService - Migration Tracking', () => {
     });
 
     it('should skip already-run migrations', async () => {
-      // All migrations already run (9 migrations: 001-007, 009, 008 in array order)
+      // All migrations already run (10 migrations: 001-007, 010, 009, 008 in array order)
       mockPool.query
         .mockResolvedValueOnce({ rows: [] }) // CREATE TABLE
         .mockResolvedValueOnce({ rows: [{ name: '001' }] })
@@ -102,6 +102,7 @@ describe('DatabaseService - Migration Tracking', () => {
         .mockResolvedValueOnce({ rows: [{ name: '005' }] })
         .mockResolvedValueOnce({ rows: [{ name: '006' }] })
         .mockResolvedValueOnce({ rows: [{ name: '007' }] })
+        .mockResolvedValueOnce({ rows: [{ name: '010' }] }) // 010_add_user_approval_status
         .mockResolvedValueOnce({ rows: [{ name: '009' }] }) // 009_drop_user_role_check_constraint
         .mockResolvedValueOnce({ rows: [{ name: '008' }] }); // 008_rename_is_system_to_is_default
 
@@ -275,7 +276,7 @@ describe('DatabaseService - Migration Tracking', () => {
       expectQueryWith('invitation_role_allowed_values_chk');
 
       // Should log completed with count
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('9 new'));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('10 new'));
       consoleSpy.mockRestore();
     });
 

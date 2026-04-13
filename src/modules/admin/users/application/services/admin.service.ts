@@ -377,6 +377,121 @@ export class AdminService {
     return { ...result, limit, offset };
   }
 
+  async findUserById(userId: string) {
+    return this.userRepo.findUserById(userId);
+  }
+
+  async hasAcceptedInvitation(userId: string): Promise<boolean> {
+    const user = await this.userRepo.findUserById(userId);
+    if (!user) return false;
+    // Check if user has an accepted invitation via their email
+    const invitation = await this.userRepo.findAcceptedInvitationByEmail(user.email);
+    return !!invitation;
+  }
+
+  async autoApproveUser(userId: string): Promise<void> {
+    await this.userRepo.approveUser(userId);
+  }
+
+  async approveUser(
+    input: { userId: string },
+    platformRole: PlatformRole,
+    activeOrganizationId: string | null,
+    actorUserId?: string,
+  ) {
+    await this.assertTargetActionAllowed({
+      actorUserId,
+      targetUserId: input.userId,
+      platformRole,
+      allowSelf: false,
+    });
+
+    if (!this.isSuperadmin(platformRole)) {
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
+      await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
+    }
+
+    await this.userRepo.approveUser(input.userId);
+
+    const user = await this.userRepo.findUserById(input.userId);
+    if (user) {
+      try {
+        await this.emailService.sendApprovalNotification({
+          user: { id: user.id, email: user.email, name: user.name },
+        });
+      } catch (error) {
+        logger.error(
+          `Failed to send approval email for userId: ${input.userId}`,
+          error,
+        );
+      }
+    }
+
+    return { success: true };
+  }
+
+  async rejectUser(
+    input: { userId: string; rejectionReason?: string },
+    platformRole: PlatformRole,
+    activeOrganizationId: string | null,
+    actorUserId?: string,
+  ) {
+    await this.assertTargetActionAllowed({
+      actorUserId,
+      targetUserId: input.userId,
+      platformRole,
+      allowSelf: false,
+    });
+
+    if (!this.isSuperadmin(platformRole)) {
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
+      await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
+    }
+
+    await this.userRepo.rejectUser(input.userId, input.rejectionReason);
+
+    const user = await this.userRepo.findUserById(input.userId);
+    if (user) {
+      try {
+        await this.emailService.sendRejectionNotification({
+          user: { id: user.id, email: user.email, name: user.name },
+          reason: input.rejectionReason,
+        });
+      } catch (error) {
+        logger.error(
+          `Failed to send rejection email for userId: ${input.userId}`,
+          error,
+        );
+      }
+    }
+
+    return { success: true };
+  }
+
+  async listPendingUsers(params: {
+    limit: number;
+    offset: number;
+    searchValue?: string;
+    activeOrganizationId: string | null;
+    platformRole: PlatformRole;
+  }) {
+    const { limit, offset, searchValue, platformRole, activeOrganizationId } =
+      params;
+    if (!this.isSuperadmin(platformRole) && !activeOrganizationId) {
+      throw new ForbiddenException('Active organization required');
+    }
+    const result = await this.userRepo.listPendingUsers({
+      limit,
+      offset,
+      searchValue,
+      activeOrganizationId,
+      platformRole,
+    });
+    return { ...result, limit, offset };
+  }
+
   async getUserCapabilities(params: {
     actorUserId: string;
     targetUserId: string;
@@ -427,6 +542,8 @@ export class AdminService {
         remove: canMutateNonSelf,
         revokeSessions: canMutateNonSelf,
         impersonate: canMutateNonSelf,
+        approve: canMutateNonSelf,
+        reject: canMutateNonSelf,
       },
     };
   }

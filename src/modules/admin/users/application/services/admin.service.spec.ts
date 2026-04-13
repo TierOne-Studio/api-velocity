@@ -67,6 +67,8 @@ describe('AdminService', () => {
     banned: false as boolean | null,
     banReason: null as string | null,
     banExpires: null as Date | null,
+    approvalStatus: 'approved' as string | null,
+    rejectionReason: null as string | null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -86,6 +88,10 @@ describe('AdminService', () => {
       removeUsers: jest.fn(),
       listUsers: jest.fn(),
       createUser: jest.fn(),
+      approveUser: jest.fn(),
+      rejectUser: jest.fn(),
+      listPendingUsers: jest.fn(),
+      findAcceptedInvitationByEmail: jest.fn(),
       findSessionByToken: jest.fn(),
       revokeSession: jest.fn(),
       revokeAllSessions: jest.fn(),
@@ -103,6 +109,12 @@ describe('AdminService', () => {
         .fn<() => Promise<void>>()
         .mockResolvedValue(undefined),
       sendOrganizationInvitation: jest
+        .fn<() => Promise<void>>()
+        .mockResolvedValue(undefined),
+      sendApprovalNotification: jest
+        .fn<() => Promise<void>>()
+        .mockResolvedValue(undefined),
+      sendRejectionNotification: jest
         .fn<() => Promise<void>>()
         .mockResolvedValue(undefined),
     };

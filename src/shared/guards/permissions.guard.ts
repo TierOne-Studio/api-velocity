@@ -8,6 +8,7 @@ import { Reflector } from '@nestjs/core';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { RoleService } from '../../modules/admin/rbac/application/services';
+import { DatabaseService } from '../infrastructure/database/database.module';
 import {
   getActiveOrganizationId,
   getPlatformRole,
@@ -32,6 +33,7 @@ export class PermissionsGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
     private roleService: RoleService,
+    private db: DatabaseService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -56,6 +58,29 @@ export class PermissionsGuard implements CanActivate {
 
     if (platformRole === 'superadmin') {
       return true;
+    }
+
+    // Block pending/rejected users from accessing protected endpoints.
+    // Wrapped in try-catch for resilience if the approvalStatus column
+    // hasn't been created yet (migration not yet applied).
+    try {
+      const userApproval = await this.db.queryOne<{
+        approvalStatus: string | null;
+      }>('SELECT "approvalStatus" FROM "user" WHERE id = $1', [session.user.id]);
+
+      if (userApproval) {
+        const status = userApproval.approvalStatus;
+        if (status === 'pending') {
+          throw new ForbiddenException('ACCOUNT_PENDING_APPROVAL');
+        }
+        if (status === 'rejected') {
+          throw new ForbiddenException('ACCOUNT_REJECTED');
+        }
+      }
+    } catch (error) {
+      // Re-throw ForbiddenException (approval check result)
+      if (error instanceof ForbiddenException) throw error;
+      // Swallow DB errors (e.g. column doesn't exist yet) — allow access
     }
 
     // user.role is NULL for non-superadmins after Phase 0 migration; resolve actual org membership role

@@ -7,6 +7,8 @@ import type {
   EmailVerificationPayload,
   PasswordResetPayload,
   OrganizationInvitationPayload,
+  ApprovalNotificationPayload,
+  RejectionNotificationPayload,
 } from './email.interfaces';
 
 @Injectable()
@@ -179,5 +181,50 @@ export class EmailService {
     const text = `You've been invited to join ${organization.name} as a ${role}. Accept the invitation using this link: ${inviteUrl}`;
 
     await this.sendEmail({ to: email, subject, html, text });
+  }
+
+  async sendApprovalNotification({
+    user,
+  }: ApprovalNotificationPayload): Promise<void> {
+    const loginUrl = `${this.configService.getFeUrl()}/login`;
+
+    const subject = 'Your account has been approved';
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Account Approved</h2>
+        <p>Hi ${user.name || user.email},</p>
+        <p>Your account has been approved. You can now log in and start using the platform.</p>
+        <div style="margin: 20px 0;">
+          <a href="${loginUrl}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+            Log In
+          </a>
+        </div>
+      </div>
+    `;
+    const text = `Your account has been approved. Log in here: ${loginUrl}`;
+
+    await this.sendEmail({ to: user.email, subject, html, text });
+  }
+
+  async sendRejectionNotification({
+    user,
+    reason,
+  }: RejectionNotificationPayload): Promise<void> {
+    const subject = 'Your account registration was not approved';
+    const reasonText = reason
+      ? `<p><strong>Reason:</strong> ${reason}</p>`
+      : '';
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Account Not Approved</h2>
+        <p>Hi ${user.name || user.email},</p>
+        <p>Unfortunately, your account registration was not approved at this time.</p>
+        ${reasonText}
+        <p>If you believe this is a mistake, please contact the platform administrator.</p>
+      </div>
+    `;
+    const text = `Your account registration was not approved.${reason ? ` Reason: ${reason}` : ''} If you believe this is a mistake, please contact the platform administrator.`;
+
+    await this.sendEmail({ to: user.email, subject, html, text });
   }
 }

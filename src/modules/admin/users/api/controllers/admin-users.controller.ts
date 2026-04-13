@@ -128,6 +128,51 @@ export class AdminUsersController {
     }
   }
 
+  /**
+   * Get the current user's approval status.
+   * No @RequirePermissions so the approval check in the guard is skipped.
+   * This allows pending users to check their own status.
+   */
+  @Get('me/approval-status')
+  async getMyApprovalStatus(@Session() session: UserSession) {
+    try {
+      const user = await this.adminService.findUserById(session.user.id);
+      return {
+        approvalStatus: user?.approvalStatus ?? 'approved',
+        rejectionReason: user?.rejectionReason ?? null,
+      };
+    } catch {
+      // Column may not exist yet if migration hasn't run
+      return { approvalStatus: 'approved', rejectionReason: null };
+    }
+  }
+
+  /**
+   * Auto-approve the current user if they have an accepted invitation.
+   * This endpoint does NOT require `user:approve` permission — it allows
+   * the user to self-approve only if they have a valid accepted invitation.
+   */
+  @Post('self-approve-invited')
+  async selfApproveInvited(@Session() session: UserSession) {
+    const userId = session.user.id;
+
+    // Check if user has a pending approval status
+    const user = await this.adminService.findUserById(userId);
+    if (!user || user.approvalStatus !== 'pending') {
+      return { success: true, alreadyApproved: true };
+    }
+
+    // Check if user has any accepted invitation
+    const hasAcceptedInvitation = await this.adminService.hasAcceptedInvitation(userId);
+    if (!hasAcceptedInvitation) {
+      return { success: false, message: 'No accepted invitation found' };
+    }
+
+    // Auto-approve
+    await this.adminService.autoApproveUser(userId);
+    return { success: true };
+  }
+
   @Get('create-metadata')
   @RequirePermissions('user:read')
   async getCreateMetadata(@Session() session: UserSession) {
@@ -167,6 +212,73 @@ export class AdminUsersController {
       platformRole,
       activeOrganizationId: activeOrgId,
     });
+  }
+
+  @Get('pending')
+  @RequirePermissions('user:approve')
+  async listPending(
+    @Session() session: UserSession,
+    @Query('limit') limit = '10',
+    @Query('offset') offset = '0',
+    @Query('searchValue') searchValue?: string,
+  ) {
+    const { parsedLimit, parsedOffset } = this.validatePagination(
+      limit,
+      offset,
+    );
+
+    const platformRole = getPlatformRole(session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
+
+    return this.adminService.listPendingUsers({
+      limit: parsedLimit,
+      offset: parsedOffset,
+      searchValue,
+      platformRole,
+      activeOrganizationId: activeOrgId,
+    });
+  }
+
+  @Post(':userId/approve')
+  @RequirePermissions('user:approve')
+  async approve(
+    @Session() session: UserSession,
+    @Param('userId') userId: string,
+  ) {
+    const platformRole = getPlatformRole(session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
+    return this.adminService.approveUser(
+      { userId },
+      platformRole,
+      activeOrgId,
+      session.user.id,
+    );
+  }
+
+  @Post(':userId/reject')
+  @RequirePermissions('user:approve')
+  async reject(
+    @Session() session: UserSession,
+    @Param('userId') userId: string,
+    @Body() body: { rejectionReason?: string },
+  ) {
+    const platformRole = getPlatformRole(session);
+    const activeOrgId = requireActiveOrganizationIdForManager(
+      platformRole,
+      session,
+    );
+    return this.adminService.rejectUser(
+      { userId, rejectionReason: body?.rejectionReason },
+      platformRole,
+      activeOrgId,
+      session.user.id,
+    );
   }
 
   @Post('capabilities/batch')

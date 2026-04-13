@@ -8,6 +8,8 @@ export interface UserRow {
   banned: boolean | null;
   banReason: string | null;
   banExpires: Date | null;
+  approvalStatus: string | null;
+  rejectionReason: string | null;
   createdAt: Date;
   updatedAt: Date;
   memberships?: UserMembershipRow[];
@@ -90,6 +92,14 @@ export interface IAdminUserRepository {
   setUserRole(params: SetUserRoleParams): Promise<UserRow | null>;
   banUser(userId: string, banReason?: string): Promise<void>;
   unbanUser(userId: string): Promise<void>;
+  approveUser(userId: string): Promise<void>;
+  rejectUser(userId: string, rejectionReason?: string): Promise<void>;
+  listPendingUsers(
+    params: ListUsersParams,
+  ): Promise<{ data: UserRow[]; total: number }>;
+  findAcceptedInvitationByEmail(
+    email: string,
+  ): Promise<{ id: string } | null>;
   setUserPassword(userId: string, hashedPassword: string): Promise<void>;
   removeUser(userId: string): Promise<void>;
   removeUsers(userIds: string[]): Promise<number>;
