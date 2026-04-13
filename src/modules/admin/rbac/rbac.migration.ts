@@ -31,6 +31,7 @@ const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
   { resource: 'user', action: 'impersonate' },
   { resource: 'user', action: 'set-role' },
   { resource: 'user', action: 'set-password' },
+  { resource: 'user', action: 'approve' },
 ] as const;
 
 const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
@@ -130,6 +131,10 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_015_add_chat_permissions',
         up: () => this.addChatPermissions(),
+      },
+      {
+        name: 'rbac_016_add_user_approve_permission',
+        up: () => this.addUserApprovePermission(),
       },
     ];
 
@@ -1190,5 +1195,57 @@ export class RbacMigrationService implements OnModuleInit {
     }
 
     console.log('✅ Chat permissions added and assigned to roles');
+  }
+
+  /**
+   * Add user:approve permission and assign it to superadmin + all org-scoped
+   * admin roles using their updated default permission sets.
+   */
+  async addUserApprovePermission(): Promise<void> {
+    await this.db.query(
+      `INSERT INTO permissions (resource, action, description)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (resource, action) DO NOTHING`,
+      ['user', 'approve', 'Approve or reject pending user registrations'],
+    );
+
+    // Assign to global superadmin role
+    const superadminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
+    );
+    const approvePerm = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM permissions WHERE resource = 'user' AND action = 'approve'`,
+    );
+
+    if (superadminRole && approvePerm) {
+      await this.db.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         VALUES ($1, $2)
+         ON CONFLICT DO NOTHING`,
+        [superadminRole.id, approvePerm.id],
+      );
+    }
+
+    // Sync all org-scoped roles with their updated default permission sets
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
+
+    for (const organization of organizations) {
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [organization.id],
+      );
+      if (adminRole) {
+        await this.syncRolePermissions(
+          adminRole.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    console.log(
+      '✅ user:approve permission added and assigned to admin roles',
+    );
   }
 }

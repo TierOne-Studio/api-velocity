@@ -375,6 +375,25 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
         },
       },
       {
+        name: '010_add_user_approval_status',
+        up: async () => {
+          await this.query(`
+            ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "approvalStatus" TEXT DEFAULT 'pending'
+          `);
+          await this.query(`
+            ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "rejectionReason" TEXT
+          `);
+          // Backfill: all existing users are approved so nothing breaks
+          await this.query(`
+            UPDATE "user" SET "approvalStatus" = 'approved' WHERE "approvalStatus" = 'pending'
+          `);
+          // Index for fast lookups of pending users
+          await this.query(`
+            CREATE INDEX IF NOT EXISTS "user_approvalStatus_idx" ON "user"("approvalStatus")
+          `);
+        },
+      },
+      {
         name: '008_rename_is_system_to_is_default',
         up: async () => {
           // Rename the is_system column to is_default on the roles table.

@@ -23,6 +23,15 @@ export interface PasswordResetPayload {
   token: string;
 }
 
+export interface ApprovalNotificationPayload {
+  user: User;
+}
+
+export interface RejectionNotificationPayload {
+  user: User;
+  reason?: string;
+}
+
 export interface OrganizationInvitationPayload {
   id: string;
   email: string;

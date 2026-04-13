@@ -12,8 +12,8 @@ import type {
   ListUsersParams,
 } from '../../../domain/repositories/admin-user.repository.interface';
 
-const USER_COLUMNS = `id, name, email, "emailVerified" as "emailVerified", role, image, banned, "banReason" as "banReason", "banExpires" as "banExpires", "createdAt" as "createdAt", "updatedAt" as "updatedAt"`;
-const USER_LIST_COLUMNS = `u.id, u.name, u.email, u."emailVerified" as "emailVerified", u.role, u.image, u.banned, u."banReason" as "banReason", u."banExpires" as "banExpires", u."createdAt" as "createdAt", u."updatedAt" as "updatedAt",
+const USER_COLUMNS = `id, name, email, "emailVerified" as "emailVerified", role, image, banned, "banReason" as "banReason", "banExpires" as "banExpires", "approvalStatus" as "approvalStatus", "rejectionReason" as "rejectionReason", "createdAt" as "createdAt", "updatedAt" as "updatedAt"`;
+const USER_LIST_COLUMNS = `u.id, u.name, u.email, u."emailVerified" as "emailVerified", u.role, u.image, u.banned, u."banReason" as "banReason", u."banExpires" as "banExpires", u."approvalStatus" as "approvalStatus", u."rejectionReason" as "rejectionReason", u."createdAt" as "createdAt", u."updatedAt" as "updatedAt",
        COALESCE((
          SELECT json_agg(
            json_build_object(
@@ -241,8 +241,8 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
         throw new ForbiddenException('User already exists');
 
       await query(
-        `INSERT INTO "user" (id, name, email, "emailVerified", image, "createdAt", "updatedAt", role, banned)
-         VALUES ($1, $2, $3, false, NULL, NOW(), NOW(), $4, false)`,
+        `INSERT INTO "user" (id, name, email, "emailVerified", image, "createdAt", "updatedAt", role, banned, "approvalStatus")
+         VALUES ($1, $2, $3, false, NULL, NOW(), NOW(), $4, false, 'approved')`,
         [userId, name, email.toLowerCase(), role],
       );
 
@@ -266,6 +266,80 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
         'Failed to create user: user not found after transaction',
       );
     return created;
+  }
+
+  async approveUser(userId: string): Promise<void> {
+    await this.db.query(
+      'UPDATE "user" SET "approvalStatus" = \'approved\', "rejectionReason" = NULL, "updatedAt" = NOW() WHERE id = $1',
+      [userId],
+    );
+  }
+
+  async rejectUser(userId: string, rejectionReason?: string): Promise<void> {
+    await this.db.query(
+      'UPDATE "user" SET "approvalStatus" = \'rejected\', "rejectionReason" = $1, "updatedAt" = NOW() WHERE id = $2',
+      [rejectionReason ?? null, userId],
+    );
+  }
+
+  async listPendingUsers(
+    params: ListUsersParams,
+  ): Promise<{ data: UserRow[]; total: number }> {
+    const {
+      limit,
+      offset,
+      searchValue,
+      platformRole,
+      activeOrganizationId,
+    } = params;
+    const where: string[] = [`u."approvalStatus" = 'pending'`];
+    const values: unknown[] = [];
+
+    if (searchValue) {
+      values.push(`%${searchValue}%`);
+      where.push(
+        `(u.name ILIKE $${values.length} OR u.email ILIKE $${values.length})`,
+      );
+    }
+
+    if (platformRole !== 'superadmin') {
+      values.push(activeOrganizationId);
+      where.push(
+        `EXISTS (SELECT 1 FROM member m WHERE m."userId" = u.id AND m."organizationId" = $${values.length})`,
+      );
+    }
+
+    const whereSql = `WHERE ${where.join(' AND ')}`;
+    const countValues = [...values];
+
+    values.push(Math.max(0, Math.trunc(limit)));
+    const limitParam = `$${values.length}`;
+    values.push(Math.max(0, Math.trunc(offset)));
+    const offsetParam = `$${values.length}`;
+
+    const data = await this.db.query<UserRow>(
+      `SELECT ${USER_LIST_COLUMNS}
+       FROM "user" u ${whereSql}
+       ORDER BY u."createdAt" DESC
+       LIMIT ${limitParam} OFFSET ${offsetParam}`,
+      values,
+    );
+
+    const totalRow = await this.db.queryOne<{ count: string }>(
+      `SELECT COUNT(*)::text as count FROM "user" u ${whereSql}`,
+      countValues,
+    );
+
+    return { data, total: totalRow ? parseInt(totalRow.count, 10) : 0 };
+  }
+
+  async findAcceptedInvitationByEmail(
+    email: string,
+  ): Promise<{ id: string } | null> {
+    return this.db.queryOne<{ id: string }>(
+      `SELECT id FROM invitation WHERE email = $1 AND status = 'accepted' LIMIT 1`,
+      [email.toLowerCase()],
+    );
   }
 
   async findSessionByToken(token: string): Promise<{ userId: string } | null> {

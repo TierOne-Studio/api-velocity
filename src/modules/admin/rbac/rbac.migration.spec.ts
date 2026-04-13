@@ -75,7 +75,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_012 already run
         .mockResolvedValueOnce(true) // rbac_013 already run
         .mockResolvedValueOnce(true) // rbac_014 already run
-        .mockResolvedValueOnce(true); // rbac_015 already run
+        .mockResolvedValueOnce(true) // rbac_015 already run
+        .mockResolvedValueOnce(true); // rbac_016 already run
 
       const consoleSpy = jest
         .spyOn(console, 'log')
@@ -156,8 +157,11 @@ describe('RbacMigrationService', () => {
       expect(dbService.recordMigration).toHaveBeenCalledWith(
         'rbac_015_add_chat_permissions',
       );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_016_add_user_approve_permission',
+      );
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('12 new'),
+        expect.stringContaining('13 new'),
       );
       consoleSpy.mockRestore();
     });
@@ -212,6 +216,9 @@ describe('RbacMigrationService', () => {
       );
       expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
         'rbac_015_add_chat_permissions',
+      );
+      expect(dbService.hasMigrationRun).toHaveBeenCalledWith(
+        'rbac_016_add_user_approve_permission',
       );
     });
   });
@@ -1016,7 +1023,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_012 already run
         .mockResolvedValueOnce(true) // rbac_013 already run
         .mockResolvedValueOnce(true) // rbac_014 already run
-        .mockResolvedValueOnce(true); // rbac_015 already run
+        .mockResolvedValueOnce(true) // rbac_015 already run
+        .mockResolvedValueOnce(true); // rbac_016 already run
 
       // Needed by backfillRolePermissions and assignAllPermissionsToAdmin
       dbService.queryOne.mockResolvedValue(null);
