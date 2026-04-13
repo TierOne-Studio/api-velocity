@@ -106,6 +106,39 @@ export class AdminService {
       throw new ForbiddenException('User is not in your organization');
   }
 
+  /**
+   * Combined authorization check: verifies the actor can perform the action
+   * on the target user, and that org-scoped actors have the target in their org.
+   */
+  private async assertCanActOnUser(params: {
+    targetUserId: string;
+    platformRole: PlatformRole;
+    activeOrganizationId: string | null;
+    actorUserId?: string;
+    allowSelf: boolean;
+  }): Promise<void> {
+    const {
+      targetUserId,
+      platformRole,
+      activeOrganizationId,
+      actorUserId,
+      allowSelf,
+    } = params;
+
+    await this.assertTargetActionAllowed({
+      actorUserId,
+      targetUserId,
+      platformRole,
+      allowSelf,
+    });
+
+    if (!this.isSuperadmin(platformRole)) {
+      if (!activeOrganizationId)
+        throw new ForbiddenException('Active organization required');
+      await this.assertUserInManagerOrg(targetUserId, activeOrganizationId);
+    }
+  }
+
   private async resolveRoleAssignmentOrganizationId(params: {
     targetUserId: string;
     platformRole: PlatformRole;
@@ -155,18 +188,13 @@ export class AdminService {
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
-    await this.assertTargetActionAllowed({
-      actorUserId,
+    await this.assertCanActOnUser({
       targetUserId: input.userId,
       platformRole,
+      activeOrganizationId,
+      actorUserId,
       allowSelf: true,
     });
-
-    if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId)
-        throw new ForbiddenException('Active organization required');
-      await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
-    }
 
     if (input.name === undefined)
       throw new ForbiddenException('No data to update');
@@ -179,22 +207,17 @@ export class AdminService {
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
-    await this.assertTargetActionAllowed({
-      actorUserId,
+    await this.assertCanActOnUser({
       targetUserId: input.userId,
       platformRole,
+      activeOrganizationId,
+      actorUserId,
       allowSelf: false,
     });
 
     const allowed = getAllowedRoleNamesForCreator(platformRole);
     if (!allowed.includes(input.role)) {
       throw new ForbiddenException('Role not allowed');
-    }
-
-    if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId)
-        throw new ForbiddenException('Active organization required');
-      await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
     }
 
     const organizationIdForRole =
@@ -224,18 +247,13 @@ export class AdminService {
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
-    await this.assertTargetActionAllowed({
-      actorUserId,
+    await this.assertCanActOnUser({
       targetUserId: input.userId,
       platformRole,
+      activeOrganizationId,
+      actorUserId,
       allowSelf: false,
     });
-
-    if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId)
-        throw new ForbiddenException('Active organization required');
-      await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
-    }
 
     await this.userRepo.banUser(input.userId, input.banReason);
     return { success: true };
@@ -247,18 +265,13 @@ export class AdminService {
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
-    await this.assertTargetActionAllowed({
-      actorUserId,
+    await this.assertCanActOnUser({
       targetUserId: input.userId,
       platformRole,
+      activeOrganizationId,
+      actorUserId,
       allowSelf: false,
     });
-
-    if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId)
-        throw new ForbiddenException('Active organization required');
-      await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
-    }
 
     await this.userRepo.unbanUser(input.userId);
     return { success: true };
@@ -270,18 +283,13 @@ export class AdminService {
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
-    await this.assertTargetActionAllowed({
-      actorUserId,
+    await this.assertCanActOnUser({
       targetUserId: input.userId,
       platformRole,
+      activeOrganizationId,
+      actorUserId,
       allowSelf: true,
     });
-
-    if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId)
-        throw new ForbiddenException('Active organization required');
-      await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
-    }
 
     const hashed = await hashPassword(input.newPassword);
     await this.userRepo.setUserPassword(input.userId, hashed);
@@ -294,18 +302,14 @@ export class AdminService {
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
-    await this.assertTargetActionAllowed({
-      actorUserId,
+    await this.assertCanActOnUser({
       targetUserId: input.userId,
       platformRole,
+      activeOrganizationId,
+      actorUserId,
       allowSelf: false,
     });
 
-    if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId)
-        throw new ForbiddenException('Active organization required');
-      await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
-    }
     await this.userRepo.removeUser(input.userId);
     return { success: true };
   }
@@ -381,11 +385,9 @@ export class AdminService {
     return this.userRepo.findUserById(userId);
   }
 
-  async hasAcceptedInvitation(userId: string): Promise<boolean> {
-    const user = await this.userRepo.findUserById(userId);
-    if (!user) return false;
-    // Check if user has an accepted invitation via their email
-    const invitation = await this.userRepo.findAcceptedInvitationByEmail(user.email);
+  async hasAcceptedInvitation(email: string): Promise<boolean> {
+    const invitation =
+      await this.userRepo.findAcceptedInvitationByEmail(email);
     return !!invitation;
   }
 
@@ -399,18 +401,13 @@ export class AdminService {
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
-    await this.assertTargetActionAllowed({
-      actorUserId,
+    await this.assertCanActOnUser({
       targetUserId: input.userId,
       platformRole,
+      activeOrganizationId,
+      actorUserId,
       allowSelf: false,
     });
-
-    if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId)
-        throw new ForbiddenException('Active organization required');
-      await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
-    }
 
     await this.userRepo.approveUser(input.userId);
 
@@ -437,18 +434,13 @@ export class AdminService {
     activeOrganizationId: string | null,
     actorUserId?: string,
   ) {
-    await this.assertTargetActionAllowed({
-      actorUserId,
+    await this.assertCanActOnUser({
       targetUserId: input.userId,
       platformRole,
+      activeOrganizationId,
+      actorUserId,
       allowSelf: false,
     });
-
-    if (!this.isSuperadmin(platformRole)) {
-      if (!activeOrganizationId)
-        throw new ForbiddenException('Active organization required');
-      await this.assertUserInManagerOrg(input.userId, activeOrganizationId);
-    }
 
     await this.userRepo.rejectUser(input.userId, input.rejectionReason);
 

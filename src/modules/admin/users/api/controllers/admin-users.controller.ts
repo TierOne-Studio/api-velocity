@@ -156,19 +156,21 @@ export class AdminUsersController {
   async selfApproveInvited(@Session() session: UserSession) {
     const userId = session.user.id;
 
-    // Check if user has a pending approval status
     const user = await this.adminService.findUserById(userId);
     if (!user || user.approvalStatus !== 'pending') {
       return { success: true, alreadyApproved: true };
     }
 
-    // Check if user has any accepted invitation
-    const hasAcceptedInvitation = await this.adminService.hasAcceptedInvitation(userId);
-    if (!hasAcceptedInvitation) {
-      return { success: false, message: 'No accepted invitation found' };
+    const hasInvitation = await this.adminService.hasAcceptedInvitation(
+      user.email,
+    );
+    if (!hasInvitation) {
+      throw new HttpException(
+        'No accepted invitation found',
+        HttpStatus.FORBIDDEN,
+      );
     }
 
-    // Auto-approve
     await this.adminService.autoApproveUser(userId);
     return { success: true };
   }
@@ -268,6 +270,12 @@ export class AdminUsersController {
     @Param('userId') userId: string,
     @Body() body: { rejectionReason?: string },
   ) {
+    if (body?.rejectionReason && body.rejectionReason.length > 500) {
+      throw new HttpException(
+        'rejectionReason must be at most 500 characters',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     const platformRole = getPlatformRole(session);
     const activeOrgId = requireActiveOrganizationIdForManager(
       platformRole,

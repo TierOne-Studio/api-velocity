@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Resend } from 'resend';
 import { ConfigService } from '../config/config.service';
 import { isResendTestEmail } from '../utils/resend-test-email';
+import { escapeHtml } from '../utils/html-escape';
 import type {
   EmailPayload,
   EmailVerificationPayload,
@@ -103,11 +104,13 @@ export class EmailService {
       url,
     });
 
+    const safeName = escapeHtml(user.name || user.email);
+
     const subject = 'Verify your email';
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>Verify Your Email Address</h2>
-        <p>Hi ${user.name || user.email},</p>
+        <p>Hi ${safeName},</p>
         <p>Thank you for signing up! Please click the button below to verify your email address.</p>
         <div style="margin: 20px 0;">
           <a href="${url}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
@@ -127,13 +130,14 @@ export class EmailService {
     user,
     token,
   }: PasswordResetPayload): Promise<void> {
-    const resetUrl = `${this.configService.getFeUrl()}/set-new-password?token=${token}`;
+    const resetUrl = `${this.configService.getFeUrl()}/set-new-password?token=${encodeURIComponent(token)}`;
+    const safeName = escapeHtml(user.name || user.email);
 
     const subject = 'Reset your password';
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>Reset Your Password</h2>
-        <p>Hi ${user.name || user.email},</p>
+        <p>Hi ${safeName},</p>
         <p>Please click the link below to reset your password. This link will expire soon.</p>
         <div style="margin: 20px 0;">
           <a href="${resetUrl}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
@@ -155,14 +159,18 @@ export class EmailService {
     organization,
     inviter,
   }: OrganizationInvitationPayload): Promise<void> {
-    const inviteUrl = `${this.configService.getFeUrl()}/accept-invitation/${id}`;
+    const inviteUrl = `${this.configService.getFeUrl()}/accept-invitation/${encodeURIComponent(id)}`;
+    const safeOrgName = escapeHtml(organization.name);
+    const safeInviterName = escapeHtml(inviter.user.name || inviter.user.email);
+    const safeInviterEmail = escapeHtml(inviter.user.email);
+    const safeRole = escapeHtml(role);
 
     const subject = `Invitation to join ${organization.name}`;
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>You're Invited to Join ${organization.name}</h2>
+        <h2>You're Invited to Join ${safeOrgName}</h2>
         <p>Hi,</p>
-        <p>${inviter.user.name || inviter.user.email} has invited you to join <strong>${organization.name}</strong> as a <strong>${role}</strong>.</p>
+        <p>${safeInviterName} has invited you to join <strong>${safeOrgName}</strong> as a <strong>${safeRole}</strong>.</p>
         <div style="margin: 20px 0;">
           <a href="${inviteUrl}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
             Accept Invitation
@@ -172,9 +180,9 @@ export class EmailService {
         <p>This invitation link will expire soon.</p>
         <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
         <p style="font-size: 12px; color: #666;">
-          Invited by: ${inviter.user.email}<br>
-          Organization: ${organization.name}<br>
-          Role: ${role}
+          Invited by: ${safeInviterEmail}<br>
+          Organization: ${safeOrgName}<br>
+          Role: ${safeRole}
         </p>
       </div>
     `;
@@ -187,12 +195,13 @@ export class EmailService {
     user,
   }: ApprovalNotificationPayload): Promise<void> {
     const loginUrl = `${this.configService.getFeUrl()}/login`;
+    const safeName = escapeHtml(user.name || user.email);
 
     const subject = 'Your account has been approved';
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>Account Approved</h2>
-        <p>Hi ${user.name || user.email},</p>
+        <p>Hi ${safeName},</p>
         <p>Your account has been approved. You can now log in and start using the platform.</p>
         <div style="margin: 20px 0;">
           <a href="${loginUrl}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
@@ -210,14 +219,17 @@ export class EmailService {
     user,
     reason,
   }: RejectionNotificationPayload): Promise<void> {
+    const safeName = escapeHtml(user.name || user.email);
+    const safeReason = escapeHtml(reason);
+
     const subject = 'Your account registration was not approved';
-    const reasonText = reason
-      ? `<p><strong>Reason:</strong> ${reason}</p>`
+    const reasonText = safeReason
+      ? `<p><strong>Reason:</strong> ${safeReason}</p>`
       : '';
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>Account Not Approved</h2>
-        <p>Hi ${user.name || user.email},</p>
+        <p>Hi ${safeName},</p>
         <p>Unfortunately, your account registration was not approved at this time.</p>
         ${reasonText}
         <p>If you believe this is a mistake, please contact the platform administrator.</p>
