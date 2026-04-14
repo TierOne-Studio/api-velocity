@@ -76,7 +76,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_013 already run
         .mockResolvedValueOnce(true) // rbac_014 already run
         .mockResolvedValueOnce(true) // rbac_015 already run
-        .mockResolvedValueOnce(true); // rbac_016 already run
+        .mockResolvedValueOnce(true) // rbac_016 already run
+        .mockResolvedValueOnce(true); // rbac_017 already run
 
       const consoleSpy = jest
         .spyOn(console, 'log')
@@ -106,7 +107,9 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false) // rbac_012 NOT run
         .mockResolvedValueOnce(false) // rbac_013 NOT run
         .mockResolvedValueOnce(false) // rbac_014 NOT run
-        .mockResolvedValueOnce(false); // rbac_015 NOT run
+        .mockResolvedValueOnce(false) // rbac_015 NOT run
+        .mockResolvedValueOnce(false) // rbac_016 NOT run
+        .mockResolvedValueOnce(false); // rbac_017 NOT run
 
       // rbac_013 calls seedDefaultOrganization → UPSERT returns new org id.
       // Use mockImplementation so it isn't consumed by earlier migrations that also call queryOne.
@@ -160,8 +163,11 @@ describe('RbacMigrationService', () => {
       expect(dbService.recordMigration).toHaveBeenCalledWith(
         'rbac_016_add_user_approve_permission',
       );
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_017_remove_phantom_permissions',
+      );
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('13 new'),
+        expect.stringContaining('14 new'),
       );
       consoleSpy.mockRestore();
     });
@@ -416,10 +422,6 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce({ id: 'perm-org-read' })
         .mockResolvedValueOnce({ id: 'perm-org-update' })
         .mockResolvedValueOnce({ id: 'perm-org-invite' })
-        .mockResolvedValueOnce({ id: 'perm-project-create' })
-        .mockResolvedValueOnce({ id: 'perm-project-read' })
-        .mockResolvedValueOnce({ id: 'perm-project-update' })
-        .mockResolvedValueOnce({ id: 'perm-project-delete' })
         .mockResolvedValueOnce({ id: 'perm-chat-read' })
         .mockResolvedValueOnce({ id: 'perm-chat-create' })
         .mockResolvedValueOnce({ id: 'perm-chat-stream' })
@@ -432,7 +434,6 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce({ id: 'perm-user-update' })
         .mockResolvedValueOnce({ id: 'member-role-1' })
         .mockResolvedValueOnce({ id: 'perm-member-org-read' })
-        .mockResolvedValueOnce({ id: 'perm-member-project-read' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-read' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-create' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-stream' });
@@ -449,14 +450,6 @@ describe('RbacMigrationService', () => {
           'update',
           'organization',
           'invite',
-          'project',
-          'create',
-          'project',
-          'read',
-          'project',
-          'update',
-          'project',
-          'delete',
           'chat',
           'read',
           'chat',
@@ -484,8 +477,6 @@ describe('RbacMigrationService', () => {
         [
           'member-role-1',
           'organization',
-          'read',
-          'project',
           'read',
           'chat',
           'read',
@@ -1024,7 +1015,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_013 already run
         .mockResolvedValueOnce(true) // rbac_014 already run
         .mockResolvedValueOnce(true) // rbac_015 already run
-        .mockResolvedValueOnce(true); // rbac_016 already run
+        .mockResolvedValueOnce(true) // rbac_016 already run
+        .mockResolvedValueOnce(true); // rbac_017 already run
 
       // Needed by backfillRolePermissions and assignAllPermissionsToAdmin
       dbService.queryOne.mockResolvedValue(null);
