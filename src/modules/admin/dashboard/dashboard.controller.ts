@@ -3,9 +3,8 @@ import { PermissionsGuard, RequirePermissions } from '../../../shared';
 import { DashboardService } from './dashboard.service';
 import { OverviewStatsDto } from './dto/overview-stats.dto';
 import { UserStatsDto } from './dto/user-stats.dto';
-import { SessionStatsDto } from './dto/session-stats.dto';
 import { ChatStatsDto } from './dto/chat-stats.dto';
-import { ProjectStatsDto } from './dto/project-stats.dto';
+import { OrgStatsDto } from './dto/org-stats.dto';
 
 type Range = '7d' | '30d' | '90d';
 
@@ -26,21 +25,16 @@ export class DashboardController {
     return this.dashboardService.getUserStats(range);
   }
 
-  @Get('sessions')
-  @RequirePermissions('dashboard:view')
-  getSessionStats(@Query('range') range: Range = '30d'): Promise<SessionStatsDto> {
-    return this.dashboardService.getSessionStats(range);
-  }
-
   @Get('chat')
   @RequirePermissions('dashboard:view')
   getChatStats(@Query('range') range: Range = '30d'): Promise<ChatStatsDto> {
     return this.dashboardService.getChatStats(range);
   }
 
-  @Get('projects')
+  @Get('organizations')
   @RequirePermissions('dashboard:view')
-  getProjectStats(): Promise<ProjectStatsDto> {
-    return this.dashboardService.getProjectStats();
+  getOrgStats(): Promise<OrgStatsDto> {
+    return this.dashboardService.getOrgStats();
   }
 }
+

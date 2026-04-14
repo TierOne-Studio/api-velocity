@@ -211,6 +211,14 @@ export class ChatAgentService {
     const maxSources = this.configService.getChatAgentMaxSources();
     const uniqueSources = dedupeAndCapSources(collectedSources, maxSources);
 
+    const finalAiMsg = resultMessages
+      .filter((m) => m._getType() === 'ai')
+      .at(-1) as AIMessage | undefined;
+    const usageMeta = finalAiMsg?.usage_metadata as { input_tokens?: number; output_tokens?: number; total_tokens?: number } | undefined;
+    const promptTokens = usageMeta?.input_tokens ?? null;
+    const completionTokens = usageMeta?.output_tokens ?? null;
+    const totalTokens = usageMeta?.total_tokens ?? null;
+
     return {
       content: finalContent,
       metadata: {
@@ -218,6 +226,7 @@ export class ChatAgentService {
         sources: this.mapSources(uniqueSources),
         resultCount: uniqueSources.length,
         toolCallCount,
+        ...(totalTokens !== null && { promptTokens, completionTokens, totalTokens }),
       },
     };
   }
@@ -280,6 +289,7 @@ export class ChatAgentService {
     let emittedThinking = false;
     let finalContent = '';
     let toolCallCount = 0;
+    let streamFinalAiMsg: AIMessage | undefined;
 
     try {
       const stream = await agent.stream(
@@ -334,6 +344,7 @@ export class ChatAgentService {
             if (isLanggraphNode) {
               // In messages streamMode, each chunk is a delta token — accumulate
               finalContent += text;
+              streamFinalAiMsg = aiMsg;
               yield { type: 'chunk', content: text };
             }
           }
@@ -377,6 +388,11 @@ export class ChatAgentService {
     const maxSources = this.configService.getChatAgentMaxSources();
     const uniqueSources = dedupeAndCapSources(collectedSources, maxSources);
 
+    const streamUsageMeta = streamFinalAiMsg?.usage_metadata as { input_tokens?: number; output_tokens?: number; total_tokens?: number } | undefined;
+    const streamPromptTokens = streamUsageMeta?.input_tokens ?? null;
+    const streamCompletionTokens = streamUsageMeta?.output_tokens ?? null;
+    const streamTotalTokens = streamUsageMeta?.total_tokens ?? null;
+
     const reply: ChatReply = {
       content: finalContent,
       metadata: {
@@ -384,6 +400,11 @@ export class ChatAgentService {
         sources: this.mapSources(uniqueSources),
         resultCount: uniqueSources.length,
         toolCallCount,
+        ...(streamTotalTokens !== null && {
+          promptTokens: streamPromptTokens,
+          completionTokens: streamCompletionTokens,
+          totalTokens: streamTotalTokens,
+        }),
       },
     };
 
