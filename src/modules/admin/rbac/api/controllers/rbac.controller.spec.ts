@@ -563,14 +563,22 @@ describe('RbacController handler bodies', () => {
   // ============ assignPermissions ============
 
   describe('assignPermissions', () => {
-    it('assigns permissions and returns role with permissions', async () => {
+    const superadminSession = {
+      user: { id: 'u1', role: 'superadmin' },
+    } as any;
+    const adminSession = {
+      user: { id: 'u2', role: 'admin' },
+      session: { activeOrganizationId: 'org-1' },
+    } as any;
+
+    it('assigns permissions and returns role with permissions (superadmin)', async () => {
       const role = { id: '2', name: 'editor' };
       const permissions = [{ id: 'p1', resource: 'user', action: 'read' }];
       roleService.findById.mockResolvedValue(role);
       roleService.assignPermissions.mockResolvedValue(undefined);
       roleService.getPermissions.mockResolvedValue(permissions);
 
-      const result = await controller.assignPermissions('2', {
+      const result = await controller.assignPermissions(superadminSession, '2', {
         permissionIds: ['p1'],
       });
 
@@ -578,17 +586,45 @@ describe('RbacController handler bodies', () => {
       expect(roleService.assignPermissions).toHaveBeenCalledWith('2', ['p1']);
     });
 
+    it('allows non-superadmin to assign permissions they hold', async () => {
+      const role = { id: '2', name: 'editor' };
+      const callerPerms = [{ id: 'p1', resource: 'user', action: 'read' }];
+      roleService.findById.mockResolvedValue(role);
+      roleService.getUserPermissions.mockResolvedValue(callerPerms);
+      roleService.assignPermissions.mockResolvedValue(undefined);
+      roleService.getPermissions.mockResolvedValue(callerPerms);
+
+      const result = await controller.assignPermissions(adminSession, '2', {
+        permissionIds: ['p1'],
+      });
+
+      expect(result).toEqual({ data: { ...role, permissions: callerPerms } });
+    });
+
+    it('blocks non-superadmin from assigning permissions they do not hold', async () => {
+      const role = { id: '2', name: 'editor' };
+      const callerPerms = [{ id: 'p1', resource: 'user', action: 'read' }];
+      roleService.findById.mockResolvedValue(role);
+      roleService.getUserPermissions.mockResolvedValue(callerPerms);
+
+      await expect(
+        controller.assignPermissions(adminSession, '2', {
+          permissionIds: ['p1', 'p2'],
+        }),
+      ).rejects.toThrow('Cannot assign permissions you do not hold');
+    });
+
     it('throws 404 when role not found', async () => {
       roleService.findById.mockResolvedValue(null);
 
       await expect(
-        controller.assignPermissions('missing', { permissionIds: ['p1'] }),
+        controller.assignPermissions(superadminSession, 'missing', { permissionIds: ['p1'] }),
       ).rejects.toThrow('Role not found');
     });
 
     it('throws 400 when permissionIds is not an array', async () => {
       await expect(
-        controller.assignPermissions('2', {
+        controller.assignPermissions(superadminSession, '2', {
           permissionIds: 'not-array',
         } as any),
       ).rejects.toThrow('permissionIds must be an array');

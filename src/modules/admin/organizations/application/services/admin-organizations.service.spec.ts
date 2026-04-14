@@ -1097,7 +1097,7 @@ describe('AdminOrganizationsService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('should block downgrading the last member with manage-members permission', async () => {
+    it('should block downgrading the last member with invite permission', async () => {
       orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findMemberById.mockResolvedValue({
         id: 'member-1',
@@ -1112,11 +1112,11 @@ describe('AdminOrganizationsService', () => {
       await expect(
         service.updateMemberRole('org-1', 'member-1', 'member', 'admin'),
       ).rejects.toThrow(
-        'Cannot change role of the last member with organization manage-members permission',
+        'Cannot change role of the last member with organization invite permission',
       );
     });
 
-    it('should allow changing role when new role also has manage-members', async () => {
+    it('should allow changing role when new role also has invite', async () => {
       orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findMemberById.mockResolvedValue({
         id: 'member-1',
@@ -1142,7 +1142,7 @@ describe('AdminOrganizationsService', () => {
       expect(result.role).toBe('manager');
     });
 
-    it('should allow superadmin to downgrade the last manage-members holder', async () => {
+    it('should allow superadmin to downgrade the last invite holder', async () => {
       orgRepo.getRoles.mockResolvedValue(orgRoles);
       orgRepo.findMemberById.mockResolvedValue({
         id: 'member-1',
@@ -1185,7 +1185,7 @@ describe('AdminOrganizationsService', () => {
   });
 
   describe('removeMember', () => {
-    it('should remove member whose role has no manage-members permission', async () => {
+    it('should remove member whose role has no invite permission', async () => {
       orgRepo.findMemberById.mockResolvedValue({
         id: 'member-1',
         role: 'member',
@@ -1200,7 +1200,7 @@ describe('AdminOrganizationsService', () => {
       expect(orgRepo.removeMember).toHaveBeenCalledWith('member-1', 'org-1');
     });
 
-    it('should block removing the last member with manage-members permission', async () => {
+    it('should block removing the last member with invite permission', async () => {
       orgRepo.findMemberById.mockResolvedValue({
         id: 'member-1',
         role: 'admin',
@@ -1212,11 +1212,11 @@ describe('AdminOrganizationsService', () => {
       await expect(
         service.removeMember('org-1', 'member-1', 'admin'),
       ).rejects.toThrow(
-        'Cannot remove the last member with organization manage-members permission',
+        'Cannot remove the last member with organization invite permission',
       );
     });
 
-    it('should allow removing a manage-members holder when others remain', async () => {
+    it('should allow removing a invite holder when others remain', async () => {
       orgRepo.findMemberById.mockResolvedValue({
         id: 'member-1',
         role: 'admin',

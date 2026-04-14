@@ -304,11 +304,14 @@ export class RbacController {
   }
 
   /**
-   * Assign permissions to a role
+   * Assign permissions to a role.
+   * Non-superadmin callers can only assign permissions they themselves hold,
+   * preventing privilege escalation through role manipulation.
    */
   @Put('roles/:id/permissions')
   @RequirePermissions('role:assign')
   async assignPermissions(
+    @Session() session: UserSession,
     @Param('id') id: string,
     @Body() dto: AssignPermissionsDto,
   ) {
@@ -317,6 +320,35 @@ export class RbacController {
     const role = await this.roleService.findById(id);
     if (!role) {
       throw new HttpException('Role not found', HttpStatus.NOT_FOUND);
+    }
+
+    // Self-escalation guard: non-superadmins cannot assign permissions they don't hold
+    const platformRole = getPlatformRole(session);
+    if (platformRole !== 'superadmin' && dto.permissionIds.length > 0) {
+      const activeOrganizationId = getActiveOrganizationId(session);
+      let effectiveRole: string = platformRole;
+      if (activeOrganizationId && session.user?.id) {
+        const memberRole = await this.roleService.getUserActiveMemberRole(
+          session.user.id,
+          activeOrganizationId,
+        );
+        if (memberRole) effectiveRole = memberRole;
+      }
+
+      const callerPermissions = await this.roleService.getUserPermissions(
+        effectiveRole,
+        activeOrganizationId,
+      );
+      const callerPermissionIds = new Set(callerPermissions.map((p) => p.id));
+
+      const unauthorized = dto.permissionIds.filter(
+        (pid) => !callerPermissionIds.has(pid),
+      );
+      if (unauthorized.length > 0) {
+        throw new ForbiddenException(
+          'Cannot assign permissions you do not hold',
+        );
+      }
     }
 
     await this.roleService.assignPermissions(id, dto.permissionIds);

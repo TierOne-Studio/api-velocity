@@ -7,11 +7,6 @@ const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
   { resource: 'organization', action: 'update' },
   { resource: 'organization', action: 'delete' },
   { resource: 'organization', action: 'invite' },
-  { resource: 'organization', action: 'manage-members' },
-  { resource: 'project', action: 'create' },
-  { resource: 'project', action: 'read' },
-  { resource: 'project', action: 'update' },
-  { resource: 'project', action: 'delete' },
   { resource: 'chat', action: 'read' },
   { resource: 'chat', action: 'create' },
   { resource: 'chat', action: 'stream' },
@@ -38,10 +33,6 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
   { resource: 'organization', action: 'read' },
   { resource: 'organization', action: 'update' },
   { resource: 'organization', action: 'invite' },
-  { resource: 'project', action: 'create' },
-  { resource: 'project', action: 'read' },
-  { resource: 'project', action: 'update' },
-  { resource: 'project', action: 'delete' },
   { resource: 'chat', action: 'read' },
   { resource: 'chat', action: 'create' },
   { resource: 'chat', action: 'stream' },
@@ -56,7 +47,6 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
 
 const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
   { resource: 'organization', action: 'read' },
-  { resource: 'project', action: 'read' },
   { resource: 'chat', action: 'read' },
   { resource: 'chat', action: 'create' },
   { resource: 'chat', action: 'stream' },
@@ -135,6 +125,10 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_016_add_user_approve_permission',
         up: () => this.addUserApprovePermission(),
+      },
+      {
+        name: 'rbac_017_remove_phantom_permissions',
+        up: () => this.removePhantomPermissions(),
       },
     ];
 
@@ -1247,5 +1241,47 @@ export class RbacMigrationService implements OnModuleInit {
     console.log(
       '✅ user:approve permission added and assigned to admin roles',
     );
+  }
+
+  /**
+   * Remove phantom permissions that exist in the DB but are never enforced
+   * by any @RequirePermissions decorator or FE can() check:
+   *   - project:* (4) — no controller uses them
+   *   - organization:manage-members — internal-only, now replaced by organization:invite
+   *   - organization-invitation:* — production-only phantoms (Better Auth leftovers)
+   *   - organization-member:* — production-only phantoms (Better Auth leftovers)
+   */
+  async removePhantomPermissions(): Promise<void> {
+    const phantomResources = [
+      'project',
+      'organization-invitation',
+      'organization-member',
+    ];
+
+    for (const resource of phantomResources) {
+      await this.db.query(
+        `DELETE FROM role_permissions
+         WHERE permission_id IN (
+           SELECT id FROM permissions WHERE resource = $1
+         )`,
+        [resource],
+      );
+      await this.db.query(`DELETE FROM permissions WHERE resource = $1`, [
+        resource,
+      ]);
+    }
+
+    // Remove organization:manage-members specifically
+    await this.db.query(
+      `DELETE FROM role_permissions
+       WHERE permission_id IN (
+         SELECT id FROM permissions WHERE resource = 'organization' AND action = 'manage-members'
+       )`,
+    );
+    await this.db.query(
+      `DELETE FROM permissions WHERE resource = 'organization' AND action = 'manage-members'`,
+    );
+
+    console.log('✅ Phantom permissions removed (project:*, organization:manage-members, organization-invitation:*, organization-member:*)');
   }
 }

@@ -366,14 +366,14 @@ describe('AdminOrgDatabaseRepository', () => {
   });
 
   describe('roleGrantsManagePermission', () => {
-    it('returns true when role has manage-members permission', async () => {
+    it('returns true when role has invite permission', async () => {
       mockQueryOne.mockResolvedValue({ has_manage: 'true' });
       expect(await repo.roleGrantsManagePermission('admin', 'org-1')).toBe(
         true,
       );
     });
 
-    it('returns false when role does not have manage-members permission', async () => {
+    it('returns false when role does not have invite permission', async () => {
       mockQueryOne.mockResolvedValue({ has_manage: 'false' });
       expect(await repo.roleGrantsManagePermission('member', 'org-1')).toBe(
         false,

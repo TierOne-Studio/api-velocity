@@ -426,7 +426,7 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
        JOIN role_permissions rp ON rp.role_id = r.id
        JOIN permissions p ON p.id = rp.permission_id
        WHERE m."organizationId" = $1
-         AND p.resource = 'organization' AND p.action = 'manage-members'`,
+         AND p.resource = 'organization' AND p.action = 'invite'`,
       [organizationId],
     );
     return result ? parseInt(result.count, 10) : 0;
@@ -443,7 +443,7 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
          JOIN role_permissions rp ON rp.role_id = r.id
          JOIN permissions p ON p.id = rp.permission_id
          WHERE r.name = $1 AND r.organization_id = $2
-           AND p.resource = 'organization' AND p.action = 'manage-members'
+           AND p.resource = 'organization' AND p.action = 'invite'
        )::text as has_manage`,
       [roleName, organizationId],
     );

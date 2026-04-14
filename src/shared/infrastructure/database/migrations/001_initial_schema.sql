@@ -178,7 +178,6 @@ INSERT INTO permissions (resource, action, description) VALUES
     -- Session permissions
     ('session', 'read', 'View sessions'),
     ('session', 'revoke', 'Revoke sessions'),
-    ('session', 'delete', 'Delete sessions'),
     -- Organization permissions
     ('organization', 'create', 'Create organizations'),
     ('organization', 'read', 'View organizations'),

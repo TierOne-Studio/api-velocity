@@ -536,7 +536,7 @@ export class AdminOrganizationsService {
         ))
       ) {
         throw new ForbiddenException(
-          'Cannot change role of the last member with organization manage-members permission',
+          'Cannot change role of the last member with organization invite permission',
         );
       }
     }
@@ -568,7 +568,7 @@ export class AdminOrganizationsService {
         await this.orgRepo.countMembersWithManageCapability(organizationId);
       if (manageCount <= 1)
         throw new ForbiddenException(
-          'Cannot remove the last member with organization manage-members permission',
+          'Cannot remove the last member with organization invite permission',
         );
     }
 
