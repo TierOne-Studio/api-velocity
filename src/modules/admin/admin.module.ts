@@ -25,6 +25,9 @@ import { AdminOrgDatabaseRepository } from './organizations/infrastructure/persi
 // RBAC sub-domain (re-exported as separate @Global module)
 export { RbacModule } from './rbac/rbac.module';
 
+// Dashboard sub-domain
+import { DashboardModule } from './dashboard/dashboard.module';
+
 /**
  * Admin Module for platform-level administration.
  * Sub-domains:
@@ -35,7 +38,7 @@ export { RbacModule } from './rbac/rbac.module';
  * Requires admin or manager platform role.
  */
 @Module({
-  imports: [EmailModule, DatabaseModule],
+  imports: [EmailModule, DatabaseModule, DashboardModule],
   controllers: [
     AdminUsersController,
     SessionsController,

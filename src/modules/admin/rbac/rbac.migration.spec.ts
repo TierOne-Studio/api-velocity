@@ -77,7 +77,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_014 already run
         .mockResolvedValueOnce(true) // rbac_015 already run
         .mockResolvedValueOnce(true) // rbac_016 already run
-        .mockResolvedValueOnce(true); // rbac_017 already run
+        .mockResolvedValueOnce(true) // rbac_017 already run
+        .mockResolvedValueOnce(true); // rbac_018 already run
 
       const consoleSpy = jest
         .spyOn(console, 'log')
@@ -109,7 +110,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false) // rbac_014 NOT run
         .mockResolvedValueOnce(false) // rbac_015 NOT run
         .mockResolvedValueOnce(false) // rbac_016 NOT run
-        .mockResolvedValueOnce(false); // rbac_017 NOT run
+        .mockResolvedValueOnce(false) // rbac_017 NOT run
+        .mockResolvedValueOnce(true); // rbac_018 already run
 
       // rbac_013 calls seedDefaultOrganization → UPSERT returns new org id.
       // Use mockImplementation so it isn't consumed by earlier migrations that also call queryOne.
@@ -432,6 +434,7 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce({ id: 'perm-user-create' })
         .mockResolvedValueOnce({ id: 'perm-user-read' })
         .mockResolvedValueOnce({ id: 'perm-user-update' })
+        .mockResolvedValueOnce({ id: 'perm-dashboard-view' })
         .mockResolvedValueOnce({ id: 'member-role-1' })
         .mockResolvedValueOnce({ id: 'perm-member-org-read' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-read' })
@@ -470,6 +473,8 @@ describe('RbacMigrationService', () => {
           'read',
           'user',
           'update',
+          'dashboard',
+          'view',
         ],
       );
       expect(dbService.query).toHaveBeenCalledWith(
@@ -1016,7 +1021,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_014 already run
         .mockResolvedValueOnce(true) // rbac_015 already run
         .mockResolvedValueOnce(true) // rbac_016 already run
-        .mockResolvedValueOnce(true); // rbac_017 already run
+        .mockResolvedValueOnce(true) // rbac_017 already run
+        .mockResolvedValueOnce(true); // rbac_018 already run
 
       // Needed by backfillRolePermissions and assignAllPermissionsToAdmin
       dbService.queryOne.mockResolvedValue(null);
