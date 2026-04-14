@@ -27,6 +27,7 @@ const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
   { resource: 'user', action: 'set-role' },
   { resource: 'user', action: 'set-password' },
   { resource: 'user', action: 'approve' },
+  { resource: 'dashboard', action: 'view' },
 ] as const;
 
 const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
@@ -43,6 +44,7 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
   { resource: 'user', action: 'create' },
   { resource: 'user', action: 'read' },
   { resource: 'user', action: 'update' },
+  { resource: 'dashboard', action: 'view' },
 ] as const;
 
 const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
@@ -129,6 +131,10 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_017_remove_phantom_permissions',
         up: () => this.removePhantomPermissions(),
+      },
+      {
+        name: 'rbac_018_add_dashboard_permission',
+        up: () => this.addDashboardPermission(),
       },
     ];
 
@@ -1283,5 +1289,64 @@ export class RbacMigrationService implements OnModuleInit {
     );
 
     console.log('✅ Phantom permissions removed (project:*, organization:manage-members, organization-invitation:*, organization-member:*)');
+  }
+
+  /**
+   * Add dashboard:view permission and assign it to superadmin + all org-scoped
+   * admin and manager roles using their updated default permission sets.
+   */
+  async addDashboardPermission(): Promise<void> {
+    await this.db.query(
+      `INSERT INTO permissions (resource, action, description)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (resource, action) DO NOTHING`,
+      ['dashboard', 'view', 'View admin analytics dashboard'],
+    );
+
+    const superadminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
+    );
+    const dashboardPerm = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM permissions WHERE resource = 'dashboard' AND action = 'view'`,
+    );
+
+    if (superadminRole && dashboardPerm) {
+      await this.db.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         VALUES ($1, $2)
+         ON CONFLICT DO NOTHING`,
+        [superadminRole.id, dashboardPerm.id],
+      );
+    }
+
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
+
+    for (const organization of organizations) {
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [organization.id],
+      );
+      if (adminRole) {
+        await this.syncRolePermissions(
+          adminRole.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(
+          managerRole.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    console.log('✅ dashboard:view permission added and assigned to admin and manager roles');
   }
 }
