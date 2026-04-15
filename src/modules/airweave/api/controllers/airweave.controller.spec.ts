@@ -200,4 +200,28 @@ describe('AirweaveController', () => {
       status: HttpStatus.BAD_REQUEST,
     });
   });
+
+  it('rejects invalid retrievalStrategy values', async () => {
+    await expect(
+      controller.searchCollection('champion-velocity', {
+        query: 'auth',
+        tier: 'instant',
+        retrievalStrategy: 'invalid-strategy',
+      }),
+    ).rejects.toMatchObject({
+      status: HttpStatus.BAD_REQUEST,
+    });
+  });
+
+  it('lists collections with undefined limit and skip (returns undefined for optional params)', async () => {
+    airweaveService.listCollections.mockResolvedValue([]);
+
+    await controller.listCollections(undefined, undefined, undefined);
+
+    expect(airweaveService.listCollections).toHaveBeenCalledWith({
+      search: undefined,
+      limit: undefined,
+      skip: undefined,
+    });
+  });
 });

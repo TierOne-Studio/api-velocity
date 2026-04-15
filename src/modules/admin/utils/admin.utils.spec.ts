@@ -3,10 +3,41 @@ import {
   getAllowedRoleNamesForCreator,
   getActiveOrganizationId,
   getPlatformRole,
+  isSuperadminRole,
   requireActiveOrganizationIdForManager,
 } from './admin.utils';
 
 describe('admin.utils', () => {
+  describe('isSuperadminRole', () => {
+    it('returns true when role is superadmin string', () => {
+      expect(isSuperadminRole('superadmin')).toBe(true);
+    });
+
+    it('returns false when role is a non-superadmin string', () => {
+      expect(isSuperadminRole('admin')).toBe(false);
+    });
+
+    it('returns true when role is an array containing superadmin', () => {
+      expect(isSuperadminRole(['admin', 'superadmin'])).toBe(true);
+    });
+
+    it('returns false when role is an array not containing superadmin', () => {
+      expect(isSuperadminRole(['admin', 'manager'])).toBe(false);
+    });
+
+    it('returns false when role is null', () => {
+      expect(isSuperadminRole(null)).toBe(false);
+    });
+
+    it('returns false when role is undefined', () => {
+      expect(isSuperadminRole(undefined)).toBe(false);
+    });
+
+    it('returns true when role is a comma-separated string containing superadmin', () => {
+      expect(isSuperadminRole('admin, superadmin, member')).toBe(true);
+    });
+  });
+
   describe('getAllowedRoleNamesForCreator', () => {
     it('should allow superadmin to create admin/manager/member', () => {
       expect(getAllowedRoleNamesForCreator('superadmin')).toEqual([

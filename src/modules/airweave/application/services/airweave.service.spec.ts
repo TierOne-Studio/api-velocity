@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import {
   BadGatewayException,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -362,5 +363,151 @@ describe('AirweaveService', () => {
         endUserId: 'user-1',
       }),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('throws service unavailable when configService is not injected and createConnectSession is called', async () => {
+    const moduleNoConfig: TestingModule = await Test.createTestingModule({
+      providers: [
+        AirweaveService,
+        { provide: AIRWEAVE_SDK_CLIENT, useValue: client },
+        // ConfigService intentionally omitted
+      ],
+    }).compile();
+
+    const serviceNoConfig = moduleNoConfig.get(AirweaveService);
+
+    await expect(
+      serviceNoConfig.createConnectSession({
+        readableCollectionId: 'champion-velocity',
+        endUserId: 'user-1',
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('throws NotFoundException for 404 upstream errors', async () => {
+    client.collections.get.mockRejectedValue({ statusCode: 404, message: 'Not Found' });
+
+    await expect(
+      service.getCollection('nonexistent-collection'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('uses status field for error code detection when statusCode is absent', async () => {
+    client.sourceConnections.get.mockRejectedValue({ status: 404, message: 'Not Found' });
+
+    await expect(
+      service.getSourceConnection('nonexistent-source'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('throws BadGatewayException for non-404 upstream errors', async () => {
+    client.collections.get.mockRejectedValue({ statusCode: 500, message: 'Internal Server Error' });
+
+    await expect(
+      service.getCollection('error-collection'),
+    ).rejects.toBeInstanceOf(BadGatewayException);
+  });
+
+  it('throws BadGatewayException when fetch response is not ok', async () => {
+    fetchSpy.mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      json: jest.fn().mockResolvedValue({} as never),
+    } as never);
+
+    await expect(
+      service.createConnectSession({
+        readableCollectionId: 'bad-collection',
+        endUserId: 'user-1',
+      }),
+    ).rejects.toBeInstanceOf(BadGatewayException);
+  });
+
+  it('throws BadGatewayException when response does not contain session_token', async () => {
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({} as never),
+    } as never);
+
+    await expect(
+      service.createConnectSession({
+        readableCollectionId: 'champion-velocity',
+        endUserId: 'user-1',
+      }),
+    ).rejects.toBeInstanceOf(BadGatewayException);
+  });
+
+  it('wraps fetch network failures with bad gateway error', async () => {
+    fetchSpy.mockRejectedValue(new Error('Network error') as never);
+
+    await expect(
+      service.createConnectSession({
+        readableCollectionId: 'champion-velocity',
+        endUserId: 'user-1',
+      }),
+    ).rejects.toBeInstanceOf(BadGatewayException);
+  });
+
+  it('handles non-Error and non-string upstream errors gracefully', async () => {
+    client.collections.list.mockRejectedValue({ code: 'TIMEOUT', detail: 'Request timed out' });
+
+    await expect(service.listCollections()).rejects.toBeInstanceOf(BadGatewayException);
+  });
+
+  it('maps null status in collection to null', async () => {
+    client.collections.list.mockResolvedValue([
+      {
+        id: 'uuid-1',
+        name: 'Test Collection',
+        readable_id: 'test-collection',
+        organization_id: 'org-1',
+        created_at: '2026-04-01T00:00:00.000Z',
+        modified_at: '2026-04-02T00:00:00.000Z',
+        status: null,
+        vector_size: 768,
+        embedding_model_name: 'text-embedding-3-small',
+        source_connection_summaries: [],
+      },
+    ]);
+
+    const result = await service.listCollections();
+
+    expect(result[0].status).toBeNull();
+    expect(result[0].sourceConnectionCount).toBe(0);
+  });
+
+  it('maps source connection with null optional fields to defaults', async () => {
+    client.sourceConnections.list.mockResolvedValue([
+      {
+        id: 'source-null',
+        name: 'Null Defaults',
+        short_name: 'null',
+        readable_collection_id: 'test',
+        created_at: '2026-04-01T00:00:00.000Z',
+        modified_at: '2026-04-02T00:00:00.000Z',
+        is_authenticated: null,
+        entity_count: null,
+        auth_method: null,
+        status: 'unknown',
+      },
+    ]);
+
+    const result = await service.listSourceConnections('test');
+
+    expect(result[0].isAuthenticated).toBe(false);
+    expect(result[0].entityCount).toBe(0);
+    expect(result[0].authMethod).toBe('unknown');
+  });
+
+  it('handles empty results array in searchCollection', async () => {
+    client.collections.search.classic.mockResolvedValue({ results: null });
+
+    const result = await service.searchCollection('champion-velocity', {
+      query: 'test',
+      tier: 'classic',
+    });
+
+    expect(result.results).toHaveLength(0);
   });
 });

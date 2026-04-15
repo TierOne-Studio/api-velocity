@@ -83,4 +83,19 @@ describe('ChatMigrationService', () => {
       expect.stringContaining('DROP COLUMN IF EXISTS project_id'),
     );
   });
+
+  it('logs "up to date" when all migrations have already run', async () => {
+    const consoleSpy = jest
+      .spyOn(console, 'log')
+      .mockImplementation(() => undefined);
+
+    dbService.hasMigrationRun.mockResolvedValue(true);
+
+    await service.runTrackedMigrations();
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('up to date'),
+    );
+    consoleSpy.mockRestore();
+  });
 });

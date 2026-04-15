@@ -428,4 +428,106 @@ describe('EmailService', () => {
       );
     });
   });
+
+  describe('sendApprovalNotification', () => {
+    it('calls sendEmail with approval subject and login URL', async () => {
+      const configService = createConfigServiceMock({
+        isTestMode: jest.fn(() => true),
+        getFeUrl: jest.fn(() => 'https://app.example.com'),
+      });
+      const service = new EmailService(configService);
+      const sendEmailSpy = jest.spyOn(service, 'sendEmail');
+
+      await service.sendApprovalNotification({
+        user: { id: 'user-1', email: 'user@example.com', name: 'Alice' },
+      });
+
+      expect(sendEmailSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'user@example.com',
+          subject: 'Your account has been approved',
+          html: expect.stringContaining('https://app.example.com/login'),
+        }),
+      );
+    });
+
+    it('uses email as fallback when name is empty', async () => {
+      const configService = createConfigServiceMock({
+        isTestMode: jest.fn(() => true),
+        getFeUrl: jest.fn(() => 'https://app.example.com'),
+      });
+      const service = new EmailService(configService);
+      const sendEmailSpy = jest.spyOn(service, 'sendEmail');
+
+      await service.sendApprovalNotification({
+        user: { id: 'user-1', email: 'user@example.com', name: '' },
+      });
+
+      expect(sendEmailSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          html: expect.stringContaining('user@example.com'),
+        }),
+      );
+    });
+  });
+
+  describe('sendRejectionNotification', () => {
+    it('calls sendEmail with rejection subject', async () => {
+      const configService = createConfigServiceMock({
+        isTestMode: jest.fn(() => true),
+      });
+      const service = new EmailService(configService);
+      const sendEmailSpy = jest.spyOn(service, 'sendEmail');
+
+      await service.sendRejectionNotification({
+        user: { id: 'user-1', email: 'user@example.com', name: 'Bob' },
+        reason: 'Not meeting requirements',
+      });
+
+      expect(sendEmailSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'user@example.com',
+          subject: 'Your account registration was not approved',
+          html: expect.stringContaining('Not meeting requirements'),
+        }),
+      );
+    });
+
+    it('sends rejection email without reason', async () => {
+      const configService = createConfigServiceMock({
+        isTestMode: jest.fn(() => true),
+      });
+      const service = new EmailService(configService);
+      const sendEmailSpy = jest.spyOn(service, 'sendEmail');
+
+      await service.sendRejectionNotification({
+        user: { id: 'user-1', email: 'user@example.com', name: 'Bob' },
+        reason: undefined,
+      });
+
+      expect(sendEmailSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: 'Your account registration was not approved',
+        }),
+      );
+    });
+
+    it('uses email as fallback when user name is empty', async () => {
+      const configService = createConfigServiceMock({
+        isTestMode: jest.fn(() => true),
+      });
+      const service = new EmailService(configService);
+      const sendEmailSpy = jest.spyOn(service, 'sendEmail');
+
+      await service.sendRejectionNotification({
+        user: { id: 'user-1', email: 'user@example.com', name: '' },
+      });
+
+      expect(sendEmailSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          html: expect.stringContaining('user@example.com'),
+        }),
+      );
+    });
+  });
 });

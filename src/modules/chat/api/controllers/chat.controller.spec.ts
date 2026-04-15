@@ -1,4 +1,14 @@
 import { jest } from '@jest/globals';
+
+jest.mock('@thallesp/nestjs-better-auth', () => ({
+  Session: () => () => {},
+  AllowAnonymous: () => () => {},
+  BetterAuthGuard: class {},
+  BetterAuthModule: { forRoot: jest.fn(() => ({ module: class {} })) },
+}));
+jest.mock('better-auth/crypto', () => ({}));
+jest.mock('jose', () => ({}));
+
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { ThrottlerGuard } from '@nestjs/throttler';
@@ -277,6 +287,19 @@ describe('ChatController', () => {
       }),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
+    });
+  });
+
+  it('throws FORBIDDEN when non-superadmin calls without an active organization', async () => {
+    const noOrgSession = {
+      user: { id: 'user-1', role: 'manager' },
+      session: {},
+    } as never;
+
+    await expect(
+      controller.listConversations(noOrgSession, undefined),
+    ).rejects.toMatchObject({
+      status: HttpStatus.FORBIDDEN,
     });
   });
 });
