@@ -137,4 +137,91 @@ describe('ChatDatabaseRepository', () => {
       'org-1',
     ]);
   });
+
+  it('throws when createConversation returns no row', async () => {
+    mockQueryOne.mockResolvedValue(null);
+
+    await expect(
+      repository.createConversation({
+        id: 'conversation-1',
+        title: 'Test',
+        organizationId: 'org-1',
+        userId: 'user-1',
+      }),
+    ).rejects.toThrow('Failed to create conversation');
+  });
+
+  it('updates conversation title without organization scope when organizationId is null', async () => {
+    await repository.updateConversationTitle(
+      'conversation-1',
+      'user-1',
+      null,
+      'New Title',
+    );
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('UPDATE conversation SET title = $1');
+    expect(sql).not.toContain('organization_id');
+    expect(mockQuery.mock.calls[0][1]).toEqual([
+      'New Title',
+      'conversation-1',
+      'user-1',
+    ]);
+  });
+
+  it('updates conversation title with organization scope when organizationId is provided', async () => {
+    await repository.updateConversationTitle(
+      'conversation-1',
+      'user-1',
+      'org-1',
+      'New Title',
+    );
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain('organization_id');
+  });
+
+  it('lists messages without organization scope when organizationId is null', async () => {
+    mockQuery.mockResolvedValue([]);
+
+    await repository.listMessages('conversation-1', 'user-1', null);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).not.toContain('organization_id');
+    expect(mockQuery.mock.calls[0][1]).toEqual([
+      'conversation-1',
+      'user-1',
+      200,
+    ]);
+  });
+
+  it('throws when createMessage transaction returns empty rows', async () => {
+    mockQuery
+      .mockResolvedValueOnce([]) // INSERT returns empty array
+      .mockResolvedValueOnce([]); // UPDATE conversation
+
+    await expect(
+      repository.createMessage({
+        id: 'message-1',
+        conversationId: 'conversation-1',
+        role: 'user',
+        content: 'Hi',
+        metadata: {},
+      }),
+    ).rejects.toThrow('Failed to create message');
+  });
+
+  it('deletes a conversation without organization scope when organizationId is null', async () => {
+    mockQuery.mockResolvedValue([]);
+
+    const result = await repository.deleteConversation(
+      'conversation-1',
+      'user-1',
+      null,
+    );
+
+    expect(result).toBe(false);
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).not.toContain('organization_id');
+  });
 });

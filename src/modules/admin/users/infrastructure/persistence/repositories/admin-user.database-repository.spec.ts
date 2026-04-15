@@ -519,4 +519,109 @@ describe('AdminUserDatabaseRepository', () => {
       expect(await repo.findOrganizationById('nope')).toBeNull();
     });
   });
+
+  // ─── approveUser ─────────────────────────────────────────────────────────────
+
+  describe('approveUser', () => {
+    it('executes UPDATE to set approvalStatus=approved', async () => {
+      mockQuery.mockResolvedValue(undefined);
+      await repo.approveUser('u-1');
+      const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+      expect(sql).toContain('approvalStatus');
+      expect(sql).toContain('approved');
+      expect(params).toContain('u-1');
+    });
+  });
+
+  // ─── rejectUser ──────────────────────────────────────────────────────────────
+
+  describe('rejectUser', () => {
+    it('executes UPDATE with rejectionReason', async () => {
+      mockQuery.mockResolvedValue(undefined);
+      await repo.rejectUser('u-1', 'Not qualified');
+      const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+      expect(sql).toContain('rejected');
+      expect(params).toContain('Not qualified');
+      expect(params).toContain('u-1');
+    });
+
+    it('passes null when no rejectionReason provided', async () => {
+      mockQuery.mockResolvedValue(undefined);
+      await repo.rejectUser('u-1', undefined);
+      const [, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+      expect(params[0]).toBeNull();
+    });
+  });
+
+  // ─── listPendingUsers ─────────────────────────────────────────────────────────
+
+  describe('listPendingUsers', () => {
+    const baseParams = {
+      limit: 10,
+      offset: 0,
+      platformRole: 'superadmin' as const,
+      activeOrganizationId: null,
+    };
+
+    it('returns pending users and total count', async () => {
+      mockQuery.mockResolvedValue([{ id: 'u-1', approvalStatus: 'pending' }]);
+      mockQueryOne.mockResolvedValue({ count: '1' });
+
+      const result = await repo.listPendingUsers(baseParams);
+
+      expect(result.data).toHaveLength(1);
+      expect(result.total).toBe(1);
+      const [sql] = mockQuery.mock.calls[0] as [string];
+      expect(sql).toContain("approvalStatus");
+    });
+
+    it('adds ILIKE clause when searchValue is provided', async () => {
+      mockQuery.mockResolvedValue([]);
+      mockQueryOne.mockResolvedValue({ count: '0' });
+
+      await repo.listPendingUsers({ ...baseParams, searchValue: 'bob' });
+
+      const [sql] = mockQuery.mock.calls[0] as [string];
+      expect(sql).toContain('ILIKE');
+    });
+
+    it('adds EXISTS clause when platformRole is not superadmin', async () => {
+      mockQuery.mockResolvedValue([]);
+      mockQueryOne.mockResolvedValue({ count: '0' });
+
+      await repo.listPendingUsers({
+        ...baseParams,
+        platformRole: 'manager',
+        activeOrganizationId: 'org-1',
+      });
+
+      const [sql] = mockQuery.mock.calls[0] as [string];
+      expect(sql).toContain('EXISTS');
+    });
+
+    it('returns 0 total when queryOne returns null', async () => {
+      mockQuery.mockResolvedValue([]);
+      mockQueryOne.mockResolvedValue(null);
+
+      const result = await repo.listPendingUsers(baseParams);
+
+      expect(result.total).toBe(0);
+    });
+  });
+
+  // ─── findAcceptedInvitationByEmail ────────────────────────────────────────────
+
+  describe('findAcceptedInvitationByEmail', () => {
+    it('returns invitation id when found', async () => {
+      mockQueryOne.mockResolvedValue({ id: 'inv-1' });
+      const result = await repo.findAcceptedInvitationByEmail('user@example.com');
+      expect(result).toEqual({ id: 'inv-1' });
+    });
+
+    it('returns null when no accepted invitation', async () => {
+      mockQueryOne.mockResolvedValue(null);
+      const result = await repo.findAcceptedInvitationByEmail('none@example.com');
+      expect(result).toBeNull();
+    });
+  });
 });

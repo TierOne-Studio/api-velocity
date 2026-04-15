@@ -46,6 +46,7 @@ describe('AdminUsersController', () => {
       getUserCapabilities: jest.fn(),
       getBatchCapabilities: jest.fn(),
       listUsers: jest.fn(),
+      listPendingUsers: jest.fn(),
       createUser: jest.fn(),
       listUserSessions: jest.fn(),
       updateUser: jest.fn(),
@@ -57,6 +58,11 @@ describe('AdminUsersController', () => {
       removeUsers: jest.fn(),
       revokeSession: jest.fn(),
       revokeAllSessions: jest.fn(),
+      findUserById: jest.fn(),
+      hasAcceptedInvitation: jest.fn(),
+      autoApproveUser: jest.fn(),
+      approveUser: jest.fn(),
+      rejectUser: jest.fn(),
     } as unknown as jest.Mocked<AdminService>;
 
     impersonationService = {
@@ -539,6 +545,153 @@ describe('AdminUsersController', () => {
         activeOrganizationId: 'org-77',
         organizationId: undefined,
       });
+    });
+  });
+
+  describe('getMyApprovalStatus', () => {
+    it('returns approvalStatus and rejectionReason for current user', async () => {
+      adminService.findUserById.mockResolvedValue({
+        id: 'actor-superadmin',
+        approvalStatus: 'pending',
+        rejectionReason: 'Missing info',
+      } as never);
+
+      const result = await controller.getMyApprovalStatus(baseSession);
+
+      expect(adminService.findUserById).toHaveBeenCalledWith('actor-superadmin');
+      expect(result).toEqual({ approvalStatus: 'pending', rejectionReason: 'Missing info' });
+    });
+
+    it('returns approved when user is null', async () => {
+      adminService.findUserById.mockResolvedValue(null);
+
+      const result = await controller.getMyApprovalStatus(baseSession);
+
+      expect(result).toEqual({ approvalStatus: 'approved', rejectionReason: null });
+    });
+
+    it('returns approved on exception (migration not run)', async () => {
+      adminService.findUserById.mockRejectedValue(new Error('column not found') as never);
+
+      const result = await controller.getMyApprovalStatus(baseSession);
+
+      expect(result).toEqual({ approvalStatus: 'approved', rejectionReason: null });
+    });
+  });
+
+  describe('selfApproveInvited', () => {
+    it('returns alreadyApproved when user does not exist', async () => {
+      adminService.findUserById.mockResolvedValue(null);
+
+      const result = await controller.selfApproveInvited(baseSession);
+
+      expect(result).toEqual({ success: true, alreadyApproved: true });
+    });
+
+    it('returns alreadyApproved when user is not pending', async () => {
+      adminService.findUserById.mockResolvedValue({
+        id: 'actor-superadmin',
+        email: 'actor@example.com',
+        approvalStatus: 'approved',
+      } as never);
+
+      const result = await controller.selfApproveInvited(baseSession);
+
+      expect(result).toEqual({ success: true, alreadyApproved: true });
+    });
+
+    it('throws ForbiddenException when pending but no accepted invitation', async () => {
+      adminService.findUserById.mockResolvedValue({
+        id: 'actor-superadmin',
+        email: 'actor@example.com',
+        approvalStatus: 'pending',
+      } as never);
+      adminService.hasAcceptedInvitation.mockResolvedValue(false as never);
+
+      await expect(
+        controller.selfApproveInvited(baseSession),
+      ).rejects.toThrow('No accepted invitation found');
+    });
+
+    it('auto-approves when pending with accepted invitation', async () => {
+      adminService.findUserById.mockResolvedValue({
+        id: 'actor-superadmin',
+        email: 'actor@example.com',
+        approvalStatus: 'pending',
+      } as never);
+      adminService.hasAcceptedInvitation.mockResolvedValue(true as never);
+      adminService.autoApproveUser.mockResolvedValue(undefined as never);
+
+      const result = await controller.selfApproveInvited(baseSession);
+
+      expect(adminService.autoApproveUser).toHaveBeenCalledWith('actor-superadmin');
+      expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('listPending', () => {
+    it('returns pending users list', async () => {
+      adminService.listPendingUsers.mockResolvedValue({ data: [], total: 0, limit: 10, offset: 0 } as never);
+
+      await controller.listPending(baseSession, '10', '0');
+
+      expect(adminService.listPendingUsers).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 10, offset: 0, platformRole: 'superadmin' }),
+      );
+    });
+  });
+
+  describe('approve', () => {
+    it('calls approveUser with actor context', async () => {
+      adminService.approveUser.mockResolvedValue({ success: true } as never);
+
+      const result = await controller.approve(baseSession, 'user-to-approve');
+
+      expect(adminService.approveUser).toHaveBeenCalledWith(
+        { userId: 'user-to-approve' },
+        'superadmin',
+        null,
+        'actor-superadmin',
+      );
+      expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('reject', () => {
+    it('calls rejectUser with actor context', async () => {
+      adminService.rejectUser.mockResolvedValue({ success: true } as never);
+
+      const result = await controller.reject(baseSession, 'user-to-reject', { rejectionReason: 'Not qualified' });
+
+      expect(adminService.rejectUser).toHaveBeenCalledWith(
+        { userId: 'user-to-reject', rejectionReason: 'Not qualified' },
+        'superadmin',
+        null,
+        'actor-superadmin',
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('throws when rejectionReason is too long', async () => {
+      const longReason = 'x'.repeat(501);
+
+      await expect(
+        controller.reject(baseSession, 'user-1', { rejectionReason: longReason }),
+      ).rejects.toThrow('rejectionReason must be at most 500 characters');
+    });
+
+    it('allows reject without rejectionReason', async () => {
+      adminService.rejectUser.mockResolvedValue({ success: true } as never);
+
+      const result = await controller.reject(baseSession, 'user-1', {});
+
+      expect(adminService.rejectUser).toHaveBeenCalledWith(
+        { userId: 'user-1', rejectionReason: undefined },
+        'superadmin',
+        null,
+        'actor-superadmin',
+      );
+      expect(result).toEqual({ success: true });
     });
   });
 });

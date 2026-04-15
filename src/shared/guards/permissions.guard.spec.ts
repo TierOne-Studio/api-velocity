@@ -180,6 +180,58 @@ describe('PermissionsGuard', () => {
     });
   });
 
+  describe('approval status enforcement', () => {
+    beforeEach(() => {
+      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['user:read']);
+    });
+
+    it('throws ForbiddenException when user approval status is pending', async () => {
+      dbService.queryOne.mockResolvedValueOnce({ approvalStatus: 'pending' } as any);
+      const context = createMockExecutionContext({
+        user: { id: 'u-1', role: 'member' },
+        session: { activeOrganizationId: 'org-1' },
+      });
+      await expect(guard.canActivate(context)).rejects.toThrow(
+        'ACCOUNT_PENDING_APPROVAL',
+      );
+    });
+
+    it('throws ForbiddenException when user approval status is rejected', async () => {
+      dbService.queryOne.mockResolvedValueOnce({ approvalStatus: 'rejected' } as any);
+      const context = createMockExecutionContext({
+        user: { id: 'u-1', role: 'member' },
+        session: { activeOrganizationId: 'org-1' },
+      });
+      await expect(guard.canActivate(context)).rejects.toThrow(
+        'ACCOUNT_REJECTED',
+      );
+    });
+
+    it('swallows non-ForbiddenException DB errors from approval check and continues', async () => {
+      dbService.queryOne.mockRejectedValueOnce(new Error('column does not exist') as any);
+      roleService.getUserPermissions.mockResolvedValueOnce([
+        makePermission('user', 'read'),
+      ]);
+      const context = createMockExecutionContext({
+        user: { id: 'u-1', role: 'member' },
+        session: { activeOrganizationId: 'org-1' },
+      });
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+
+    it('allows access when userApproval row is null (no approval record)', async () => {
+      dbService.queryOne.mockResolvedValueOnce(null as any);
+      roleService.getUserPermissions.mockResolvedValueOnce([
+        makePermission('user', 'read'),
+      ]);
+      const context = createMockExecutionContext({
+        user: { id: 'u-1', role: 'member' },
+        session: { activeOrganizationId: 'org-1' },
+      });
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+  });
+
   describe('when multiple permissions are required', () => {
     beforeEach(() => {
       jest

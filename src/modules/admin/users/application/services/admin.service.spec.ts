@@ -1239,4 +1239,224 @@ describe('AdminService', () => {
       expect(result['superadmin-1'].actions.setRole).toBe(false);
     });
   });
+
+  describe('findUserById', () => {
+    it('delegates to userRepo.findUserById and returns user', async () => {
+      userRepo.findUserById.mockResolvedValueOnce(mockUser);
+
+      const result = await service.findUserById('user-1');
+
+      expect(userRepo.findUserById).toHaveBeenCalledWith('user-1');
+      expect(result).toEqual(mockUser);
+    });
+
+    it('returns null when user not found', async () => {
+      userRepo.findUserById.mockResolvedValueOnce(null);
+
+      const result = await service.findUserById('ghost');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('hasAcceptedInvitation', () => {
+    it('returns true when accepted invitation exists', async () => {
+      userRepo.findAcceptedInvitationByEmail.mockResolvedValueOnce({ id: 'inv-1' });
+
+      const result = await service.hasAcceptedInvitation('user@example.com');
+
+      expect(result).toBe(true);
+    });
+
+    it('returns false when no accepted invitation found', async () => {
+      userRepo.findAcceptedInvitationByEmail.mockResolvedValueOnce(null);
+
+      const result = await service.hasAcceptedInvitation('none@example.com');
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('autoApproveUser', () => {
+    it('calls approveUser on the repository', async () => {
+      userRepo.approveUser.mockResolvedValueOnce(undefined);
+
+      await service.autoApproveUser('user-1');
+
+      expect(userRepo.approveUser).toHaveBeenCalledWith('user-1');
+    });
+  });
+
+  describe('approveUser', () => {
+    it('approves a user and sends notification email', async () => {
+      userRepo.findUserRole.mockResolvedValueOnce('member');
+      userRepo.approveUser.mockResolvedValueOnce(undefined);
+      userRepo.findUserById.mockResolvedValueOnce(mockUser);
+      emailService.sendApprovalNotification.mockResolvedValueOnce(undefined);
+
+      const result = await service.approveUser(
+        { userId: 'user-1' },
+        'superadmin',
+        null,
+        'actor-superadmin',
+      );
+
+      expect(userRepo.approveUser).toHaveBeenCalledWith('user-1');
+      expect(emailService.sendApprovalNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: expect.objectContaining({ id: 'user-1' }),
+        }),
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('still succeeds when approval email sending fails', async () => {
+      userRepo.findUserRole.mockResolvedValueOnce('member');
+      userRepo.approveUser.mockResolvedValueOnce(undefined);
+      userRepo.findUserById.mockResolvedValueOnce(mockUser);
+      emailService.sendApprovalNotification.mockRejectedValueOnce(
+        new Error('Email failed') as never,
+      );
+
+      const result = await service.approveUser(
+        { userId: 'user-1' },
+        'superadmin',
+        null,
+        'actor-superadmin',
+      );
+
+      expect(result).toEqual({ success: true });
+    });
+
+    it('skips email when user not found after approval', async () => {
+      userRepo.findUserRole.mockResolvedValueOnce('member');
+      userRepo.approveUser.mockResolvedValueOnce(undefined);
+      userRepo.findUserById.mockResolvedValueOnce(null);
+
+      const result = await service.approveUser(
+        { userId: 'user-1' },
+        'superadmin',
+        null,
+        'actor-superadmin',
+      );
+
+      expect(emailService.sendApprovalNotification).not.toHaveBeenCalled();
+      expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('rejectUser', () => {
+    it('rejects a user and sends rejection notification email', async () => {
+      userRepo.findUserRole.mockResolvedValueOnce('member');
+      userRepo.rejectUser.mockResolvedValueOnce(undefined);
+      userRepo.findUserById.mockResolvedValueOnce(mockUser);
+      emailService.sendRejectionNotification.mockResolvedValueOnce(undefined);
+
+      const result = await service.rejectUser(
+        { userId: 'user-1', rejectionReason: 'Not qualified' },
+        'superadmin',
+        null,
+        'actor-superadmin',
+      );
+
+      expect(userRepo.rejectUser).toHaveBeenCalledWith('user-1', 'Not qualified');
+      expect(emailService.sendRejectionNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: expect.objectContaining({ id: 'user-1' }),
+          reason: 'Not qualified',
+        }),
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('still succeeds when rejection email sending fails', async () => {
+      userRepo.findUserRole.mockResolvedValueOnce('member');
+      userRepo.rejectUser.mockResolvedValueOnce(undefined);
+      userRepo.findUserById.mockResolvedValueOnce(mockUser);
+      emailService.sendRejectionNotification.mockRejectedValueOnce(
+        new Error('Email failed') as never,
+      );
+
+      const result = await service.rejectUser(
+        { userId: 'user-1' },
+        'superadmin',
+        null,
+        'actor-superadmin',
+      );
+
+      expect(result).toEqual({ success: true });
+    });
+
+    it('skips email when user not found after rejection', async () => {
+      userRepo.findUserRole.mockResolvedValueOnce('member');
+      userRepo.rejectUser.mockResolvedValueOnce(undefined);
+      userRepo.findUserById.mockResolvedValueOnce(null);
+
+      const result = await service.rejectUser(
+        { userId: 'user-1' },
+        'superadmin',
+        null,
+        'actor-superadmin',
+      );
+
+      expect(emailService.sendRejectionNotification).not.toHaveBeenCalled();
+      expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('listPendingUsers', () => {
+    it('returns pending users for superadmin', async () => {
+      userRepo.listPendingUsers.mockResolvedValueOnce({ data: [mockUser], total: 1 });
+
+      const result = await service.listPendingUsers({
+        limit: 10,
+        offset: 0,
+        platformRole: 'superadmin',
+        activeOrganizationId: null,
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.total).toBe(1);
+    });
+
+    it('returns pending users for manager with active organization', async () => {
+      userRepo.listPendingUsers.mockResolvedValueOnce({ data: [mockUser], total: 1 });
+
+      const result = await service.listPendingUsers({
+        limit: 10,
+        offset: 0,
+        platformRole: 'manager',
+        activeOrganizationId: 'org-1',
+      });
+
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('throws ForbiddenException for manager without active organization', async () => {
+      await expect(
+        service.listPendingUsers({
+          limit: 10,
+          offset: 0,
+          platformRole: 'manager',
+          activeOrganizationId: null,
+        }),
+      ).rejects.toThrow('Active organization required');
+    });
+  });
+
+  describe('setUserRole — role not allowed branch', () => {
+    it('throws ForbiddenException when trying to set a role above allowed level', async () => {
+      userRepo.findUserRole.mockResolvedValueOnce('member');
+      userRepo.findMemberInOrg.mockResolvedValueOnce({ id: 'member-1' });
+
+      await expect(
+        service.setUserRole(
+          { userId: 'member-1', role: 'admin' },
+          'manager',
+          'org-1',
+          'actor-manager',
+        ),
+      ).rejects.toThrow('Role not allowed');
+    });
+  });
 });

@@ -65,6 +65,26 @@ describe('RolesGuard', () => {
     });
   });
 
+  describe('when user role is an array', () => {
+    beforeEach(() => {
+      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['admin']);
+    });
+
+    it('should allow access when role array contains a required role', () => {
+      const context = createMockExecutionContext({
+        user: { role: ['member', 'admin'] },
+      });
+      expect(guard.canActivate(context)).toBe(true);
+    });
+
+    it('should deny access when role array does not contain a required role', () => {
+      const context = createMockExecutionContext({
+        user: { role: ['member', 'viewer'] },
+      });
+      expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+    });
+  });
+
   describe('when multiple roles are allowed', () => {
     beforeEach(() => {
       jest
