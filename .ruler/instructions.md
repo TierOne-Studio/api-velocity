@@ -18,6 +18,12 @@ Use **MUST / SHOULD / MAY** exactly as written.
 
 ## P0 — PERMISSIONS (NON-NEGOTIABLE)
 
+### Git — MAIN BRANCH IS OFF-LIMITS (ABSOLUTE)
+
+- MUST NEVER commit, push, force-push, merge, or revert directly to `main`. No exceptions, no matter the reason.
+- All changes MUST go through a feature branch and PR.
+- If a fix is needed on `main`, MUST be validated by the user first, and should be creating a hotfix branch and PR instead.
+
 ### Database Operations (MySQL) — WRITE REQUIRES EXPLICIT APPROVAL
 
 - Allowed without approval: **READ-only investigations** (`SELECT`)
