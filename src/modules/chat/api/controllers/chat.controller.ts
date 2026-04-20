@@ -25,6 +25,7 @@ import { ChatService } from '../../application/services/chat.service';
 type CreateConversationBody = {
   title?: string | null;
   organizationId?: string;
+  projectId?: string;
 };
 
 type SendMessageBody = {
@@ -82,11 +83,13 @@ export class ChatController {
   async listConversations(
     @Session() session: UserSession,
     @Query('organizationId') organizationId?: string,
+    @Query('projectId') projectId?: string,
   ) {
     return {
       data: await this.chatService.listConversations({
         ...this.getScope(session, organizationId),
         userId: session.user.id,
+        projectId: projectId?.trim() || undefined,
       }),
     };
   }
@@ -97,11 +100,17 @@ export class ChatController {
     @Session() session: UserSession,
     @Body() body: CreateConversationBody,
   ) {
+    const projectId = body.projectId?.trim();
+    if (!projectId) {
+      throw new HttpException('projectId is required', HttpStatus.BAD_REQUEST);
+    }
+
     return {
       data: await this.chatService.createConversation({
         ...this.getScope(session, body.organizationId),
         title: body.title ?? null,
         userId: session.user.id,
+        projectId,
       }),
     };
   }

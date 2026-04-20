@@ -1,5 +1,12 @@
 import { jest } from '@jest/globals';
 import { ChatAgentService } from './chat-agent.service';
+import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
+import type { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
+import type {
+  DataSourceProvider,
+  DataSourceSearchOptions,
+} from '../../../projects/application/providers/data-source-provider.interface';
+import type { AirweaveSearchResponse } from '../../../airweave/application/services/airweave.service';
 
 type ChatReply = {
   content: string;
@@ -10,9 +17,38 @@ type ChatAgentServiceInternals = ChatAgentService & {
   generateAgentReply: (apiKey: string, params: unknown) => Promise<ChatReply>;
 };
 
+function makeAirweaveSource(
+  overrides: Partial<
+    Extract<ProjectDataSource, { kind: 'airweave_collection' }>
+  > = {},
+): ProjectDataSource {
+  return {
+    id: 'src-1',
+    projectId: 'proj-1',
+    kind: 'airweave_collection',
+    name: 'General',
+    config: {
+      collectionReadableId: 'champion-velocity',
+      collectionName: 'General',
+    },
+    status: 'ready',
+    statusDetail: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
 describe('ChatAgentService', () => {
   let service: ChatAgentService;
-  let airweaveService: { searchCollection: any };
+  let searchMock: jest.Mock<
+    (
+      source: ProjectDataSource,
+      query: string,
+      opts?: DataSourceSearchOptions,
+    ) => Promise<AirweaveSearchResponse>
+  >;
+  let registry: DataSourceRegistry;
   let configService: {
     getOpenAiApiKey: any;
     getOpenAiModel: any;
@@ -29,9 +65,23 @@ describe('ChatAgentService', () => {
   let consoleInfoSpy: jest.SpiedFunction<typeof console.info>;
 
   beforeEach(() => {
-    airweaveService = {
-      searchCollection: jest.fn(),
+    searchMock =
+      jest.fn<
+        (
+          source: ProjectDataSource,
+          query: string,
+          opts?: DataSourceSearchOptions,
+        ) => Promise<AirweaveSearchResponse>
+      >();
+    const provider: DataSourceProvider = {
+      kind: 'airweave_collection',
+      search: searchMock as unknown as DataSourceProvider['search'],
     };
+    registry = {
+      get: jest.fn(() => provider),
+      kinds: jest.fn(() => ['airweave_collection']),
+    } as unknown as DataSourceRegistry;
+
     configService = {
       getOpenAiApiKey: jest.fn().mockReturnValue(null),
       getOpenAiModel: jest.fn().mockReturnValue('gpt-4o'),
@@ -44,10 +94,7 @@ describe('ChatAgentService', () => {
       getChatAgentSearchTier: jest.fn().mockReturnValue('classic'),
       getChatAgentRetrievalStrategy: jest.fn().mockReturnValue(undefined),
     };
-    service = new ChatAgentService(
-      airweaveService as never,
-      configService as never,
-    );
+    service = new ChatAgentService(registry, configService as never);
     consoleErrorSpy = jest
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
@@ -77,18 +124,27 @@ describe('ChatAgentService', () => {
     };
   }
 
+  function baseParams(
+    overrides: Partial<Parameters<ChatAgentService['generateReply']>[0]> = {},
+  ) {
+    return {
+      organizationName: 'Champion Velocity',
+      projectName: 'General',
+      projectId: 'proj-1',
+      sources: [makeAirweaveSource()],
+      question: 'How do deployments work?',
+      previousMessages: [],
+      ...overrides,
+    };
+  }
+
   describe('two-tier fallback dispatcher', () => {
     it('uses the keyless fallback path when OpenAI is not configured', async () => {
-      airweaveService.searchCollection.mockResolvedValue({
+      searchMock.mockResolvedValue({
         results: [makeSearchResult()],
       });
 
-      const result = await service.generateReply({
-        organizationName: 'Champion Velocity',
-        collectionId: 'champion-velocity',
-        question: 'How do deployments work?',
-        previousMessages: [],
-      });
+      const result = await service.generateReply(baseParams());
 
       expect(result.content).toContain('### Key Findings');
       expect(result.content).toContain('### Sources');
@@ -101,14 +157,9 @@ describe('ChatAgentService', () => {
     });
 
     it('returns the no-results fallback when there is no key and the search is empty', async () => {
-      airweaveService.searchCollection.mockResolvedValue({ results: [] });
+      searchMock.mockResolvedValue({ results: [] });
 
-      const result = await service.generateReply({
-        organizationName: 'Champion Velocity',
-        collectionId: 'champion-velocity',
-        question: 'How do deployments work?',
-        previousMessages: [],
-      });
+      const result = await service.generateReply(baseParams());
 
       expect(result.content).toContain(
         'I could not find relevant indexed material',
@@ -116,6 +167,20 @@ describe('ChatAgentService', () => {
       expect(result.metadata).toEqual(
         expect.objectContaining({
           generator: 'fallback-no-results',
+          resultCount: 0,
+        }),
+      );
+    });
+
+    it('returns the no-sources fallback when the project has no configured data sources', async () => {
+      const result = await service.generateReply(baseParams({ sources: [] }));
+
+      expect(result.content).toContain(
+        'This project has no configured data sources',
+      );
+      expect(result.metadata).toEqual(
+        expect.objectContaining({
+          generator: 'fallback-no-sources',
           resultCount: 0,
         }),
       );
@@ -143,12 +208,12 @@ describe('ChatAgentService', () => {
         .spyOn(service as ChatAgentServiceInternals, 'generateAgentReply')
         .mockResolvedValue(agentReply);
 
-      const result = await service.generateReply({
-        organizationName: 'Champion Velocity',
-        collectionId: 'champion-velocity',
-        question: 'How does the invitation flow work?',
-        previousMessages: [{ role: 'user', content: 'Previous question' }],
-      });
+      const result = await service.generateReply(
+        baseParams({
+          question: 'How does the invitation flow work?',
+          previousMessages: [{ role: 'user', content: 'Previous question' }],
+        }),
+      );
 
       expect(agentSpy).toHaveBeenCalledWith(
         'sk-openai',
@@ -162,25 +227,20 @@ describe('ChatAgentService', () => {
           toolCallCount: 2,
         }),
       );
-      // Dispatcher must not call Airweave directly on the agent happy path.
-      expect(airweaveService.searchCollection).not.toHaveBeenCalled();
+      // Dispatcher must not call the registry directly on the agent happy path.
+      expect(searchMock).not.toHaveBeenCalled();
     });
 
     it('falls back to keyless when the agent path fails', async () => {
       configService.getOpenAiApiKey.mockReturnValue('sk-openai');
-      airweaveService.searchCollection.mockResolvedValue({
+      searchMock.mockResolvedValue({
         results: [makeSearchResult()],
       });
       jest
         .spyOn(service as ChatAgentServiceInternals, 'generateAgentReply')
         .mockRejectedValue(new Error('agent exploded'));
 
-      const result = await service.generateReply({
-        organizationName: 'Champion Velocity',
-        collectionId: 'champion-velocity',
-        question: 'How do deployments work?',
-        previousMessages: [],
-      });
+      const result = await service.generateReply(baseParams());
 
       expect(result.metadata).toEqual(
         expect.objectContaining({
@@ -197,16 +257,11 @@ describe('ChatAgentService', () => {
 
   describe('observability', () => {
     it('logs a reply summary with generator, source count, and toolCallCount', async () => {
-      airweaveService.searchCollection.mockResolvedValue({
+      searchMock.mockResolvedValue({
         results: [makeSearchResult()],
       });
 
-      await service.generateReply({
-        organizationName: 'Champion Velocity',
-        collectionId: 'champion-velocity',
-        question: 'How do deployments work?',
-        previousMessages: [],
-      });
+      await service.generateReply(baseParams());
 
       expect(consoleInfoSpy).toHaveBeenCalledWith(
         '[ChatAgentService] reply generated',
@@ -233,12 +288,7 @@ describe('ChatAgentService', () => {
           },
         });
 
-      await service.generateReply({
-        organizationName: 'Champion Velocity',
-        collectionId: 'champion-velocity',
-        question: 'How do deployments work?',
-        previousMessages: [],
-      });
+      await service.generateReply(baseParams());
 
       expect(consoleInfoSpy).toHaveBeenCalledWith(
         '[ChatAgentService] reply generated',
@@ -265,21 +315,24 @@ describe('ChatAgentService', () => {
       expect(message).not.toContain('Question:');
     });
 
-    it('puts organization context in the system prompt, not the user message', () => {
+    it('puts organization and project context in the system prompt, not the user message', () => {
       configService.getChatSystemPrompt.mockReturnValue('expert persona body');
 
       const systemPrompt = (
         service as unknown as {
           buildAgentSystemPrompt: (params: {
             organizationName: string;
+            projectName: string;
           }) => string;
         }
       ).buildAgentSystemPrompt({
         organizationName: 'TierOne',
+        projectName: 'General',
       });
 
       expect(systemPrompt).toContain('expert persona body');
       expect(systemPrompt).toContain('TierOne');
+      expect(systemPrompt).toContain('General');
       expect(systemPrompt).toContain('Tool usage protocol');
     });
   });

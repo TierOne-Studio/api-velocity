@@ -66,7 +66,9 @@ export class PermissionsGuard implements CanActivate {
     try {
       const userApproval = await this.db.queryOne<{
         approvalStatus: string | null;
-      }>('SELECT "approvalStatus" FROM "user" WHERE id = $1', [session.user.id]);
+      }>('SELECT "approvalStatus" FROM "user" WHERE id = $1', [
+        session.user.id,
+      ]);
 
       if (userApproval) {
         const status = userApproval.approvalStatus;

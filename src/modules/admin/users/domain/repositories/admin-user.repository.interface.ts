@@ -97,9 +97,7 @@ export interface IAdminUserRepository {
   listPendingUsers(
     params: ListUsersParams,
   ): Promise<{ data: UserRow[]; total: number }>;
-  findAcceptedInvitationByEmail(
-    email: string,
-  ): Promise<{ id: string } | null>;
+  findAcceptedInvitationByEmail(email: string): Promise<{ id: string } | null>;
   setUserPassword(userId: string, hashedPassword: string): Promise<void>;
   removeUser(userId: string): Promise<void>;
   removeUsers(userIds: string[]): Promise<number>;

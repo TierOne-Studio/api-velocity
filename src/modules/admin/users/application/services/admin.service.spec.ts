@@ -1261,7 +1261,9 @@ describe('AdminService', () => {
 
   describe('hasAcceptedInvitation', () => {
     it('returns true when accepted invitation exists', async () => {
-      userRepo.findAcceptedInvitationByEmail.mockResolvedValueOnce({ id: 'inv-1' });
+      userRepo.findAcceptedInvitationByEmail.mockResolvedValueOnce({
+        id: 'inv-1',
+      });
 
       const result = await service.hasAcceptedInvitation('user@example.com');
 
@@ -1359,7 +1361,10 @@ describe('AdminService', () => {
         'actor-superadmin',
       );
 
-      expect(userRepo.rejectUser).toHaveBeenCalledWith('user-1', 'Not qualified');
+      expect(userRepo.rejectUser).toHaveBeenCalledWith(
+        'user-1',
+        'Not qualified',
+      );
       expect(emailService.sendRejectionNotification).toHaveBeenCalledWith(
         expect.objectContaining({
           user: expect.objectContaining({ id: 'user-1' }),
@@ -1406,7 +1411,10 @@ describe('AdminService', () => {
 
   describe('listPendingUsers', () => {
     it('returns pending users for superadmin', async () => {
-      userRepo.listPendingUsers.mockResolvedValueOnce({ data: [mockUser], total: 1 });
+      userRepo.listPendingUsers.mockResolvedValueOnce({
+        data: [mockUser],
+        total: 1,
+      });
 
       const result = await service.listPendingUsers({
         limit: 10,
@@ -1420,7 +1428,10 @@ describe('AdminService', () => {
     });
 
     it('returns pending users for manager with active organization', async () => {
-      userRepo.listPendingUsers.mockResolvedValueOnce({ data: [mockUser], total: 1 });
+      userRepo.listPendingUsers.mockResolvedValueOnce({
+        data: [mockUser],
+        total: 1,
+      });
 
       const result = await service.listPendingUsers({
         limit: 10,

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AdminModule } from '../admin';
 import { AirweaveModule } from '../airweave/airweave.module';
+import { ProjectsModule } from '../projects';
 import { DatabaseModule } from '../../shared/infrastructure/database/database.module';
 import { ConfigService } from '../../shared/config/config.service';
 import { ChatController } from './api/controllers/chat.controller';
@@ -16,6 +17,7 @@ import { ChatMigrationService } from './chat.migration';
     DatabaseModule,
     AdminModule,
     AirweaveModule,
+    ProjectsModule,
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

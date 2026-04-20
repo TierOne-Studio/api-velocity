@@ -186,7 +186,9 @@ describe('PermissionsGuard', () => {
     });
 
     it('throws ForbiddenException when user approval status is pending', async () => {
-      dbService.queryOne.mockResolvedValueOnce({ approvalStatus: 'pending' } as any);
+      dbService.queryOne.mockResolvedValueOnce({
+        approvalStatus: 'pending',
+      } as any);
       const context = createMockExecutionContext({
         user: { id: 'u-1', role: 'member' },
         session: { activeOrganizationId: 'org-1' },
@@ -197,7 +199,9 @@ describe('PermissionsGuard', () => {
     });
 
     it('throws ForbiddenException when user approval status is rejected', async () => {
-      dbService.queryOne.mockResolvedValueOnce({ approvalStatus: 'rejected' } as any);
+      dbService.queryOne.mockResolvedValueOnce({
+        approvalStatus: 'rejected',
+      } as any);
       const context = createMockExecutionContext({
         user: { id: 'u-1', role: 'member' },
         session: { activeOrganizationId: 'org-1' },
@@ -208,7 +212,9 @@ describe('PermissionsGuard', () => {
     });
 
     it('swallows non-ForbiddenException DB errors from approval check and continues', async () => {
-      dbService.queryOne.mockRejectedValueOnce(new Error('column does not exist') as any);
+      dbService.queryOne.mockRejectedValueOnce(
+        new Error('column does not exist') as any,
+      );
       roleService.getUserPermissions.mockResolvedValueOnce([
         makePermission('user', 'read'),
       ]);

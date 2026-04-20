@@ -285,13 +285,8 @@ export class AdminUserDatabaseRepository implements IAdminUserRepository {
   async listPendingUsers(
     params: ListUsersParams,
   ): Promise<{ data: UserRow[]; total: number }> {
-    const {
-      limit,
-      offset,
-      searchValue,
-      platformRole,
-      activeOrganizationId,
-    } = params;
+    const { limit, offset, searchValue, platformRole, activeOrganizationId } =
+      params;
     const where: string[] = [`u."approvalStatus" = 'pending'`];
     const values: unknown[] = [];
 

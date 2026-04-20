@@ -7,6 +7,9 @@ export interface ConversationRow {
   title: string | null;
   organization_id: string;
   user_id: string;
+  project_id: string | null;
+  project_name?: string | null;
+  project_source_count?: number | string | null;
   created_at: Date;
   updated_at: Date;
   last_message_preview?: string | null;
@@ -19,6 +22,9 @@ export interface ConversationSummary {
   title: string | null;
   organizationId: string;
   userId: string;
+  projectId: string | null;
+  projectName: string | null;
+  projectSourceCount: number;
   createdAt: Date;
   updatedAt: Date;
   lastMessagePreview: string | null;
@@ -52,6 +58,9 @@ export function rowToConversationSummary(
     title: row.title,
     organizationId: row.organization_id,
     userId: row.user_id,
+    projectId: row.project_id,
+    projectName: row.project_name ?? null,
+    projectSourceCount: Number(row.project_source_count ?? 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastMessagePreview: row.last_message_preview ?? null,

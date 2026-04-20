@@ -53,6 +53,7 @@ describe('ChatDatabaseRepository', () => {
       title: 'First chat',
       organizationId: 'org-1',
       userId: 'user-1',
+      projectId: 'proj-1',
     });
 
     expect(result).toEqual({ id: 'conversation-1' });
@@ -62,6 +63,7 @@ describe('ChatDatabaseRepository', () => {
       'First chat',
       'org-1',
       'user-1',
+      'proj-1',
     ]);
   });
 
@@ -147,6 +149,7 @@ describe('ChatDatabaseRepository', () => {
         title: 'Test',
         organizationId: 'org-1',
         userId: 'user-1',
+        projectId: 'proj-1',
       }),
     ).rejects.toThrow('Failed to create conversation');
   });

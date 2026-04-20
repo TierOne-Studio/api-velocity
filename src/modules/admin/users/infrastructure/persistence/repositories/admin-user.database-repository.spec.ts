@@ -572,7 +572,7 @@ describe('AdminUserDatabaseRepository', () => {
       expect(result.data).toHaveLength(1);
       expect(result.total).toBe(1);
       const [sql] = mockQuery.mock.calls[0] as [string];
-      expect(sql).toContain("approvalStatus");
+      expect(sql).toContain('approvalStatus');
     });
 
     it('adds ILIKE clause when searchValue is provided', async () => {
@@ -614,13 +614,15 @@ describe('AdminUserDatabaseRepository', () => {
   describe('findAcceptedInvitationByEmail', () => {
     it('returns invitation id when found', async () => {
       mockQueryOne.mockResolvedValue({ id: 'inv-1' });
-      const result = await repo.findAcceptedInvitationByEmail('user@example.com');
+      const result =
+        await repo.findAcceptedInvitationByEmail('user@example.com');
       expect(result).toEqual({ id: 'inv-1' });
     });
 
     it('returns null when no accepted invitation', async () => {
       mockQueryOne.mockResolvedValue(null);
-      const result = await repo.findAcceptedInvitationByEmail('none@example.com');
+      const result =
+        await repo.findAcceptedInvitationByEmail('none@example.com');
       expect(result).toBeNull();
     });
   });

@@ -10,12 +10,24 @@ jest.mock('@thallesp/nestjs-better-auth', () => ({
 import { HttpStatus } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { PermissionsGuard } from '../../../../shared';
+import { AdminOrganizationsService } from '../../../admin';
 import { AirweaveService } from '../../application/services/airweave.service';
 import { AirweaveController } from './airweave.controller';
+
+const superadminSession = {
+  user: { id: 'user-super', role: 'superadmin' },
+  session: { activeOrganizationId: null },
+} as never;
+
+const adminSession = {
+  user: { id: 'user-admin', role: 'admin' },
+  session: { activeOrganizationId: 'org-1' },
+} as never;
 
 describe('AirweaveController', () => {
   let controller: AirweaveController;
   let airweaveService: jest.Mocked<AirweaveService>;
+  let adminOrganizationsService: jest.Mocked<AdminOrganizationsService>;
 
   beforeEach(() => {
     airweaveService = {
@@ -27,7 +39,14 @@ describe('AirweaveController', () => {
       createConnectSession: jest.fn(),
     } as unknown as jest.Mocked<AirweaveService>;
 
-    controller = new AirweaveController(airweaveService);
+    adminOrganizationsService = {
+      findById: jest.fn(),
+    } as unknown as jest.Mocked<AdminOrganizationsService>;
+
+    controller = new AirweaveController(
+      airweaveService,
+      adminOrganizationsService,
+    );
   });
 
   it('applies class-level PermissionsGuard', () => {
@@ -39,16 +58,50 @@ describe('AirweaveController', () => {
     expect(guards).toContain(PermissionsGuard);
   });
 
-  it('lists collections with parsed query params', async () => {
+  it('lists collections with parsed query params (superadmin sees all)', async () => {
     airweaveService.listCollections.mockResolvedValue([]);
 
-    await controller.listCollections(' champion ', '25', '5');
+    await controller.listCollections(
+      superadminSession,
+      ' champion ',
+      '25',
+      '5',
+    );
 
     expect(airweaveService.listCollections).toHaveBeenCalledWith({
       search: 'champion',
       limit: 25,
       skip: 5,
     });
+  });
+
+  it('filters collections via org allowlist for non-superadmin', async () => {
+    airweaveService.listCollections.mockResolvedValue([
+      { readableId: 'allowed-1' } as never,
+      { readableId: 'blocked-2' } as never,
+    ]);
+    adminOrganizationsService.findById.mockResolvedValue({
+      id: 'org-1',
+      metadata: { allowedAirweaveCollectionIds: ['allowed-1'] },
+    } as never);
+
+    const result = await controller.listCollections(adminSession);
+
+    expect(result).toEqual({ data: [{ readableId: 'allowed-1' }] });
+  });
+
+  it('returns empty list when org has no allowlist and caller is not superadmin', async () => {
+    airweaveService.listCollections.mockResolvedValue([
+      { readableId: 'any-1' } as never,
+    ]);
+    adminOrganizationsService.findById.mockResolvedValue({
+      id: 'org-1',
+      metadata: null,
+    } as never);
+
+    const result = await controller.listCollections(adminSession);
+
+    expect(result).toEqual({ data: [] });
   });
 
   it('gets a single collection by trimmed readable id', async () => {
@@ -80,7 +133,7 @@ describe('AirweaveController', () => {
 
   it('rejects invalid limit values', async () => {
     await expect(
-      controller.listCollections(undefined, '0', undefined),
+      controller.listCollections(superadminSession, undefined, '0', undefined),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });

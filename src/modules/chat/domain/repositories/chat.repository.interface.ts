@@ -11,6 +11,7 @@ export type CreateConversationParams = {
   title: string | null;
   organizationId: string;
   userId: string;
+  projectId: string;
 };
 
 export type CreateMessageParams = {
@@ -25,6 +26,7 @@ export interface IChatRepository {
   listConversations(
     userId: string,
     organizationId: string,
+    projectId?: string,
   ): Promise<ConversationRow[]>;
   findConversationById(
     conversationId: string,

@@ -1244,9 +1244,7 @@ export class RbacMigrationService implements OnModuleInit {
       }
     }
 
-    console.log(
-      '✅ user:approve permission added and assigned to admin roles',
-    );
+    console.log('✅ user:approve permission added and assigned to admin roles');
   }
 
   /**
@@ -1288,7 +1286,9 @@ export class RbacMigrationService implements OnModuleInit {
       `DELETE FROM permissions WHERE resource = 'organization' AND action = 'manage-members'`,
     );
 
-    console.log('✅ Phantom permissions removed (project:*, organization:manage-members, organization-invitation:*, organization-member:*)');
+    console.log(
+      '✅ Phantom permissions removed (project:*, organization:manage-members, organization-invitation:*, organization-member:*)',
+    );
   }
 
   /**
@@ -1347,6 +1347,8 @@ export class RbacMigrationService implements OnModuleInit {
       }
     }
 
-    console.log('✅ dashboard:view permission added and assigned to admin and manager roles');
+    console.log(
+      '✅ dashboard:view permission added and assigned to admin and manager roles',
+    );
   }
 }

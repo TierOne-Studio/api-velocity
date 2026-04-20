@@ -8,10 +8,9 @@ import {
 } from '@langchain/core/messages';
 import { createAgent } from 'langchain';
 import { ConfigService } from '../../../../shared/config';
-import {
-  AirweaveService,
-  type AirweaveSearchResultSummary,
-} from '../../../airweave/application/services/airweave.service';
+import type { AirweaveSearchResultSummary } from '../../../airweave/application/services/airweave.service';
+import { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
+import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
 import {
   createSearchKnowledgeBaseTool,
   dedupeAndCapSources,
@@ -19,7 +18,9 @@ import {
 
 type GenerateReplyParams = {
   organizationName: string;
-  collectionId: string;
+  projectName: string;
+  projectId: string;
+  sources: ProjectDataSource[];
   question: string;
   previousMessages: Array<{
     role: 'user' | 'assistant' | 'system';
@@ -63,7 +64,7 @@ export class ChatAgentService {
   private cachedLlmKey = '';
 
   constructor(
-    private readonly airweaveService: AirweaveService,
+    private readonly registry: DataSourceRegistry,
     private readonly configService: ConfigService,
   ) {}
 
@@ -157,8 +158,9 @@ export class ChatAgentService {
   ): Promise<ChatReply> {
     const collectedSources: AirweaveSearchResultSummary[] = [];
     const searchTool = createSearchKnowledgeBaseTool({
-      collectionId: params.collectionId,
-      airweaveService: this.airweaveService,
+      projectId: params.projectId,
+      sources: params.sources,
+      registry: this.registry,
       sourcesSink: collectedSources,
       resultLimit: this.configService.getChatAgentToolResultLimit(),
       resultCharCap: this.configService.getChatAgentToolResultCharCap(),
@@ -188,14 +190,8 @@ export class ChatAgentService {
       new HumanMessage(this.buildAgentUserMessage(params)),
     ];
 
-    // Recursion limit is roughly 2 * max iterations + slack (each iteration is
-    // a model call node + a tool node in the underlying langgraph). 4x gives a
-    // comfortable safety margin for the initial + final model calls.
     const recursionLimit = Math.max(10, maxIterations * 4);
 
-    // langchain v1's createAgent has a very deep generic bag that narrows the
-    // `messages` index signature to `never` for consumers without a custom
-    // state schema. A narrow cast at the call site is the cleanest escape.
     const result = await agent.invoke(
       { messages } as Parameters<typeof agent.invoke>[0],
       { recursionLimit },
@@ -214,7 +210,9 @@ export class ChatAgentService {
     const finalAiMsg = resultMessages
       .filter((m) => m._getType() === 'ai')
       .at(-1) as AIMessage | undefined;
-    const usageMeta = finalAiMsg?.usage_metadata as { input_tokens?: number; output_tokens?: number; total_tokens?: number } | undefined;
+    const usageMeta = finalAiMsg?.usage_metadata as
+      | { input_tokens?: number; output_tokens?: number; total_tokens?: number }
+      | undefined;
     const promptTokens = usageMeta?.input_tokens ?? null;
     const completionTokens = usageMeta?.output_tokens ?? null;
     const totalTokens = usageMeta?.total_tokens ?? null;
@@ -226,7 +224,11 @@ export class ChatAgentService {
         sources: this.mapSources(uniqueSources),
         resultCount: uniqueSources.length,
         toolCallCount,
-        ...(totalTokens !== null && { promptTokens, completionTokens, totalTokens }),
+        ...(totalTokens !== null && {
+          promptTokens,
+          completionTokens,
+          totalTokens,
+        }),
       },
     };
   }
@@ -253,8 +255,9 @@ export class ChatAgentService {
 
     const collectedSources: AirweaveSearchResultSummary[] = [];
     const searchTool = createSearchKnowledgeBaseTool({
-      collectionId: params.collectionId,
-      airweaveService: this.airweaveService,
+      projectId: params.projectId,
+      sources: params.sources,
+      registry: this.registry,
       sourcesSink: collectedSources,
       resultLimit: this.configService.getChatAgentToolResultLimit(),
       resultCharCap: this.configService.getChatAgentToolResultCharCap(),
@@ -388,7 +391,9 @@ export class ChatAgentService {
     const maxSources = this.configService.getChatAgentMaxSources();
     const uniqueSources = dedupeAndCapSources(collectedSources, maxSources);
 
-    const streamUsageMeta = streamFinalAiMsg?.usage_metadata as { input_tokens?: number; output_tokens?: number; total_tokens?: number } | undefined;
+    const streamUsageMeta = streamFinalAiMsg?.usage_metadata as
+      | { input_tokens?: number; output_tokens?: number; total_tokens?: number }
+      | undefined;
     const streamPromptTokens = streamUsageMeta?.input_tokens ?? null;
     const streamCompletionTokens = streamUsageMeta?.output_tokens ?? null;
     const streamTotalTokens = streamUsageMeta?.total_tokens ?? null;
@@ -434,7 +439,7 @@ export class ChatAgentService {
     return [
       this.configService.getChatSystemPrompt(),
       AGENT_TOOL_USAGE_PROTOCOL,
-      `## Context\n\nYou are answering questions for the organization: ${params.organizationName}. Every question is implicitly scoped to that organization's indexed sources.`,
+      `## Context\n\nYou are answering questions for the organization: ${params.organizationName}, scoped to the project: ${params.projectName}. Every question is implicitly scoped to that project's configured data sources.`,
     ].join('\n\n');
   }
 
@@ -515,27 +520,61 @@ export class ChatAgentService {
   private async generateKeylessFallback(
     params: GenerateReplyParams,
   ): Promise<ChatReply> {
-    const response = await this.airweaveService.searchCollection(
-      params.collectionId,
-      {
-        query: params.question,
-        tier: 'classic',
-        limit: 5,
-        offset: 0,
-      },
+    if (params.sources.length === 0) {
+      return {
+        content: [
+          '## Answer',
+          '',
+          `This project has no configured data sources, so I cannot retrieve grounded material for "${params.question}".`,
+          '',
+          '### Suggested Next Step',
+          '',
+          '- Add at least one data source to the project, then retry your question.',
+        ].join('\n'),
+        metadata: {
+          generator: 'fallback-no-sources',
+          sources: [],
+          resultCount: 0,
+        },
+      };
+    }
+
+    const searches = await Promise.allSettled(
+      params.sources.map((source) =>
+        this.registry.get(source.kind).search(source, params.question, {
+          tier: 'classic',
+          limit: 5,
+          offset: 0,
+        }),
+      ),
     );
-    const results = response.results;
+
+    const results: AirweaveSearchResultSummary[] = [];
+    searches.forEach((outcome, index) => {
+      if (outcome.status === 'fulfilled') {
+        results.push(...outcome.value.results);
+      } else {
+        console.warn('[ChatAgentService] fallback source search failed', {
+          sourceId: params.sources[index]?.id,
+          kind: params.sources[index]?.kind,
+          error:
+            outcome.reason instanceof Error
+              ? outcome.reason.message
+              : String(outcome.reason),
+        });
+      }
+    });
 
     if (results.length === 0) {
       return {
         content: [
           '## Answer',
           '',
-          `I could not find relevant indexed material for this question in ${params.organizationName} yet.`,
+          `I could not find relevant indexed material for this question in project ${params.projectName} yet.`,
           '',
           '### Suggested Next Step',
           '',
-          '- Try a more specific query, or configure additional indexed sources for this organization.',
+          '- Try a more specific query, or configure additional indexed sources for this project.',
         ].join('\n'),
         metadata: {
           generator: 'fallback-no-results',

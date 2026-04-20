@@ -276,7 +276,9 @@ describe('DatabaseService - Migration Tracking', () => {
       expectQueryWith('invitation_role_allowed_values_chk');
 
       // Should log completed with count
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('10 new'));
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('10 new'),
+      );
       consoleSpy.mockRestore();
     });
 

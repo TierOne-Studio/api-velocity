@@ -13,6 +13,7 @@ export const statement = {
   role: ['list', 'get'],
   chat: ['read', 'create', 'stream', 'delete'],
   dashboard: ['view'],
+  project: ['create', 'read', 'update', 'delete'],
 } as const;
 
 /**
@@ -49,6 +50,7 @@ export const adminRole = ac.newRole({
   role: ['list', 'get'],
   chat: ['read', 'create', 'stream', 'delete'],
   dashboard: ['view'],
+  project: ['create', 'read', 'update', 'delete'],
 });
 
 // Manager role - can manage users/sessions within their organization
@@ -59,6 +61,7 @@ export const managerRole = ac.newRole({
   role: ['list', 'get'],
   chat: ['read', 'create', 'stream', 'delete'],
   dashboard: ['view'],
+  project: ['create', 'read', 'update'],
 });
 
 // Member role - basic org member
@@ -66,6 +69,7 @@ export const memberRole = ac.newRole({
   organization: ['list', 'get'],
   role: ['list', 'get'],
   chat: ['read', 'create', 'stream'],
+  project: ['read'],
 });
 
 /**
