@@ -363,6 +363,45 @@ describe('ChatService', () => {
     });
   });
 
+  it('filters out project sources that are not ready before invoking the agent', async () => {
+    repository.findConversationById
+      .mockResolvedValueOnce(makeConversationRow())
+      .mockResolvedValueOnce(makeConversationRow());
+    repository.listMessages.mockResolvedValue([]);
+    repository.createMessage
+      .mockResolvedValueOnce(makeMessageRow())
+      .mockResolvedValueOnce(
+        makeMessageRow({ id: 'message-2', role: 'assistant', content: 'ok' }),
+      );
+    projectsService.resolveProjectSources.mockResolvedValue({
+      project: makeProjectRow(),
+      sources: [
+        makeAirweaveSource({ id: 'src-ready', status: 'ready' }),
+        makeAirweaveSource({ id: 'src-connecting', status: 'connecting' }),
+        makeAirweaveSource({ id: 'src-error', status: 'error' }),
+      ],
+    });
+    chatAgentService.generateReply.mockResolvedValue({
+      content: 'ok',
+      metadata: null,
+    });
+
+    await service.sendMessage({
+      platformRole: 'manager',
+      activeOrganizationId: 'org-1',
+      conversationId: 'conversation-1',
+      userId: 'user-1',
+      content: 'hello?',
+    });
+
+    const agentCall = chatAgentService.generateReply.mock.calls[0][0];
+    expect(agentCall.sources).toHaveLength(1);
+    expect(agentCall.sources[0]).toMatchObject({
+      id: 'src-ready',
+      status: 'ready',
+    });
+  });
+
   it('deletes an existing conversation', async () => {
     repository.deleteConversation.mockResolvedValue(true);
 

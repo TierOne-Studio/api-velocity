@@ -111,7 +111,9 @@ describe('SessionsController', () => {
     it('rejects non-superadmin ?organizationId that does not match active org', async () => {
       await expect(
         controller.listSessions(managerSession, 'user-2', 'org-other'),
-      ).rejects.toThrow('You can only manage sessions in your active organization');
+      ).rejects.toThrow(
+        'You can only manage sessions in your active organization',
+      );
     });
 
     it('accepts non-superadmin ?organizationId that matches active org', async () => {

@@ -374,7 +374,18 @@ export class ProjectsService {
     if (scope.platformRole === 'superadmin') {
       return scope.organizationId ?? scope.activeOrganizationId ?? null;
     }
-    return scope.organizationId ?? scope.activeOrganizationId;
+    // Non-superadmin: an explicit organizationId that doesn't match the caller's
+    // active organization is an attempted cross-org read/write and must be
+    // rejected. Silent fallback to a different org is unsafe.
+    if (
+      scope.organizationId &&
+      scope.organizationId !== scope.activeOrganizationId
+    ) {
+      throw new ForbiddenException(
+        'You can only access projects in your active organization',
+      );
+    }
+    return scope.activeOrganizationId;
   }
 }
 

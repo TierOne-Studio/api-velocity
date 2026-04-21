@@ -132,6 +132,23 @@ describe('ProjectsService', () => {
       expect(repository.listForOrganization).toHaveBeenCalledWith('org-1');
       expect(repository.listAll).not.toHaveBeenCalled();
     });
+
+    it('allows non-superadmin to pass an organizationId that matches their active organization', async () => {
+      repository.listForOrganization.mockResolvedValue([orgProject]);
+
+      await service.listForScope({ ...adminScope, organizationId: 'org-1' });
+
+      expect(repository.listForOrganization).toHaveBeenCalledWith('org-1');
+    });
+
+    it('rejects non-superadmin passing an organizationId different from their active organization', async () => {
+      await expect(
+        service.listForScope({ ...adminScope, organizationId: 'org-other' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(repository.listForOrganization).not.toHaveBeenCalled();
+      expect(repository.listAll).not.toHaveBeenCalled();
+    });
   });
 
   describe('create', () => {

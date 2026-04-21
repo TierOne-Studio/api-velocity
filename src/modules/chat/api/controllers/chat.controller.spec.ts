@@ -113,12 +113,7 @@ describe('ChatController', () => {
 
   it('rejects scope=all for non-superadmin with BadRequest', async () => {
     await expect(
-      controller.listConversations(
-        managerSession,
-        undefined,
-        undefined,
-        'all',
-      ),
+      controller.listConversations(managerSession, undefined, undefined, 'all'),
     ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
   });
 

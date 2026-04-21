@@ -1389,11 +1389,7 @@ export class RbacMigrationService implements OnModuleInit {
       ['project', 'read', 'View projects'],
       ['project', 'update', 'Update projects'],
       ['project', 'delete', 'Delete projects'],
-      [
-        'project',
-        'manage-sources',
-        'Add or remove data sources on projects',
-      ],
+      ['project', 'manage-sources', 'Add or remove data sources on projects'],
     ] as const;
 
     for (const [resource, action, description] of projectPermissions) {

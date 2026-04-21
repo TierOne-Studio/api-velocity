@@ -321,7 +321,12 @@ export class ChatService {
         organizationId,
       );
 
-    return { projectName: project.name, sources };
+    // Only fan out across sources that have finished provisioning. Sources in
+    // `connecting` or `error` states can't serve retrieval requests yet and
+    // would only add latency and noise to the agent loop.
+    const readySources = sources.filter((source) => source.status === 'ready');
+
+    return { projectName: project.name, sources: readySources };
   }
 
   private async requireOrganizationId(

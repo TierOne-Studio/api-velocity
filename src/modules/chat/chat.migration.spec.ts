@@ -1,12 +1,13 @@
 import { jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DatabaseService } from '../../shared/infrastructure/database/database.module';
-import { ProjectsMigrationService } from '../projects';
+import { ProjectsMigrationService } from '../projects/projects.migration';
 import { ChatMigrationService } from './chat.migration';
 
 describe('ChatMigrationService', () => {
   let service: ChatMigrationService;
   let dbService: any;
+  let projectsMigrationsMock: { runTrackedMigrations: jest.Mock };
 
   beforeEach(async () => {
     const queryMock: any = jest.fn();
@@ -25,19 +26,44 @@ describe('ChatMigrationService', () => {
       recordMigration: recordMigrationMock,
     };
 
-    const projectsMigrations = {
-      runTrackedMigrations: jest.fn(),
-    } as unknown as ProjectsMigrationService;
+    const runTrackedMigrationsMock: any = jest.fn();
+    runTrackedMigrationsMock.mockResolvedValue(undefined);
+    projectsMigrationsMock = {
+      runTrackedMigrations: runTrackedMigrationsMock,
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatMigrationService,
         { provide: DatabaseService, useValue: dbService },
-        { provide: ProjectsMigrationService, useValue: projectsMigrations },
+        {
+          provide: ProjectsMigrationService,
+          useValue: projectsMigrationsMock,
+        },
       ],
     }).compile();
 
     service = module.get(ChatMigrationService);
+  });
+
+  it('runs ProjectsMigrationService before chat migrations on module init', async () => {
+    const consoleSpy = jest
+      .spyOn(console, 'log')
+      .mockImplementation(() => undefined);
+
+    await service.onModuleInit();
+
+    expect(projectsMigrationsMock.runTrackedMigrations).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(dbService.hasMigrationRun).toHaveBeenCalled();
+    // First invocation order: projects before any chat migration tracker.
+    const firstProjectsCall =
+      projectsMigrationsMock.runTrackedMigrations.mock.invocationCallOrder[0];
+    const firstChatTrackerCall =
+      dbService.hasMigrationRun.mock.invocationCallOrder[0];
+    expect(firstProjectsCall).toBeLessThan(firstChatTrackerCall);
+    consoleSpy.mockRestore();
   });
 
   it('runs the tracked chat migration when pending', async () => {

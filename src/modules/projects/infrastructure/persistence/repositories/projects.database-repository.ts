@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../../../../shared/infrastructure/database/database.module';
 import type {
@@ -146,7 +145,6 @@ export class ProjectsDatabaseRepository implements IProjectsRepository {
   async createSource(
     params: CreateDataSourceRow,
   ): Promise<ProjectDataSourceRow> {
-    const id = params.id ?? randomUUID();
     const name =
       params.input.kind === 'airweave_collection'
         ? (params.input.name ?? params.input.config.collectionName)
@@ -159,7 +157,7 @@ export class ProjectsDatabaseRepository implements IProjectsRepository {
        RETURNING id, project_id, kind, name, config, status, status_detail,
                  created_at, updated_at`,
       [
-        id,
+        params.id,
         params.projectId,
         params.input.kind,
         name,

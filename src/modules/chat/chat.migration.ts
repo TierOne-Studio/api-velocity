@@ -1,18 +1,24 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.module';
-import { ProjectsMigrationService } from '../projects';
+import { ProjectsMigrationService } from '../projects/projects.migration';
 
 @Injectable()
 export class ChatMigrationService implements OnModuleInit {
   constructor(
     private readonly db: DatabaseService,
-    // Cross-injected so Nest runs ProjectsMigrationService.onModuleInit() before
-    // this service is constructed — guarantees `project` exists before we
-    // backfill conversation.project_id.
-    private readonly _projectsMigrations: ProjectsMigrationService,
+    // Injected so we can explicitly drive ProjectsMigrationService's migrations
+    // before our own. Nest's lifecycle hooks run after all providers construct,
+    // so injection alone doesn't guarantee onModuleInit() ordering — we invoke
+    // runTrackedMigrations() directly below. ProjectsMigrationService is
+    // idempotent (its tracking table prevents double-run) so calling it here
+    // AND from its own onModuleInit is safe.
+    private readonly projectsMigrations: ProjectsMigrationService,
   ) {}
 
   async onModuleInit() {
+    // Ensure the `project` table exists and organizations are backfilled
+    // before we add/backfill conversation.project_id.
+    await this.projectsMigrations.runTrackedMigrations();
     await this.runTrackedMigrations();
   }
 
