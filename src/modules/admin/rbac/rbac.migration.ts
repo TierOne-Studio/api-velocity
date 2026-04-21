@@ -27,6 +27,11 @@ const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
   { resource: 'user', action: 'set-role' },
   { resource: 'user', action: 'set-password' },
   { resource: 'user', action: 'approve' },
+  { resource: 'project', action: 'create' },
+  { resource: 'project', action: 'read' },
+  { resource: 'project', action: 'update' },
+  { resource: 'project', action: 'delete' },
+  { resource: 'project', action: 'manage-sources' },
   { resource: 'dashboard', action: 'view' },
 ] as const;
 
@@ -44,6 +49,9 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
   { resource: 'user', action: 'create' },
   { resource: 'user', action: 'read' },
   { resource: 'user', action: 'update' },
+  { resource: 'project', action: 'read' },
+  { resource: 'project', action: 'update' },
+  { resource: 'project', action: 'manage-sources' },
   { resource: 'dashboard', action: 'view' },
 ] as const;
 
@@ -52,6 +60,7 @@ const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
   { resource: 'chat', action: 'read' },
   { resource: 'chat', action: 'create' },
   { resource: 'chat', action: 'stream' },
+  { resource: 'project', action: 'read' },
 ] as const;
 
 /**
@@ -135,6 +144,10 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_018_add_dashboard_permission',
         up: () => this.addDashboardPermission(),
+      },
+      {
+        name: 'rbac_019_restore_project_permissions',
+        up: () => this.restoreProjectPermissions(),
       },
     ];
 
@@ -1244,15 +1257,18 @@ export class RbacMigrationService implements OnModuleInit {
       }
     }
 
-    console.log(
-      '✅ user:approve permission added and assigned to admin roles',
-    );
+    console.log('✅ user:approve permission added and assigned to admin roles');
   }
 
   /**
    * Remove phantom permissions that exist in the DB but are never enforced
    * by any @RequirePermissions decorator or FE can() check:
-   *   - project:* (4) — no controller uses them
+   *   - project:* (4) — REMOVED AT THE TIME this migration shipped; they have
+   *     since been restored as enforced first-class permissions by
+   *     `rbac_019_restore_project_permissions` (ProjectsController wires
+   *     @RequirePermissions('project:*') and AppRoutes guards /projects on
+   *     project:read). Leaving `'project'` in the list below so migration
+   *     behavior is preserved for existing installs; 019 re-inserts after.
    *   - organization:manage-members — internal-only, now replaced by organization:invite
    *   - organization-invitation:* — production-only phantoms (Better Auth leftovers)
    *   - organization-member:* — production-only phantoms (Better Auth leftovers)
@@ -1288,7 +1304,9 @@ export class RbacMigrationService implements OnModuleInit {
       `DELETE FROM permissions WHERE resource = 'organization' AND action = 'manage-members'`,
     );
 
-    console.log('✅ Phantom permissions removed (project:*, organization:manage-members, organization-invitation:*, organization-member:*)');
+    console.log(
+      '✅ Phantom permissions removed (project:*, organization:manage-members, organization-invitation:*, organization-member:*)',
+    );
   }
 
   /**
@@ -1347,6 +1365,123 @@ export class RbacMigrationService implements OnModuleInit {
       }
     }
 
-    console.log('✅ dashboard:view permission added and assigned to admin and manager roles');
+    console.log(
+      '✅ dashboard:view permission added and assigned to admin and manager roles',
+    );
+  }
+
+  /**
+   * Restore project permissions as first-class, enforced permissions.
+   *
+   * Migration `rbac_017_remove_phantom_permissions` deleted project:* under the
+   * (then-true) assumption that no controller enforced them. Projects is now a
+   * real feature with `@RequirePermissions` decorators on every endpoint and a
+   * FE route guard that checks `project:read`. This migration:
+   *
+   *   1. Re-inserts the 5 project permissions (CRUD + manage-sources).
+   *   2. Grants them to superadmin.
+   *   3. Re-syncs global and org-scoped admin/manager/member roles using the
+   *      updated `ORGANIZATION_*_DEFAULT_PERMISSIONS` constants above.
+   */
+  async restoreProjectPermissions(): Promise<void> {
+    const projectPermissions = [
+      ['project', 'create', 'Create projects'],
+      ['project', 'read', 'View projects'],
+      ['project', 'update', 'Update projects'],
+      ['project', 'delete', 'Delete projects'],
+      ['project', 'manage-sources', 'Add or remove data sources on projects'],
+    ] as const;
+
+    for (const [resource, action, description] of projectPermissions) {
+      await this.db.query(
+        `INSERT INTO permissions (resource, action, description)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (resource, action) DO NOTHING`,
+        [resource, action, description],
+      );
+    }
+
+    // Grant all project permissions to the global superadmin role.
+    const superadminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
+    );
+    if (superadminRole) {
+      await this.db.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT $1, p.id
+         FROM permissions p
+         WHERE p.resource = 'project'
+         ON CONFLICT DO NOTHING`,
+        [superadminRole.id],
+      );
+    }
+
+    // Re-sync global admin/manager/member roles.
+    const globalRoles = await this.db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM roles
+       WHERE organization_id IS NULL
+         AND name IN ('admin', 'manager', 'member')`,
+    );
+    for (const role of globalRoles) {
+      if (role.name === 'admin') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      } else if (role.name === 'manager') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      } else if (role.name === 'member') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    // Re-sync org-scoped default roles across every organization.
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
+    for (const organization of organizations) {
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [organization.id],
+      );
+      if (adminRole) {
+        await this.syncRolePermissions(
+          adminRole.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(
+          managerRole.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const memberRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'member'`,
+        [organization.id],
+      );
+      if (memberRole) {
+        await this.syncRolePermissions(
+          memberRole.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    console.log(
+      '✅ project permissions restored and assigned to default roles (superadmin/admin/manager/member)',
+    );
   }
 }

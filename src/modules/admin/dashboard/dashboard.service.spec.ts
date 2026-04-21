@@ -17,10 +17,7 @@ describe('DashboardService', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        DashboardService,
-        { provide: DatabaseService, useValue: db },
-      ],
+      providers: [DashboardService, { provide: DatabaseService, useValue: db }],
     }).compile();
 
     service = module.get(DashboardService);
@@ -83,12 +80,12 @@ describe('DashboardService', () => {
   describe('getOverview', () => {
     it('returns parsed overview stats for global scope (no organizationId)', async () => {
       db.queryOne
-        .mockResolvedValueOnce({ total: '10', banned: '2' })   // users
-        .mockResolvedValueOnce({ active: '5' })                 // sessions
-        .mockResolvedValueOnce({ total: '3' })                  // orgs
-        .mockResolvedValueOnce({ total: '50' })                 // conversations
+        .mockResolvedValueOnce({ total: '10', banned: '2' }) // users
+        .mockResolvedValueOnce({ active: '5' }) // sessions
+        .mockResolvedValueOnce({ total: '3' }) // orgs
+        .mockResolvedValueOnce({ total: '50' }) // conversations
         .mockResolvedValueOnce({ total: '200', assistant: '100' }) // messages
-        .mockResolvedValueOnce({ total_tokens: '5000' });       // token stats
+        .mockResolvedValueOnce({ total_tokens: '5000' }); // token stats
 
       const result = await service.getOverview();
 
@@ -104,12 +101,12 @@ describe('DashboardService', () => {
 
     it('returns overview stats scoped to an organization', async () => {
       db.queryOne
-        .mockResolvedValueOnce({ total: '4', banned: '1' })    // users
-        .mockResolvedValueOnce({ active: '2' })                 // sessions
+        .mockResolvedValueOnce({ total: '4', banned: '1' }) // users
+        .mockResolvedValueOnce({ active: '2' }) // sessions
         // orgs: Promise.resolve({ total: '1' }) is used inline — queryOne not called
-        .mockResolvedValueOnce({ total: '20' })                 // conversations
+        .mockResolvedValueOnce({ total: '20' }) // conversations
         .mockResolvedValueOnce({ total: '80', assistant: '40' }) // messages
-        .mockResolvedValueOnce({ total_tokens: null });          // token stats
+        .mockResolvedValueOnce({ total_tokens: null }); // token stats
 
       const result = await service.getOverview('org-1');
 
@@ -119,8 +116,7 @@ describe('DashboardService', () => {
     });
 
     it('handles null queryOne responses gracefully with default 0 values', async () => {
-      db.queryOne
-        .mockResolvedValue(null);
+      db.queryOne.mockResolvedValue(null);
 
       const result = await service.getOverview();
 
@@ -156,12 +152,16 @@ describe('DashboardService', () => {
           banned_count: '2',
           email_verified_count: '40',
         })
-        .mockResolvedValueOnce({ active: '5', expired: '3', impersonated: '1' });
+        .mockResolvedValueOnce({
+          active: '5',
+          expired: '3',
+          impersonated: '1',
+        });
 
       db.query
         .mockResolvedValueOnce([{ date: '2026-04-01', count: '5' }]) // timeSeries
-        .mockResolvedValueOnce([baseTopUser])                          // topUsers
-        .mockResolvedValueOnce([{ browser: 'Chrome', count: '3' }]);  // sessionsByBrowser
+        .mockResolvedValueOnce([baseTopUser]) // topUsers
+        .mockResolvedValueOnce([{ browser: 'Chrome', count: '3' }]); // sessionsByBrowser
 
       const result = await service.getUserStats('30d');
 
@@ -186,11 +186,15 @@ describe('DashboardService', () => {
           banned_count: '0',
           email_verified_count: '8',
         })
-        .mockResolvedValueOnce({ active: '2', expired: '1', impersonated: '0' });
+        .mockResolvedValueOnce({
+          active: '2',
+          expired: '1',
+          impersonated: '0',
+        });
 
       db.query
-        .mockResolvedValueOnce([])  // timeSeries
-        .mockResolvedValueOnce([])  // topUsers
+        .mockResolvedValueOnce([]) // timeSeries
+        .mockResolvedValueOnce([]) // topUsers
         .mockResolvedValueOnce([]); // sessionsByBrowser
 
       const result = await service.getUserStats('7d', 'org-1');
@@ -200,8 +204,17 @@ describe('DashboardService', () => {
 
     it('handles null last_active_at on top users', async () => {
       db.queryOne
-        .mockResolvedValueOnce({ total: '1', new_in_range: '1', banned_count: '0', email_verified_count: '1' })
-        .mockResolvedValueOnce({ active: '0', expired: '0', impersonated: '0' });
+        .mockResolvedValueOnce({
+          total: '1',
+          new_in_range: '1',
+          banned_count: '0',
+          email_verified_count: '1',
+        })
+        .mockResolvedValueOnce({
+          active: '0',
+          expired: '0',
+          impersonated: '0',
+        });
 
       db.query
         .mockResolvedValueOnce([])
@@ -214,9 +227,7 @@ describe('DashboardService', () => {
     });
 
     it('handles null totals gracefully', async () => {
-      db.queryOne
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
+      db.queryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
 
       db.query
         .mockResolvedValueOnce([])
@@ -254,10 +265,18 @@ describe('DashboardService', () => {
         });
 
       db.query
-        .mockResolvedValueOnce([{ role: 'assistant', count: '60' }, { role: 'user', count: '40' }]) // roleCounts
-        .mockResolvedValueOnce([{ date: '2026-04-01', count: '5' }])  // timeSeriesConversations
-        .mockResolvedValueOnce([{ date: '2026-04-01', user_count: '10', assistant_count: '15' }]) // timeSeriesMessages
-        .mockResolvedValueOnce([{ generator: 'claude-3', count: '60' }, { generator: 'fallback', count: '40' }]) // generatorDist
+        .mockResolvedValueOnce([
+          { role: 'assistant', count: '60' },
+          { role: 'user', count: '40' },
+        ]) // roleCounts
+        .mockResolvedValueOnce([{ date: '2026-04-01', count: '5' }]) // timeSeriesConversations
+        .mockResolvedValueOnce([
+          { date: '2026-04-01', user_count: '10', assistant_count: '15' },
+        ]) // timeSeriesMessages
+        .mockResolvedValueOnce([
+          { generator: 'claude-3', count: '60' },
+          { generator: 'fallback', count: '40' },
+        ]) // generatorDist
         .mockResolvedValueOnce([{ source_name: 'github', count: '30' }]) // sourceUsage
         .mockResolvedValueOnce([{ entity_type: 'file', count: '20' }]); // entityBreakdown
 
@@ -278,16 +297,27 @@ describe('DashboardService', () => {
 
     it('returns chat stats scoped to organization', async () => {
       db.queryOne
-        .mockResolvedValueOnce({ total_conversations: '5', total_messages: '25', avg_messages: '5', active_in_range: '3' })
+        .mockResolvedValueOnce({
+          total_conversations: '5',
+          total_messages: '25',
+          avg_messages: '5',
+          active_in_range: '3',
+        })
         .mockResolvedValueOnce({ avg_tool_calls: null, avg_results: null })
-        .mockResolvedValueOnce({ total_tokens: null, total_prompt_tokens: null, total_completion_tokens: null, avg_tokens: null, messages_with_token_data: '0' });
+        .mockResolvedValueOnce({
+          total_tokens: null,
+          total_prompt_tokens: null,
+          total_completion_tokens: null,
+          avg_tokens: null,
+          messages_with_token_data: '0',
+        });
 
       db.query
-        .mockResolvedValueOnce([])  // roleCounts
-        .mockResolvedValueOnce([])  // timeSeriesConversations
-        .mockResolvedValueOnce([])  // timeSeriesMessages
-        .mockResolvedValueOnce([])  // generatorDist
-        .mockResolvedValueOnce([])  // sourceUsage
+        .mockResolvedValueOnce([]) // roleCounts
+        .mockResolvedValueOnce([]) // timeSeriesConversations
+        .mockResolvedValueOnce([]) // timeSeriesMessages
+        .mockResolvedValueOnce([]) // generatorDist
+        .mockResolvedValueOnce([]) // sourceUsage
         .mockResolvedValueOnce([]); // entityBreakdown
 
       const result = await service.getChatStats('7d', 'org-1');
@@ -304,7 +334,7 @@ describe('DashboardService', () => {
         .mockResolvedValueOnce(null);
 
       db.query
-        .mockResolvedValueOnce([])  // roleCounts
+        .mockResolvedValueOnce([]) // roleCounts
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([])
@@ -322,12 +352,17 @@ describe('DashboardService', () => {
 
     it('computes generator distribution percentages correctly when totalGeneratorCount is 0', async () => {
       db.queryOne
-        .mockResolvedValueOnce({ total_conversations: '0', total_messages: '0', avg_messages: '0', active_in_range: '0' })
+        .mockResolvedValueOnce({
+          total_conversations: '0',
+          total_messages: '0',
+          avg_messages: '0',
+          active_in_range: '0',
+        })
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
 
       db.query
-        .mockResolvedValueOnce([])  // roleCounts (empty — total=0)
+        .mockResolvedValueOnce([]) // roleCounts (empty — total=0)
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([{ generator: 'unknown', count: '0' }]) // all zero
@@ -345,14 +380,28 @@ describe('DashboardService', () => {
   describe('getOrgStats', () => {
     it('returns org stats for global scope', async () => {
       db.queryOne
-        .mockResolvedValueOnce({ total: '5' })     // totalOrgs
-        .mockResolvedValueOnce({ count: '10' });   // pendingInvitations
+        .mockResolvedValueOnce({ total: '5' }) // totalOrgs
+        .mockResolvedValueOnce({ count: '10' }); // pendingInvitations
 
       db.query
-        .mockResolvedValueOnce([{ org_id: 'org-1', org_name: 'Org 1', conversation_count: '10', message_count: '50' }]) // conversationsPerOrg
-        .mockResolvedValueOnce([{ org_id: 'org-1', org_name: 'Org 1', member_count: '5' }])  // membersPerOrg
-        .mockResolvedValueOnce([{ role: 'member', count: '4' }, { role: 'admin', count: '1' }]) // memberRoleDistribution
-        .mockResolvedValueOnce([{ org_id: 'org-1', org_name: 'Org 1', recent_message_count: '25' }]); // mostActiveOrgs
+        .mockResolvedValueOnce([
+          {
+            org_id: 'org-1',
+            org_name: 'Org 1',
+            conversation_count: '10',
+            message_count: '50',
+          },
+        ]) // conversationsPerOrg
+        .mockResolvedValueOnce([
+          { org_id: 'org-1', org_name: 'Org 1', member_count: '5' },
+        ]) // membersPerOrg
+        .mockResolvedValueOnce([
+          { role: 'member', count: '4' },
+          { role: 'admin', count: '1' },
+        ]) // memberRoleDistribution
+        .mockResolvedValueOnce([
+          { org_id: 'org-1', org_name: 'Org 1', recent_message_count: '25' },
+        ]); // mostActiveOrgs
 
       const result = await service.getOrgStats();
 
@@ -371,10 +420,21 @@ describe('DashboardService', () => {
         .mockResolvedValueOnce({ count: '3' }); // pendingInvitations
 
       db.query
-        .mockResolvedValueOnce([{ org_id: 'org-1', org_name: 'Org 1', conversation_count: '5', message_count: '20' }])
-        .mockResolvedValueOnce([{ org_id: 'org-1', org_name: 'Org 1', member_count: '3' }])
+        .mockResolvedValueOnce([
+          {
+            org_id: 'org-1',
+            org_name: 'Org 1',
+            conversation_count: '5',
+            message_count: '20',
+          },
+        ])
+        .mockResolvedValueOnce([
+          { org_id: 'org-1', org_name: 'Org 1', member_count: '3' },
+        ])
         .mockResolvedValueOnce([{ role: 'member', count: '2' }])
-        .mockResolvedValueOnce([{ org_id: 'org-1', org_name: 'Org 1', recent_message_count: '12' }]);
+        .mockResolvedValueOnce([
+          { org_id: 'org-1', org_name: 'Org 1', recent_message_count: '12' },
+        ]);
 
       const result = await service.getOrgStats('org-1');
 

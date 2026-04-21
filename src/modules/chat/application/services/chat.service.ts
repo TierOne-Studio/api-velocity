@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { AdminOrganizationsService } from '../../../admin';
+import { ProjectsService } from '../../../projects/application/services/projects.service';
+import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
 import { rowToConversationSummary, rowToMessage } from '../../api/dto/chat.dto';
 import {
   CHAT_REPOSITORY,
@@ -18,6 +20,7 @@ type ChatScopeParams = {
   platformRole: 'superadmin' | 'admin' | 'manager' | 'member';
   activeOrganizationId: string | null;
   organizationId?: string;
+  scopeMode?: 'all';
 };
 
 @Injectable()
@@ -25,15 +28,28 @@ export class ChatService {
   constructor(
     @Inject(CHAT_REPOSITORY) private readonly chatRepository: IChatRepository,
     private readonly organizationsService: AdminOrganizationsService,
+    private readonly projectsService: ProjectsService,
     private readonly chatAgentService: ChatAgentService,
   ) {}
 
-  async listConversations(params: ChatScopeParams & { userId: string }) {
+  async listConversations(
+    params: ChatScopeParams & { userId: string; projectId?: string },
+  ) {
+    // Superadmin cross-org view: caller's own conversations across every org.
+    if (params.scopeMode === 'all' && params.platformRole === 'superadmin') {
+      const rows = await this.chatRepository.listAllUserConversations(
+        params.userId,
+        params.projectId,
+      );
+      return rows.map(rowToConversationSummary);
+    }
+
     const organizationId = await this.requireOrganizationId(params, 'read');
 
     const rows = await this.chatRepository.listConversations(
       params.userId,
       organizationId,
+      params.projectId,
     );
 
     return rows.map(rowToConversationSummary);
@@ -43,15 +59,27 @@ export class ChatService {
     params: ChatScopeParams & {
       userId: string;
       title?: string | null;
+      projectId: string;
     },
   ) {
     const organizationId = await this.requireOrganizationId(params, 'write');
+    const projectId = params.projectId?.trim();
+
+    if (!projectId) {
+      throw new BadRequestException('projectId is required');
+    }
+
+    const { project } = await this.projectsService.resolveProjectSources(
+      projectId,
+      organizationId,
+    );
 
     const row = await this.chatRepository.createConversation({
       id: randomUUID(),
       title: this.normalizeTitle(params.title),
       organizationId,
       userId: params.userId,
+      projectId: project.id,
     });
 
     return rowToConversationSummary(row);
@@ -91,15 +119,10 @@ export class ChatService {
     const organization = await this.requireOrganization(
       conversation.organizationId,
     );
-    const collectionId = this.getOrganizationCollectionId(
-      organization.metadata,
+    const { projectName, sources } = await this.requireConversationProject(
+      conversation.projectId,
+      conversation.organizationId,
     );
-
-    if (!collectionId) {
-      throw new BadRequestException(
-        'Organization does not have an Airweave collection configured. Set one in Admin > Organizations.',
-      );
-    }
 
     const userMessageRow = await this.chatRepository.createMessage({
       id: randomUUID(),
@@ -120,7 +143,9 @@ export class ChatService {
 
     const assistantReply = await this.chatAgentService.generateReply({
       organizationName: organization.name,
-      collectionId,
+      projectName,
+      projectId: conversation.projectId,
+      sources,
       question: params.content,
       previousMessages: existingMessages.map((message) => ({
         role: message.role,
@@ -153,13 +178,6 @@ export class ChatService {
     };
   }
 
-  /**
-   * Streaming version of sendMessage. Performs the same pre-work (validate
-   * org, create user message, set title) then delegates to the agent's
-   * streaming generator. The controller iterates the returned generator
-   * and writes SSE events in real time. The final 'done' event carries
-   * the complete reply which the controller persists to DB.
-   */
   async *sendMessageStreaming(
     params: ChatScopeParams & {
       conversationId: string;
@@ -188,15 +206,10 @@ export class ChatService {
     const organization = await this.requireOrganization(
       conversation.organizationId,
     );
-    const collectionId = this.getOrganizationCollectionId(
-      organization.metadata,
+    const { projectName, sources } = await this.requireConversationProject(
+      conversation.projectId,
+      conversation.organizationId,
     );
-
-    if (!collectionId) {
-      throw new BadRequestException(
-        'Organization does not have an Airweave collection configured. Set one in Admin > Organizations.',
-      );
-    }
 
     const userMessageRow = await this.chatRepository.createMessage({
       id: randomUUID(),
@@ -215,7 +228,6 @@ export class ChatService {
       );
     }
 
-    // Emit start event immediately so the frontend can display the user message
     const updatedConversationForStart =
       await this.chatRepository.findConversationById(
         conversation.id,
@@ -231,10 +243,11 @@ export class ChatService {
       userMessage: rowToMessage(userMessageRow),
     };
 
-    // Stream agent events
     const agentStream = this.chatAgentService.generateReplyStreaming({
       organizationName: organization.name,
-      collectionId,
+      projectName,
+      projectId: conversation.projectId,
+      sources,
       question: params.content,
       previousMessages: existingMessages.map((message) => ({
         role: message.role,
@@ -290,6 +303,30 @@ export class ChatService {
     }
 
     return { success: true };
+  }
+
+  private async requireConversationProject(
+    projectId: string | null,
+    organizationId: string,
+  ): Promise<{ projectName: string; sources: ProjectDataSource[] }> {
+    if (!projectId) {
+      throw new BadRequestException(
+        'Conversation is not linked to a project. Create a new conversation inside a project.',
+      );
+    }
+
+    const { project, sources } =
+      await this.projectsService.resolveProjectSources(
+        projectId,
+        organizationId,
+      );
+
+    // Only fan out across sources that have finished provisioning. Sources in
+    // `connecting` or `error` states can't serve retrieval requests yet and
+    // would only add latency and noise to the agent loop.
+    const readySources = sources.filter((source) => source.status === 'ready');
+
+    return { projectName: project.name, sources: readySources };
   }
 
   private async requireOrganizationId(
@@ -366,19 +403,6 @@ export class ChatService {
     }
 
     return scopedActiveOrganizationId;
-  }
-
-  private getOrganizationCollectionId(
-    metadata: Record<string, unknown> | null,
-  ): string | null {
-    const collectionId = metadata?.airweaveCollectionId;
-
-    if (typeof collectionId !== 'string') {
-      return null;
-    }
-
-    const trimmedCollectionId = collectionId.trim();
-    return trimmedCollectionId || null;
   }
 
   private normalizeTitle(title?: string | null): string | null {

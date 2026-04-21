@@ -1,11 +1,24 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '../../shared/infrastructure/database/database.module';
+import { ProjectsMigrationService } from '../projects/projects.migration';
 
 @Injectable()
 export class ChatMigrationService implements OnModuleInit {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    // Injected so we can explicitly drive ProjectsMigrationService's migrations
+    // before our own. Nest's lifecycle hooks run after all providers construct,
+    // so injection alone doesn't guarantee onModuleInit() ordering — we invoke
+    // runTrackedMigrations() directly below. ProjectsMigrationService is
+    // idempotent (its tracking table prevents double-run) so calling it here
+    // AND from its own onModuleInit is safe.
+    private readonly projectsMigrations: ProjectsMigrationService,
+  ) {}
 
   async onModuleInit() {
+    // Ensure the `project` table exists and organizations are backfilled
+    // before we add/backfill conversation.project_id.
+    await this.projectsMigrations.runTrackedMigrations();
     await this.runTrackedMigrations();
   }
 
@@ -17,7 +30,19 @@ export class ChatMigrationService implements OnModuleInit {
       },
       {
         name: 'chat_002_remove_project_scope_from_conversation',
-        up: () => this.removeProjectScopeFromConversation(),
+        up: () => this.removeLegacyProjectScope(),
+      },
+      {
+        name: 'chat_003_add_project_id_to_conversation',
+        up: () => this.addProjectIdToConversation(),
+      },
+      {
+        name: 'chat_004_backfill_conversation_project_id',
+        up: () => this.backfillConversationProjectId(),
+      },
+      {
+        name: 'chat_005_enforce_conversation_project_id_not_null',
+        up: () => this.enforceConversationProjectIdNotNull(),
       },
     ];
 
@@ -77,11 +102,47 @@ export class ChatMigrationService implements OnModuleInit {
     );
   }
 
-  async removeProjectScopeFromConversation(): Promise<void> {
+  async removeLegacyProjectScope(): Promise<void> {
     await this.db.query('DROP INDEX IF EXISTS idx_conversation_project');
     await this.db.query(`
       ALTER TABLE conversation
       DROP COLUMN IF EXISTS project_id
+    `);
+  }
+
+  async addProjectIdToConversation(): Promise<void> {
+    await this.db.query(`
+      ALTER TABLE conversation
+      ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES project(id) ON DELETE CASCADE
+    `);
+    await this.db.query(
+      'CREATE INDEX IF NOT EXISTS idx_conversation_project ON conversation(project_id)',
+    );
+  }
+
+  async backfillConversationProjectId(): Promise<void> {
+    await this.db.query(`
+      UPDATE conversation c
+         SET project_id = p.id
+        FROM project p
+       WHERE c.project_id IS NULL
+         AND p.organization_id = c.organization_id
+         AND p.name = 'General'
+    `);
+  }
+
+  async enforceConversationProjectIdNotNull(): Promise<void> {
+    const orphaned = await this.db.queryOne<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM conversation WHERE project_id IS NULL`,
+    );
+    if (orphaned && Number(orphaned.count) > 0) {
+      console.warn(
+        `[chat-migration] ${orphaned.count} conversations still have NULL project_id; skipping NOT NULL enforcement`,
+      );
+      return;
+    }
+    await this.db.query(`
+      ALTER TABLE conversation ALTER COLUMN project_id SET NOT NULL
     `);
   }
 }

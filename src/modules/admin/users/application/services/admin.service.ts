@@ -386,8 +386,7 @@ export class AdminService {
   }
 
   async hasAcceptedInvitation(email: string): Promise<boolean> {
-    const invitation =
-      await this.userRepo.findAcceptedInvitationByEmail(email);
+    const invitation = await this.userRepo.findAcceptedInvitationByEmail(email);
     return !!invitation;
   }
 

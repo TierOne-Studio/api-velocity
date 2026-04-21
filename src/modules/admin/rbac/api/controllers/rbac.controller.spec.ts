@@ -578,9 +578,13 @@ describe('RbacController handler bodies', () => {
       roleService.assignPermissions.mockResolvedValue(undefined);
       roleService.getPermissions.mockResolvedValue(permissions);
 
-      const result = await controller.assignPermissions(superadminSession, '2', {
-        permissionIds: ['p1'],
-      });
+      const result = await controller.assignPermissions(
+        superadminSession,
+        '2',
+        {
+          permissionIds: ['p1'],
+        },
+      );
 
       expect(result).toEqual({ data: { ...role, permissions } });
       expect(roleService.assignPermissions).toHaveBeenCalledWith('2', ['p1']);
@@ -618,7 +622,9 @@ describe('RbacController handler bodies', () => {
       roleService.findById.mockResolvedValue(null);
 
       await expect(
-        controller.assignPermissions(superadminSession, 'missing', { permissionIds: ['p1'] }),
+        controller.assignPermissions(superadminSession, 'missing', {
+          permissionIds: ['p1'],
+        }),
       ).rejects.toThrow('Role not found');
     });
 

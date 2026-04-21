@@ -77,14 +77,44 @@ describe('ChatController', () => {
   it('lists conversations for the current user and organization', async () => {
     chatService.listConversations.mockResolvedValue([]);
 
-    await controller.listConversations(managerSession, undefined);
+    await controller.listConversations(managerSession, undefined, undefined);
 
     expect(chatService.listConversations).toHaveBeenCalledWith({
       platformRole: 'manager',
       activeOrganizationId: 'org-1',
       organizationId: undefined,
       userId: 'user-1',
+      projectId: undefined,
     });
+  });
+
+  it('forwards scope=all for superadmin as scopeMode:all', async () => {
+    chatService.listConversations.mockResolvedValue([]);
+    const superadminSessionLocal = {
+      user: { id: 'user-super', role: 'superadmin' },
+      session: { activeOrganizationId: null },
+    } as never;
+
+    await controller.listConversations(
+      superadminSessionLocal,
+      undefined,
+      undefined,
+      'all',
+    );
+
+    expect(chatService.listConversations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platformRole: 'superadmin',
+        scopeMode: 'all',
+        userId: 'user-super',
+      }),
+    );
+  });
+
+  it('rejects scope=all for non-superadmin with BadRequest', async () => {
+    await expect(
+      controller.listConversations(managerSession, undefined, undefined, 'all'),
+    ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
   });
 
   it('creates a conversation with actor context', async () => {
@@ -94,12 +124,14 @@ describe('ChatController', () => {
 
     await controller.createConversation(managerSession, {
       title: ' First chat ',
+      projectId: 'proj-1',
     });
 
     expect(chatService.createConversation).toHaveBeenCalledWith(
       expect.objectContaining({
         title: ' First chat ',
         userId: 'user-1',
+        projectId: 'proj-1',
       }),
     );
   });
@@ -274,7 +306,7 @@ describe('ChatController', () => {
     );
 
     await expect(
-      controller.listConversations(superadminSession, undefined),
+      controller.listConversations(superadminSession, undefined, undefined),
     ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
@@ -297,7 +329,7 @@ describe('ChatController', () => {
     } as never;
 
     await expect(
-      controller.listConversations(noOrgSession, undefined),
+      controller.listConversations(noOrgSession, undefined, undefined),
     ).rejects.toMatchObject({
       status: HttpStatus.FORBIDDEN,
     });

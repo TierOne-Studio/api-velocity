@@ -78,7 +78,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_015 already run
         .mockResolvedValueOnce(true) // rbac_016 already run
         .mockResolvedValueOnce(true) // rbac_017 already run
-        .mockResolvedValueOnce(true); // rbac_018 already run
+        .mockResolvedValueOnce(true) // rbac_018 already run
+        .mockResolvedValueOnce(true); // rbac_019 already run
 
       const consoleSpy = jest
         .spyOn(console, 'log')
@@ -111,7 +112,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false) // rbac_015 NOT run
         .mockResolvedValueOnce(false) // rbac_016 NOT run
         .mockResolvedValueOnce(false) // rbac_017 NOT run
-        .mockResolvedValueOnce(true); // rbac_018 already run
+        .mockResolvedValueOnce(true) // rbac_018 already run
+        .mockResolvedValueOnce(true); // rbac_019 already run
 
       // rbac_013 calls seedDefaultOrganization → UPSERT returns new org id.
       // Use mockImplementation so it isn't consumed by earlier migrations that also call queryOne.
@@ -434,12 +436,16 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce({ id: 'perm-user-create' })
         .mockResolvedValueOnce({ id: 'perm-user-read' })
         .mockResolvedValueOnce({ id: 'perm-user-update' })
+        .mockResolvedValueOnce({ id: 'perm-project-read' })
+        .mockResolvedValueOnce({ id: 'perm-project-update' })
+        .mockResolvedValueOnce({ id: 'perm-project-manage-sources' })
         .mockResolvedValueOnce({ id: 'perm-dashboard-view' })
         .mockResolvedValueOnce({ id: 'member-role-1' })
         .mockResolvedValueOnce({ id: 'perm-member-org-read' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-read' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-create' })
-        .mockResolvedValueOnce({ id: 'perm-member-chat-stream' });
+        .mockResolvedValueOnce({ id: 'perm-member-chat-stream' })
+        .mockResolvedValueOnce({ id: 'perm-member-project-read' });
 
       await service.normalizeOrganizationDefaultRolePermissions();
 
@@ -473,6 +479,12 @@ describe('RbacMigrationService', () => {
           'read',
           'user',
           'update',
+          'project',
+          'read',
+          'project',
+          'update',
+          'project',
+          'manage-sources',
           'dashboard',
           'view',
         ],
@@ -489,6 +501,8 @@ describe('RbacMigrationService', () => {
           'create',
           'chat',
           'stream',
+          'project',
+          'read',
         ],
       );
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -1033,7 +1047,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_015 already run
         .mockResolvedValueOnce(true) // rbac_016 already run
         .mockResolvedValueOnce(true) // rbac_017 already run
-        .mockResolvedValueOnce(true); // rbac_018 already run
+        .mockResolvedValueOnce(true) // rbac_018 already run
+        .mockResolvedValueOnce(true); // rbac_019 already run
 
       // Needed by backfillRolePermissions and assignAllPermissionsToAdmin
       dbService.queryOne.mockResolvedValue(null);
@@ -1119,21 +1134,36 @@ describe('RbacMigrationService', () => {
             { id: 'g-manager', name: 'manager' },
             { id: 'g-member', name: 'member' },
           ];
-        if (sql.includes('SELECT id FROM organization')) return [{ id: 'org-1' }];
+        if (sql.includes('SELECT id FROM organization'))
+          return [{ id: 'org-1' }];
         return [];
       });
 
       // Use mockImplementation to differentiate role lookups from permission lookups
-      dbService.queryOne.mockImplementation(async (sql: string, params?: unknown[]) => {
-        if (sql.includes('FROM roles') && sql.includes("name = 'admin'") && params?.[0] === 'org-1')
-          return { id: 'org-admin-id' };
-        if (sql.includes('FROM roles') && sql.includes("name = 'manager'") && params?.[0] === 'org-1')
-          return { id: 'org-manager-id' };
-        if (sql.includes('FROM roles') && sql.includes("name = 'member'") && params?.[0] === 'org-1')
-          return { id: 'org-member-id' };
-        // permission lookups return null (inside syncRolePermissions)
-        return null;
-      });
+      dbService.queryOne.mockImplementation(
+        async (sql: string, params?: unknown[]) => {
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'admin'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-admin-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'manager'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-manager-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'member'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-member-id' };
+          // permission lookups return null (inside syncRolePermissions)
+          return null;
+        },
+      );
 
       await service.addProjectPermissions();
 
@@ -1162,7 +1192,8 @@ describe('RbacMigrationService', () => {
 
       dbService.query.mockImplementation(async (sql: string) => {
         if (sql.includes("IN ('admin', 'manager', 'member')")) return [];
-        if (sql.includes('SELECT id FROM organization')) return [{ id: 'org-1' }];
+        if (sql.includes('SELECT id FROM organization'))
+          return [{ id: 'org-1' }];
         return [];
       });
 
@@ -1184,22 +1215,39 @@ describe('RbacMigrationService', () => {
         .mockImplementation(() => {});
 
       dbService.query.mockImplementation(async (sql: string) => {
-        if (sql.includes("resource = 'chat'")) return [{ id: 'chat-p-1' }, { id: 'chat-p-2' }];
-        if (sql.includes('SELECT id FROM organization')) return [{ id: 'org-1' }];
+        if (sql.includes("resource = 'chat'"))
+          return [{ id: 'chat-p-1' }, { id: 'chat-p-2' }];
+        if (sql.includes('SELECT id FROM organization'))
+          return [{ id: 'org-1' }];
         return [];
       });
 
       // Use SQL-based implementation to distinguish role lookups from permission lookups
-      dbService.queryOne.mockImplementation(async (sql: string, params?: unknown[]) => {
-        if (sql.includes("name = 'superadmin'")) return { id: 'superadmin-id' };
-        if (sql.includes('FROM roles') && sql.includes("name = 'admin'") && params?.[0] === 'org-1')
-          return { id: 'org-admin-id' };
-        if (sql.includes('FROM roles') && sql.includes("name = 'manager'") && params?.[0] === 'org-1')
-          return { id: 'org-manager-id' };
-        if (sql.includes('FROM roles') && sql.includes("name = 'member'") && params?.[0] === 'org-1')
-          return { id: 'org-member-id' };
-        return null;
-      });
+      dbService.queryOne.mockImplementation(
+        async (sql: string, params?: unknown[]) => {
+          if (sql.includes("name = 'superadmin'"))
+            return { id: 'superadmin-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'admin'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-admin-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'manager'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-manager-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'member'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-member-id' };
+          return null;
+        },
+      );
 
       await service.addChatPermissions();
 
@@ -1253,19 +1301,28 @@ describe('RbacMigrationService', () => {
         .mockImplementation(() => {});
 
       dbService.query.mockImplementation(async (sql: string) => {
-        if (sql.includes('SELECT id FROM organization')) return [{ id: 'org-1' }];
+        if (sql.includes('SELECT id FROM organization'))
+          return [{ id: 'org-1' }];
         return [];
       });
 
       // superadmin and approvePerm are fetched with queryOne, then org admin role
       // syncRolePermissions for org admin calls queryOne many times for each permission
-      dbService.queryOne.mockImplementation(async (sql: string, params?: unknown[]) => {
-        if (sql.includes("name = 'superadmin'")) return { id: 'superadmin-id' };
-        if (sql.includes("action = 'approve'")) return { id: 'approve-perm-id' };
-        if (sql.includes('FROM roles') && sql.includes("name = 'admin'") && params?.[0] === 'org-1')
-          return { id: 'org-admin-id' };
-        return null;
-      });
+      dbService.queryOne.mockImplementation(
+        async (sql: string, params?: unknown[]) => {
+          if (sql.includes("name = 'superadmin'"))
+            return { id: 'superadmin-id' };
+          if (sql.includes("action = 'approve'"))
+            return { id: 'approve-perm-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'admin'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-admin-id' };
+          return null;
+        },
+      );
 
       await service.addUserApprovePermission();
 
@@ -1294,7 +1351,7 @@ describe('RbacMigrationService', () => {
       });
 
       dbService.queryOne
-        .mockResolvedValueOnce(null)  // superadmin role not found
+        .mockResolvedValueOnce(null) // superadmin role not found
         .mockResolvedValueOnce({ id: 'approve-perm-id' }); // permission found
 
       await service.addUserApprovePermission();
@@ -1317,20 +1374,33 @@ describe('RbacMigrationService', () => {
         .mockImplementation(() => {});
 
       dbService.query.mockImplementation(async (sql: string) => {
-        if (sql.includes('SELECT id FROM organization')) return [{ id: 'org-1' }];
+        if (sql.includes('SELECT id FROM organization'))
+          return [{ id: 'org-1' }];
         return [];
       });
 
       // SQL-based queryOne: superadmin + dashboard perm by SQL pattern, org roles by params
-      dbService.queryOne.mockImplementation(async (sql: string, params?: unknown[]) => {
-        if (sql.includes("name = 'superadmin'")) return { id: 'superadmin-id' };
-        if (sql.includes("action = 'view'")) return { id: 'dashboard-perm-id' };
-        if (sql.includes('FROM roles') && sql.includes("name = 'admin'") && params?.[0] === 'org-1')
-          return { id: 'org-admin-id' };
-        if (sql.includes('FROM roles') && sql.includes("name = 'manager'") && params?.[0] === 'org-1')
-          return { id: 'org-manager-id' };
-        return null;
-      });
+      dbService.queryOne.mockImplementation(
+        async (sql: string, params?: unknown[]) => {
+          if (sql.includes("name = 'superadmin'"))
+            return { id: 'superadmin-id' };
+          if (sql.includes("action = 'view'"))
+            return { id: 'dashboard-perm-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'admin'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-admin-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'manager'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-manager-id' };
+          return null;
+        },
+      );
 
       await service.addDashboardPermission();
 
@@ -1358,14 +1428,15 @@ describe('RbacMigrationService', () => {
         .mockImplementation(() => {});
 
       dbService.query.mockImplementation(async (sql: string) => {
-        if (sql.includes('SELECT id FROM organization')) return [{ id: 'org-1' }];
+        if (sql.includes('SELECT id FROM organization'))
+          return [{ id: 'org-1' }];
         return [];
       });
 
       dbService.queryOne
-        .mockResolvedValueOnce(null)  // superadmin role not found
+        .mockResolvedValueOnce(null) // superadmin role not found
         .mockResolvedValueOnce({ id: 'dashboard-perm-id' }) // permission found
-        .mockResolvedValueOnce(null)  // org-1 admin role not found
+        .mockResolvedValueOnce(null) // org-1 admin role not found
         .mockResolvedValueOnce(null); // org-1 manager role not found
 
       await service.addDashboardPermission();
@@ -1385,24 +1456,25 @@ describe('RbacMigrationService', () => {
 
       // All migrations already run except rbac_018
       dbService.hasMigrationRun
-        .mockResolvedValueOnce(true)  // rbac_001
-        .mockResolvedValueOnce(true)  // rbac_002
-        .mockResolvedValueOnce(true)  // rbac_003
-        .mockResolvedValueOnce(true)  // rbac_004
-        .mockResolvedValueOnce(true)  // rbac_005
-        .mockResolvedValueOnce(true)  // rbac_006
-        .mockResolvedValueOnce(true)  // rbac_007
-        .mockResolvedValueOnce(true)  // rbac_008
-        .mockResolvedValueOnce(true)  // rbac_009
-        .mockResolvedValueOnce(true)  // rbac_010
-        .mockResolvedValueOnce(true)  // rbac_011
-        .mockResolvedValueOnce(true)  // rbac_012
-        .mockResolvedValueOnce(true)  // rbac_013
-        .mockResolvedValueOnce(true)  // rbac_014
-        .mockResolvedValueOnce(true)  // rbac_015
-        .mockResolvedValueOnce(true)  // rbac_016
-        .mockResolvedValueOnce(true)  // rbac_017
-        .mockResolvedValueOnce(false); // rbac_018 NOT run
+        .mockResolvedValueOnce(true) // rbac_001
+        .mockResolvedValueOnce(true) // rbac_002
+        .mockResolvedValueOnce(true) // rbac_003
+        .mockResolvedValueOnce(true) // rbac_004
+        .mockResolvedValueOnce(true) // rbac_005
+        .mockResolvedValueOnce(true) // rbac_006
+        .mockResolvedValueOnce(true) // rbac_007
+        .mockResolvedValueOnce(true) // rbac_008
+        .mockResolvedValueOnce(true) // rbac_009
+        .mockResolvedValueOnce(true) // rbac_010
+        .mockResolvedValueOnce(true) // rbac_011
+        .mockResolvedValueOnce(true) // rbac_012
+        .mockResolvedValueOnce(true) // rbac_013
+        .mockResolvedValueOnce(true) // rbac_014
+        .mockResolvedValueOnce(true) // rbac_015
+        .mockResolvedValueOnce(true) // rbac_016
+        .mockResolvedValueOnce(true) // rbac_017
+        .mockResolvedValueOnce(false) // rbac_018 NOT run
+        .mockResolvedValueOnce(true); // rbac_019 already run
 
       dbService.query.mockImplementation(async (sql: string) => {
         if (sql.includes('SELECT id FROM organization')) return [];

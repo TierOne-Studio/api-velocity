@@ -12,6 +12,7 @@ import { AppTypeOrmModule } from './shared/infrastructure/database/typeorm.modul
 import { SharedModule } from './shared/shared.module';
 import { AdminModule, RbacModule } from './modules/admin';
 import { AirweaveModule } from './modules/airweave/airweave.module';
+import { ProjectsModule } from './modules/projects';
 import { ChatModule } from './modules/chat';
 
 @Module({
@@ -24,6 +25,10 @@ import { ChatModule } from './modules/chat';
     RbacModule,
     AdminModule,
     AirweaveModule,
+    // ProjectsModule MUST be imported before ChatModule — ChatMigrationService
+    // cross-injects ProjectsMigrationService to force the Projects tables to
+    // exist before conversation.project_id is backfilled.
+    ProjectsModule,
     ChatModule,
     AuthModule.forRoot({ auth }),
   ],

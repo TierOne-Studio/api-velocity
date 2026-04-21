@@ -108,7 +108,9 @@ describe('RbacController validation', () => {
     roleService.findById.mockResolvedValue(null);
 
     await expect(
-      controller.assignPermissions(session, 'missing-role', { permissionIds: ['p1'] }),
+      controller.assignPermissions(session, 'missing-role', {
+        permissionIds: ['p1'],
+      }),
     ).rejects.toMatchObject({
       status: HttpStatus.NOT_FOUND,
     });

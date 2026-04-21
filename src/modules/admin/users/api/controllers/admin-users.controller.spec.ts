@@ -558,8 +558,13 @@ describe('AdminUsersController', () => {
 
       const result = await controller.getMyApprovalStatus(baseSession);
 
-      expect(adminService.findUserById).toHaveBeenCalledWith('actor-superadmin');
-      expect(result).toEqual({ approvalStatus: 'pending', rejectionReason: 'Missing info' });
+      expect(adminService.findUserById).toHaveBeenCalledWith(
+        'actor-superadmin',
+      );
+      expect(result).toEqual({
+        approvalStatus: 'pending',
+        rejectionReason: 'Missing info',
+      });
     });
 
     it('returns approved when user is null', async () => {
@@ -567,15 +572,23 @@ describe('AdminUsersController', () => {
 
       const result = await controller.getMyApprovalStatus(baseSession);
 
-      expect(result).toEqual({ approvalStatus: 'approved', rejectionReason: null });
+      expect(result).toEqual({
+        approvalStatus: 'approved',
+        rejectionReason: null,
+      });
     });
 
     it('returns approved on exception (migration not run)', async () => {
-      adminService.findUserById.mockRejectedValue(new Error('column not found') as never);
+      adminService.findUserById.mockRejectedValue(
+        new Error('column not found') as never,
+      );
 
       const result = await controller.getMyApprovalStatus(baseSession);
 
-      expect(result).toEqual({ approvalStatus: 'approved', rejectionReason: null });
+      expect(result).toEqual({
+        approvalStatus: 'approved',
+        rejectionReason: null,
+      });
     });
   });
 
@@ -608,9 +621,9 @@ describe('AdminUsersController', () => {
       } as never);
       adminService.hasAcceptedInvitation.mockResolvedValue(false as never);
 
-      await expect(
-        controller.selfApproveInvited(baseSession),
-      ).rejects.toThrow('No accepted invitation found');
+      await expect(controller.selfApproveInvited(baseSession)).rejects.toThrow(
+        'No accepted invitation found',
+      );
     });
 
     it('auto-approves when pending with accepted invitation', async () => {
@@ -624,19 +637,30 @@ describe('AdminUsersController', () => {
 
       const result = await controller.selfApproveInvited(baseSession);
 
-      expect(adminService.autoApproveUser).toHaveBeenCalledWith('actor-superadmin');
+      expect(adminService.autoApproveUser).toHaveBeenCalledWith(
+        'actor-superadmin',
+      );
       expect(result).toEqual({ success: true });
     });
   });
 
   describe('listPending', () => {
     it('returns pending users list', async () => {
-      adminService.listPendingUsers.mockResolvedValue({ data: [], total: 0, limit: 10, offset: 0 } as never);
+      adminService.listPendingUsers.mockResolvedValue({
+        data: [],
+        total: 0,
+        limit: 10,
+        offset: 0,
+      } as never);
 
       await controller.listPending(baseSession, '10', '0');
 
       expect(adminService.listPendingUsers).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: 10, offset: 0, platformRole: 'superadmin' }),
+        expect.objectContaining({
+          limit: 10,
+          offset: 0,
+          platformRole: 'superadmin',
+        }),
       );
     });
   });
@@ -661,7 +685,9 @@ describe('AdminUsersController', () => {
     it('calls rejectUser with actor context', async () => {
       adminService.rejectUser.mockResolvedValue({ success: true } as never);
 
-      const result = await controller.reject(baseSession, 'user-to-reject', { rejectionReason: 'Not qualified' });
+      const result = await controller.reject(baseSession, 'user-to-reject', {
+        rejectionReason: 'Not qualified',
+      });
 
       expect(adminService.rejectUser).toHaveBeenCalledWith(
         { userId: 'user-to-reject', rejectionReason: 'Not qualified' },
@@ -676,7 +702,9 @@ describe('AdminUsersController', () => {
       const longReason = 'x'.repeat(501);
 
       await expect(
-        controller.reject(baseSession, 'user-1', { rejectionReason: longReason }),
+        controller.reject(baseSession, 'user-1', {
+          rejectionReason: longReason,
+        }),
       ).rejects.toThrow('rejectionReason must be at most 500 characters');
     });
 

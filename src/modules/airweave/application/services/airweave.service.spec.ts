@@ -385,7 +385,10 @@ describe('AirweaveService', () => {
   });
 
   it('throws NotFoundException for 404 upstream errors', async () => {
-    client.collections.get.mockRejectedValue({ statusCode: 404, message: 'Not Found' });
+    client.collections.get.mockRejectedValue({
+      statusCode: 404,
+      message: 'Not Found',
+    });
 
     await expect(
       service.getCollection('nonexistent-collection'),
@@ -393,7 +396,10 @@ describe('AirweaveService', () => {
   });
 
   it('uses status field for error code detection when statusCode is absent', async () => {
-    client.sourceConnections.get.mockRejectedValue({ status: 404, message: 'Not Found' });
+    client.sourceConnections.get.mockRejectedValue({
+      status: 404,
+      message: 'Not Found',
+    });
 
     await expect(
       service.getSourceConnection('nonexistent-source'),
@@ -401,7 +407,10 @@ describe('AirweaveService', () => {
   });
 
   it('throws BadGatewayException for non-404 upstream errors', async () => {
-    client.collections.get.mockRejectedValue({ statusCode: 500, message: 'Internal Server Error' });
+    client.collections.get.mockRejectedValue({
+      statusCode: 500,
+      message: 'Internal Server Error',
+    });
 
     await expect(
       service.getCollection('error-collection'),
@@ -450,9 +459,14 @@ describe('AirweaveService', () => {
   });
 
   it('handles non-Error and non-string upstream errors gracefully', async () => {
-    client.collections.list.mockRejectedValue({ code: 'TIMEOUT', detail: 'Request timed out' });
+    client.collections.list.mockRejectedValue({
+      code: 'TIMEOUT',
+      detail: 'Request timed out',
+    });
 
-    await expect(service.listCollections()).rejects.toBeInstanceOf(BadGatewayException);
+    await expect(service.listCollections()).rejects.toBeInstanceOf(
+      BadGatewayException,
+    );
   });
 
   it('maps null status in collection to null', async () => {

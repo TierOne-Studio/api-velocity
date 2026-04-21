@@ -3,7 +3,13 @@ import {
   createSearchKnowledgeBaseTool,
   dedupeAndCapSources,
 } from './chat-agent-tools';
-import type { AirweaveSearchResultSummary } from '../../../airweave/application/services/airweave.service';
+import type {
+  AirweaveSearchResponse,
+  AirweaveSearchResultSummary,
+} from '../../../airweave/application/services/airweave.service';
+import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
+import type { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
+import type { DataSourceProvider } from '../../../projects/application/providers/data-source-provider.interface';
 
 function makeResult(
   overrides: Partial<AirweaveSearchResultSummary> = {},
@@ -23,9 +29,39 @@ function makeResult(
   };
 }
 
+function makeAirweaveSource(
+  overrides: Partial<
+    Extract<ProjectDataSource, { kind: 'airweave_collection' }>
+  > = {},
+): ProjectDataSource {
+  return {
+    id: 'src-1',
+    projectId: 'proj-1',
+    kind: 'airweave_collection',
+    name: 'Main collection',
+    config: {
+      collectionReadableId: 'col-1',
+      collectionName: 'Main collection',
+    },
+    status: 'ready',
+    statusDetail: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
 describe('createSearchKnowledgeBaseTool', () => {
-  let airweaveService: { searchCollection: any };
+  let searchMock: jest.Mock<
+    (
+      source: ProjectDataSource,
+      query: string,
+      opts: Parameters<DataSourceProvider['search']>[2],
+    ) => Promise<AirweaveSearchResponse>
+  >;
+  let registry: DataSourceRegistry;
   let sourcesSink: AirweaveSearchResultSummary[];
+  let sources: ProjectDataSource[];
 
   function makeToolParams(
     overrides: Partial<
@@ -33,8 +69,9 @@ describe('createSearchKnowledgeBaseTool', () => {
     > = {},
   ) {
     return {
-      collectionId: 'col-1',
-      airweaveService: airweaveService as never,
+      projectId: 'proj-1',
+      sources,
+      registry,
       sourcesSink,
       resultLimit: 12,
       resultCharCap: 3000,
@@ -44,10 +81,24 @@ describe('createSearchKnowledgeBaseTool', () => {
   }
 
   beforeEach(() => {
-    airweaveService = {
-      searchCollection: jest.fn(),
+    searchMock =
+      jest.fn<
+        (
+          source: ProjectDataSource,
+          query: string,
+          opts: Parameters<DataSourceProvider['search']>[2],
+        ) => Promise<AirweaveSearchResponse>
+      >();
+    const provider: DataSourceProvider = {
+      kind: 'airweave_collection',
+      search: searchMock as unknown as DataSourceProvider['search'],
     };
+    registry = {
+      get: jest.fn((_kind) => provider),
+      kinds: jest.fn(() => ['airweave_collection']),
+    } as unknown as DataSourceRegistry;
     sourcesSink = [];
+    sources = [makeAirweaveSource()];
   });
 
   it('declares the expected name and description', () => {
@@ -62,18 +113,16 @@ describe('createSearchKnowledgeBaseTool', () => {
     const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
     expect(tool.description).not.toContain('entityType');
-    // Schema should also not accept entityType. We assert by passing one and
-    // verifying the tool ignores it (zod strips unknown keys by default).
   });
 
-  it('forwards the query to airweaveService.searchCollection with the configured collection', async () => {
-    airweaveService.searchCollection.mockResolvedValue({ results: [] });
+  it('forwards the query through the registry to the matching provider', async () => {
+    searchMock.mockResolvedValue({ results: [] });
     const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
     await tool.invoke({ query: 'deploy flow' });
 
-    expect(airweaveService.searchCollection).toHaveBeenCalledWith('col-1', {
-      query: 'deploy flow',
+    expect(registry.get).toHaveBeenCalledWith('airweave_collection');
+    expect(searchMock).toHaveBeenCalledWith(sources[0], 'deploy flow', {
       tier: 'classic',
       limit: 12,
       offset: 0,
@@ -86,7 +135,7 @@ describe('createSearchKnowledgeBaseTool', () => {
       makeResult({ entityId: 'a', name: 'A' }),
       makeResult({ entityId: 'b', name: 'B' }),
     ];
-    airweaveService.searchCollection.mockResolvedValue({ results });
+    searchMock.mockResolvedValue({ results });
     const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
     await tool.invoke({ query: 'anything' });
@@ -96,15 +145,12 @@ describe('createSearchKnowledgeBaseTool', () => {
   });
 
   it('returns all results regardless of their Airweave entity_type values (regression for ConfluencePageEntity bug)', async () => {
-    // Airweave returns entity types like 'ConfluencePageEntity', 'GithubFileEntity', etc.
-    // A previous version of this tool had a client-side filter expecting fake values
-    // ("file", "doc", "spec") which caused every tool call to return zero results.
     const results = [
       makeResult({ entityId: 'a', entityType: 'ConfluencePageEntity' }),
       makeResult({ entityId: 'b', entityType: 'GithubFileEntity' }),
       makeResult({ entityId: 'c', entityType: 'JiraIssueEntity' }),
     ];
-    airweaveService.searchCollection.mockResolvedValue({ results });
+    searchMock.mockResolvedValue({ results });
     const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
     const raw = await tool.invoke({ query: 'projects' });
@@ -127,7 +173,7 @@ describe('createSearchKnowledgeBaseTool', () => {
       .spyOn(console, 'info')
       .mockImplementation(() => undefined);
     try {
-      airweaveService.searchCollection.mockResolvedValue({
+      searchMock.mockResolvedValue({
         results: [
           makeResult({ entityId: 'a', name: 'Deploy Guide' }),
           makeResult({ entityId: 'b', name: 'Release Notes' }),
@@ -140,7 +186,7 @@ describe('createSearchKnowledgeBaseTool', () => {
       expect(infoSpy).toHaveBeenCalledWith(
         '[chat-agent-tools] search_knowledge_base called',
         expect.objectContaining({
-          collectionId: 'col-1',
+          projectId: 'proj-1',
           query: 'deploy flow',
           rawResultCount: 2,
           dedupedResultCount: 2,
@@ -153,10 +199,6 @@ describe('createSearchKnowledgeBaseTool', () => {
   });
 
   it('dedupes results by entityId before returning to the LLM, keeping highest-relevance chunk per entity', async () => {
-    // Airweave often returns multiple chunks of the same page (e.g. a Confluence
-    // space overview chunked 4 times). Without dedup the LLM sees the same entity
-    // in 4 of its 8 result slots, pushing other distinct material out of the top-k
-    // and making the agent describe the container instead of its contents.
     const results = [
       makeResult({
         entityId: 'page-a',
@@ -189,7 +231,7 @@ describe('createSearchKnowledgeBaseTool', () => {
         text: 'page C chunk',
       }),
     ];
-    airweaveService.searchCollection.mockResolvedValue({ results });
+    searchMock.mockResolvedValue({ results });
     const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
     const raw = await tool.invoke({ query: 'pages' });
@@ -197,28 +239,22 @@ describe('createSearchKnowledgeBaseTool', () => {
       results: Array<{ name: string; excerpt: string; relevanceScore: number }>;
     };
 
-    // LLM sees 3 distinct entities, not 5 chunks.
     expect(parsed.results).toHaveLength(3);
-    // Page A appears once with the higher-relevance excerpt.
     const pageA = parsed.results.find((r) => r.name === 'Page A');
     expect(pageA?.excerpt).toContain('higher relevance chunk');
     expect(pageA?.relevanceScore).toBe(0.9);
-    // Sorted by relevance descending: A(0.9) > B(0.7) > C(0.6).
     expect(parsed.results.map((r) => r.name)).toEqual([
       'Page A',
       'Page B',
       'Page C',
     ]);
 
-    // sourcesSink keeps ALL 5 raw chunks so cross-tool-call metadata
-    // aggregation in the service layer can dedupe globally rather than
-    // losing data here.
     expect(sourcesSink).toHaveLength(5);
   });
 
   it('truncates long result text to the configured char cap', async () => {
     const longText = 'x'.repeat(5000);
-    airweaveService.searchCollection.mockResolvedValue({
+    searchMock.mockResolvedValue({
       results: [makeResult({ text: longText })],
     });
     const tool = createSearchKnowledgeBaseTool(
@@ -235,7 +271,7 @@ describe('createSearchKnowledgeBaseTool', () => {
   });
 
   it('returns a helpful empty-results note when the search yields nothing', async () => {
-    airweaveService.searchCollection.mockResolvedValue({ results: [] });
+    searchMock.mockResolvedValue({ results: [] });
     const tool = createSearchKnowledgeBaseTool(makeToolParams());
 
     const raw = await tool.invoke({ query: 'nothing' });
@@ -252,17 +288,57 @@ describe('createSearchKnowledgeBaseTool', () => {
   });
 
   it('respects a custom resultLimit in the search params', async () => {
-    airweaveService.searchCollection.mockResolvedValue({ results: [] });
+    searchMock.mockResolvedValue({ results: [] });
     const tool = createSearchKnowledgeBaseTool(
       makeToolParams({ resultLimit: 3 }),
     );
 
     await tool.invoke({ query: 'anything' });
 
-    expect(airweaveService.searchCollection).toHaveBeenCalledWith(
-      'col-1',
+    expect(searchMock).toHaveBeenCalledWith(
+      sources[0],
+      'anything',
       expect.objectContaining({ limit: 3 }),
     );
+  });
+
+  it('aggregates results across multiple sources and logs per-source failures without failing the whole call', async () => {
+    const warnSpy = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      const secondSource = makeAirweaveSource({
+        id: 'src-2',
+        config: {
+          collectionReadableId: 'col-2',
+          collectionName: 'Second collection',
+        },
+      });
+      sources = [makeAirweaveSource(), secondSource];
+
+      searchMock
+        .mockResolvedValueOnce({
+          results: [makeResult({ entityId: 'a', name: 'A' })],
+        })
+        .mockRejectedValueOnce(new Error('boom'));
+
+      const tool = createSearchKnowledgeBaseTool(makeToolParams());
+      const raw = await tool.invoke({ query: 'anything' });
+      const parsed = JSON.parse(raw) as { results: Array<{ name: string }> };
+
+      expect(parsed.results).toHaveLength(1);
+      expect(parsed.results[0].name).toBe('A');
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[chat-agent-tools] source search failed, skipping',
+        expect.objectContaining({
+          projectId: 'proj-1',
+          sourceId: 'src-2',
+          kind: 'airweave_collection',
+        }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 
@@ -306,7 +382,6 @@ describe('dedupeAndCapSources', () => {
     const result = dedupeAndCapSources(input, 5);
 
     expect(result).toHaveLength(5);
-    // Highest relevance should come first.
     expect(result[0].entityId).toBe('e19');
   });
 });

@@ -36,7 +36,10 @@ export class DashboardService {
     );
   }
 
-  async validateOrgAccess(userId: string, organizationId: string): Promise<boolean> {
+  async validateOrgAccess(
+    userId: string,
+    organizationId: string,
+  ): Promise<boolean> {
     const membership = await this.db.queryOne(
       `SELECT id FROM member WHERE "userId" = $1 AND "organizationId" = $2`,
       [userId, organizationId],
@@ -127,11 +130,17 @@ export class DashboardService {
       totalConversations: parseInt(conversations?.total ?? '0', 10),
       totalMessages: parseInt(messages?.total ?? '0', 10),
       assistantMessages: parseInt(messages?.assistant ?? '0', 10),
-      totalTokensAllTime: tokenStats?.total_tokens != null ? parseInt(tokenStats.total_tokens, 10) : null,
+      totalTokensAllTime:
+        tokenStats?.total_tokens != null
+          ? parseInt(tokenStats.total_tokens, 10)
+          : null,
     };
   }
 
-  async getUserStats(range: Range, organizationId?: string | null): Promise<UserStatsDto> {
+  async getUserStats(
+    range: Range,
+    organizationId?: string | null,
+  ): Promise<UserStatsDto> {
     const interval = RANGE_INTERVAL[range];
 
     const [totals, timeSeries, topUsers, sessionTotals, sessionsByBrowser] =
@@ -159,13 +168,13 @@ export class DashboardService {
               banned_count: string;
               email_verified_count: string;
             }>(
-          `SELECT
+              `SELECT
              COUNT(*)::text AS total,
              COUNT(*) FILTER (WHERE "createdAt" >= NOW() - INTERVAL '${interval}')::text AS new_in_range,
              COUNT(*) FILTER (WHERE banned = true)::text AS banned_count,
              COUNT(*) FILTER (WHERE "emailVerified" IS NOT NULL)::text AS email_verified_count
            FROM "user"`,
-        ),
+            ),
         organizationId
           ? this.db.query<{ date: string; count: string }>(
               `SELECT DATE(m."createdAt")::text AS date, COUNT(DISTINCT m."userId")::text AS count
@@ -240,7 +249,11 @@ export class DashboardService {
                ORDER BY conversation_count DESC, message_count DESC
                LIMIT 10`,
             ),
-        this.db.queryOne<{ active: string; expired: string; impersonated: string }>(
+        this.db.queryOne<{
+          active: string;
+          expired: string;
+          impersonated: string;
+        }>(
           `SELECT
              COUNT(*) FILTER (WHERE "expiresAt" > NOW())::text AS active,
              COUNT(*) FILTER (WHERE "expiresAt" <= NOW())::text AS expired,
@@ -263,7 +276,10 @@ export class DashboardService {
       newInRange: parseInt(totals?.new_in_range ?? '0', 10),
       bannedCount: parseInt(totals?.banned_count ?? '0', 10),
       emailVerifiedCount: parseInt(totals?.email_verified_count ?? '0', 10),
-      timeSeriesNewUsers: timeSeries.map((r) => ({ date: r.date, count: parseInt(r.count, 10) })),
+      timeSeriesNewUsers: timeSeries.map((r) => ({
+        date: r.date,
+        count: parseInt(r.count, 10),
+      })),
       topUsers: topUsers.map((r) => ({
         userId: r.user_id,
         name: r.name,
@@ -272,16 +288,24 @@ export class DashboardService {
         conversationCount: r.conversation_count,
         messageCount: r.message_count,
         organizationCount: r.organization_count,
-        lastActiveAt: r.last_active_at ? new Date(r.last_active_at).toISOString() : null,
+        lastActiveAt: r.last_active_at
+          ? new Date(r.last_active_at).toISOString()
+          : null,
       })),
       activeSessions: parseInt(sessionTotals?.active ?? '0', 10),
       expiredSessions: parseInt(sessionTotals?.expired ?? '0', 10),
       impersonatedSessions: parseInt(sessionTotals?.impersonated ?? '0', 10),
-      sessionsByBrowser: sessionsByBrowser.map((r) => ({ browser: r.browser, count: parseInt(r.count, 10) })),
+      sessionsByBrowser: sessionsByBrowser.map((r) => ({
+        browser: r.browser,
+        count: parseInt(r.count, 10),
+      })),
     };
   }
 
-  async getChatStats(range: Range, organizationId?: string | null): Promise<ChatStatsDto> {
+  async getChatStats(
+    range: Range,
+    organizationId?: string | null,
+  ): Promise<ChatStatsDto> {
     const interval = RANGE_INTERVAL[range];
     const orgParams = organizationId ? [organizationId] : undefined;
 
@@ -374,7 +398,11 @@ export class DashboardService {
              ORDER BY date ASC`,
           ),
       organizationId
-        ? this.db.query<{ date: string; user_count: string; assistant_count: string }>(
+        ? this.db.query<{
+            date: string;
+            user_count: string;
+            assistant_count: string;
+          }>(
             `SELECT
                DATE(msg.created_at)::text AS date,
                COUNT(CASE WHEN msg.role = 'user' THEN 1 END)::text AS user_count,
@@ -386,7 +414,11 @@ export class DashboardService {
              ORDER BY date ASC`,
             orgParams,
           )
-        : this.db.query<{ date: string; user_count: string; assistant_count: string }>(
+        : this.db.query<{
+            date: string;
+            user_count: string;
+            assistant_count: string;
+          }>(
             `SELECT
                DATE(created_at)::text AS date,
                COUNT(CASE WHEN role = 'user' THEN 1 END)::text AS user_count,
@@ -470,7 +502,10 @@ export class DashboardService {
              ORDER BY count DESC`,
           ),
       organizationId
-        ? this.db.queryOne<{ avg_tool_calls: string | null; avg_results: string | null }>(
+        ? this.db.queryOne<{
+            avg_tool_calls: string | null;
+            avg_results: string | null;
+          }>(
             `SELECT
                AVG((msg.metadata->>'toolCallCount')::numeric)::text AS avg_tool_calls,
                AVG((msg.metadata->>'resultCount')::numeric)::text AS avg_results
@@ -479,7 +514,10 @@ export class DashboardService {
              WHERE msg.role = 'assistant' AND msg.metadata IS NOT NULL AND c.organization_id = $1`,
             orgParams,
           )
-        : this.db.queryOne<{ avg_tool_calls: string | null; avg_results: string | null }>(
+        : this.db.queryOne<{
+            avg_tool_calls: string | null;
+            avg_results: string | null;
+          }>(
             `SELECT
                AVG((metadata->>'toolCallCount')::numeric)::text AS avg_tool_calls,
                AVG((metadata->>'resultCount')::numeric)::text AS avg_results
@@ -523,9 +561,18 @@ export class DashboardService {
           ),
     ]);
 
-    const assistantCount = parseInt(roleCounts.find((r) => r.role === 'assistant')?.count ?? '0', 10);
-    const userCount = parseInt(roleCounts.find((r) => r.role === 'user')?.count ?? '0', 10);
-    const totalGeneratorCount = generatorDist.reduce((sum, r) => sum + parseInt(r.count, 10), 0);
+    const assistantCount = parseInt(
+      roleCounts.find((r) => r.role === 'assistant')?.count ?? '0',
+      10,
+    );
+    const userCount = parseInt(
+      roleCounts.find((r) => r.role === 'user')?.count ?? '0',
+      10,
+    );
+    const totalGeneratorCount = generatorDist.reduce(
+      (sum, r) => sum + parseInt(r.count, 10),
+      0,
+    );
 
     return {
       totalConversations: parseInt(totals?.total_conversations ?? '0', 10),
@@ -534,7 +581,10 @@ export class DashboardService {
       userMessages: userCount,
       avgMessagesPerConversation: parseFloat(totals?.avg_messages ?? '0'),
       activeConversationsInRange: parseInt(totals?.active_in_range ?? '0', 10),
-      timeSeriesConversations: timeSeriesConversations.map((r) => ({ date: r.date, count: parseInt(r.count, 10) })),
+      timeSeriesConversations: timeSeriesConversations.map((r) => ({
+        date: r.date,
+        count: parseInt(r.count, 10),
+      })),
       timeSeriesMessages: timeSeriesMessages.map((r) => ({
         date: r.date,
         userCount: parseInt(r.user_count, 10),
@@ -545,47 +595,83 @@ export class DashboardService {
         return {
           generator: r.generator,
           count,
-          percentage: totalGeneratorCount > 0 ? Math.round((count / totalGeneratorCount) * 10000) / 100 : 0,
+          percentage:
+            totalGeneratorCount > 0
+              ? Math.round((count / totalGeneratorCount) * 10000) / 100
+              : 0,
         };
       }),
-      sourceIntegrationUsage: sourceUsage.map((r) => ({ sourceName: r.source_name, count: parseInt(r.count, 10) })),
-      entityTypeBreakdown: entityBreakdown.map((r) => ({ entityType: r.entity_type, count: parseInt(r.count, 10) })),
-      avgToolCallsPerResponse: agentPerf?.avg_tool_calls != null ? parseFloat(agentPerf.avg_tool_calls) : null,
-      avgResultsPerResponse: agentPerf?.avg_results != null ? parseFloat(agentPerf.avg_results) : null,
-      totalTokens: tokenStats?.total_tokens != null ? parseInt(tokenStats.total_tokens, 10) : null,
-      totalPromptTokens: tokenStats?.total_prompt_tokens != null ? parseInt(tokenStats.total_prompt_tokens, 10) : null,
-      totalCompletionTokens: tokenStats?.total_completion_tokens != null ? parseInt(tokenStats.total_completion_tokens, 10) : null,
-      avgTokensPerResponse: tokenStats?.avg_tokens != null ? parseFloat(tokenStats.avg_tokens) : null,
-      messagesWithTokenData: parseInt(tokenStats?.messages_with_token_data ?? '0', 10),
+      sourceIntegrationUsage: sourceUsage.map((r) => ({
+        sourceName: r.source_name,
+        count: parseInt(r.count, 10),
+      })),
+      entityTypeBreakdown: entityBreakdown.map((r) => ({
+        entityType: r.entity_type,
+        count: parseInt(r.count, 10),
+      })),
+      avgToolCallsPerResponse:
+        agentPerf?.avg_tool_calls != null
+          ? parseFloat(agentPerf.avg_tool_calls)
+          : null,
+      avgResultsPerResponse:
+        agentPerf?.avg_results != null
+          ? parseFloat(agentPerf.avg_results)
+          : null,
+      totalTokens:
+        tokenStats?.total_tokens != null
+          ? parseInt(tokenStats.total_tokens, 10)
+          : null,
+      totalPromptTokens:
+        tokenStats?.total_prompt_tokens != null
+          ? parseInt(tokenStats.total_prompt_tokens, 10)
+          : null,
+      totalCompletionTokens:
+        tokenStats?.total_completion_tokens != null
+          ? parseInt(tokenStats.total_completion_tokens, 10)
+          : null,
+      avgTokensPerResponse:
+        tokenStats?.avg_tokens != null
+          ? parseFloat(tokenStats.avg_tokens)
+          : null,
+      messagesWithTokenData: parseInt(
+        tokenStats?.messages_with_token_data ?? '0',
+        10,
+      ),
     };
   }
 
   async getOrgStats(organizationId?: string | null): Promise<OrgStatsDto> {
     const orgParams = organizationId ? [organizationId] : undefined;
 
-    const [totalOrgs, pendingInvitations, conversationsPerOrg, membersPerOrg, memberRoleDistribution, mostActiveOrgs] =
-      await Promise.all([
-        organizationId
-          ? Promise.resolve({ total: '1' } as { total: string })
-          : this.db.queryOne<{ total: string }>(
-              `SELECT COUNT(*)::text AS total FROM organization`,
-            ),
-        organizationId
-          ? this.db.queryOne<{ count: string }>(
-              `SELECT COUNT(*)::text AS count FROM invitation WHERE "organizationId" = $1 AND status = 'pending'`,
-              orgParams,
-            )
-          : this.db.queryOne<{ count: string }>(
-              `SELECT COUNT(*)::text AS count FROM invitation WHERE status = 'pending'`,
-            ),
-        organizationId
-          ? this.db.query<{
-              org_id: string;
-              org_name: string;
-              conversation_count: string;
-              message_count: string;
-            }>(
-              `SELECT
+    const [
+      totalOrgs,
+      pendingInvitations,
+      conversationsPerOrg,
+      membersPerOrg,
+      memberRoleDistribution,
+      mostActiveOrgs,
+    ] = await Promise.all([
+      organizationId
+        ? Promise.resolve({ total: '1' } as { total: string })
+        : this.db.queryOne<{ total: string }>(
+            `SELECT COUNT(*)::text AS total FROM organization`,
+          ),
+      organizationId
+        ? this.db.queryOne<{ count: string }>(
+            `SELECT COUNT(*)::text AS count FROM invitation WHERE "organizationId" = $1 AND status = 'pending'`,
+            orgParams,
+          )
+        : this.db.queryOne<{ count: string }>(
+            `SELECT COUNT(*)::text AS count FROM invitation WHERE status = 'pending'`,
+          ),
+      organizationId
+        ? this.db.query<{
+            org_id: string;
+            org_name: string;
+            conversation_count: string;
+            message_count: string;
+          }>(
+            `SELECT
                  o.id AS org_id,
                  o.name AS org_name,
                  COUNT(DISTINCT c.id)::text AS conversation_count,
@@ -596,15 +682,15 @@ export class DashboardService {
                WHERE o.id = $1
                GROUP BY o.id, o.name
                ORDER BY conversation_count DESC`,
-              orgParams,
-            )
-          : this.db.query<{
-              org_id: string;
-              org_name: string;
-              conversation_count: string;
-              message_count: string;
-            }>(
-              `SELECT
+            orgParams,
+          )
+        : this.db.query<{
+            org_id: string;
+            org_name: string;
+            conversation_count: string;
+            message_count: string;
+          }>(
+            `SELECT
                  o.id AS org_id,
                  o.name AS org_name,
                  COUNT(DISTINCT c.id)::text AS conversation_count,
@@ -614,10 +700,14 @@ export class DashboardService {
                LEFT JOIN message msg ON msg.conversation_id = c.id
                GROUP BY o.id, o.name
                ORDER BY conversation_count DESC`,
-            ),
-        organizationId
-          ? this.db.query<{ org_id: string; org_name: string; member_count: string }>(
-              `SELECT
+          ),
+      organizationId
+        ? this.db.query<{
+            org_id: string;
+            org_name: string;
+            member_count: string;
+          }>(
+            `SELECT
                  o.id AS org_id,
                  o.name AS org_name,
                  COUNT(m.id)::text AS member_count
@@ -626,10 +716,14 @@ export class DashboardService {
                WHERE o.id = $1
                GROUP BY o.id, o.name
                ORDER BY member_count DESC`,
-              orgParams,
-            )
-          : this.db.query<{ org_id: string; org_name: string; member_count: string }>(
-              `SELECT
+            orgParams,
+          )
+        : this.db.query<{
+            org_id: string;
+            org_name: string;
+            member_count: string;
+          }>(
+            `SELECT
                  o.id AS org_id,
                  o.name AS org_name,
                  COUNT(m.id)::text AS member_count
@@ -637,18 +731,22 @@ export class DashboardService {
                LEFT JOIN member m ON m."organizationId" = o.id
                GROUP BY o.id, o.name
                ORDER BY member_count DESC`,
-            ),
-        organizationId
-          ? this.db.query<{ role: string; count: string }>(
-              `SELECT role, COUNT(*)::text AS count FROM member WHERE "organizationId" = $1 GROUP BY role ORDER BY count DESC`,
-              orgParams,
-            )
-          : this.db.query<{ role: string; count: string }>(
-              `SELECT role, COUNT(*)::text AS count FROM member GROUP BY role ORDER BY count DESC`,
-            ),
-        organizationId
-          ? this.db.query<{ org_id: string; org_name: string; recent_message_count: string }>(
-              `SELECT
+          ),
+      organizationId
+        ? this.db.query<{ role: string; count: string }>(
+            `SELECT role, COUNT(*)::text AS count FROM member WHERE "organizationId" = $1 GROUP BY role ORDER BY count DESC`,
+            orgParams,
+          )
+        : this.db.query<{ role: string; count: string }>(
+            `SELECT role, COUNT(*)::text AS count FROM member GROUP BY role ORDER BY count DESC`,
+          ),
+      organizationId
+        ? this.db.query<{
+            org_id: string;
+            org_name: string;
+            recent_message_count: string;
+          }>(
+            `SELECT
                  o.id AS org_id,
                  o.name AS org_name,
                  COUNT(msg.id)::text AS recent_message_count
@@ -660,10 +758,14 @@ export class DashboardService {
                GROUP BY o.id, o.name
                ORDER BY recent_message_count DESC
                LIMIT 10`,
-              orgParams,
-            )
-          : this.db.query<{ org_id: string; org_name: string; recent_message_count: string }>(
-              `SELECT
+            orgParams,
+          )
+        : this.db.query<{
+            org_id: string;
+            org_name: string;
+            recent_message_count: string;
+          }>(
+            `SELECT
                  o.id AS org_id,
                  o.name AS org_name,
                  COUNT(msg.id)::text AS recent_message_count
@@ -674,8 +776,8 @@ export class DashboardService {
                GROUP BY o.id, o.name
                ORDER BY recent_message_count DESC
                LIMIT 10`,
-            ),
-      ]);
+          ),
+    ]);
 
     return {
       totalOrganizations: parseInt(totalOrgs?.total ?? '0', 10),

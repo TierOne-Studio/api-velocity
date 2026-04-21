@@ -34,8 +34,10 @@ describe('permissions module (source verification)', () => {
       expect(source).toContain("'get'");
     });
 
-    it('should not define a project resource', () => {
-      expect(source).not.toContain('project:');
+    it('should define project resource with create/read/update/delete/manage-sources actions', () => {
+      expect(source).toContain(
+        "project: ['create', 'read', 'update', 'delete', 'manage-sources']",
+      );
     });
 
     it('should spread defaultStatements from better-auth', () => {
@@ -84,6 +86,35 @@ describe('permissions module (source verification)', () => {
     it('managerRole should include session permissions', () => {
       expect(source).toContain("'revoke'");
       expect(source).toContain('session:');
+    });
+
+    it('adminRole should grant full project permissions including manage-sources', () => {
+      const adminBlock = source
+        .split('export const adminRole = ac.newRole({')[1]
+        ?.split('});')[0];
+      expect(adminBlock).toBeDefined();
+      expect(adminBlock).toContain(
+        "project: ['create', 'read', 'update', 'delete', 'manage-sources']",
+      );
+    });
+
+    it('managerRole should grant create/read/update/manage-sources project permissions (no delete)', () => {
+      const managerBlock = source
+        .split('managerRole = ac.newRole({')[1]
+        ?.split('});')[0];
+      expect(managerBlock).toBeDefined();
+      expect(managerBlock).toContain(
+        "project: ['create', 'read', 'update', 'manage-sources']",
+      );
+    });
+
+    it('memberRole should grant read-only project access (no manage-sources)', () => {
+      const memberBlock = source
+        .split('memberRole = ac.newRole({')[1]
+        ?.split('});')[0];
+      expect(memberBlock).toBeDefined();
+      expect(memberBlock).toContain("project: ['read']");
+      expect(memberBlock).not.toContain('manage-sources');
     });
   });
 

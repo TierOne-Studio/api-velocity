@@ -49,25 +49,54 @@ describe('DashboardController', () => {
 
   const mockOrgs = [{ id: 'org-1', name: 'Org 1', slug: 'org-1' }];
   const mockOverview = {
-    totalUsers: 10, bannedUsers: 1, activeSessions: 5, totalOrganizations: 2,
-    totalConversations: 50, totalMessages: 200, assistantMessages: 100, totalTokensAllTime: 5000,
+    totalUsers: 10,
+    bannedUsers: 1,
+    activeSessions: 5,
+    totalOrganizations: 2,
+    totalConversations: 50,
+    totalMessages: 200,
+    assistantMessages: 100,
+    totalTokensAllTime: 5000,
   };
   const mockUserStats = {
-    total: 10, newInRange: 2, bannedCount: 1, emailVerifiedCount: 8,
-    timeSeriesNewUsers: [], topUsers: [], activeSessions: 5, expiredSessions: 2,
-    impersonatedSessions: 0, sessionsByBrowser: [],
+    total: 10,
+    newInRange: 2,
+    bannedCount: 1,
+    emailVerifiedCount: 8,
+    timeSeriesNewUsers: [],
+    topUsers: [],
+    activeSessions: 5,
+    expiredSessions: 2,
+    impersonatedSessions: 0,
+    sessionsByBrowser: [],
   };
   const mockChatStats = {
-    totalConversations: 20, totalMessages: 100, assistantMessages: 60, userMessages: 40,
-    avgMessagesPerConversation: 5, activeConversationsInRange: 15, timeSeriesConversations: [],
-    timeSeriesMessages: [], generatorDistribution: [], sourceIntegrationUsage: [],
-    entityTypeBreakdown: [], avgToolCallsPerResponse: null, avgResultsPerResponse: null,
-    totalTokens: null, totalPromptTokens: null, totalCompletionTokens: null,
-    avgTokensPerResponse: null, messagesWithTokenData: 0,
+    totalConversations: 20,
+    totalMessages: 100,
+    assistantMessages: 60,
+    userMessages: 40,
+    avgMessagesPerConversation: 5,
+    activeConversationsInRange: 15,
+    timeSeriesConversations: [],
+    timeSeriesMessages: [],
+    generatorDistribution: [],
+    sourceIntegrationUsage: [],
+    entityTypeBreakdown: [],
+    avgToolCallsPerResponse: null,
+    avgResultsPerResponse: null,
+    totalTokens: null,
+    totalPromptTokens: null,
+    totalCompletionTokens: null,
+    avgTokensPerResponse: null,
+    messagesWithTokenData: 0,
   };
   const mockOrgStats = {
-    totalOrganizations: 2, pendingInvitations: 3, conversationsPerOrg: [],
-    membersPerOrg: [], memberRoleDistribution: [], mostActiveOrgs: [],
+    totalOrganizations: 2,
+    pendingInvitations: 3,
+    conversationsPerOrg: [],
+    membersPerOrg: [],
+    memberRoleDistribution: [],
+    mostActiveOrgs: [],
   };
 
   beforeEach(() => {
@@ -89,9 +118,13 @@ describe('DashboardController', () => {
     it('returns orgs for superadmin (isSuperadmin=true)', async () => {
       service.getAvailableOrganizations.mockResolvedValue(mockOrgs);
 
-      const result = await controller.getAvailableOrganizations(superadminSession);
+      const result =
+        await controller.getAvailableOrganizations(superadminSession);
 
-      expect(service.getAvailableOrganizations).toHaveBeenCalledWith('user-super', true);
+      expect(service.getAvailableOrganizations).toHaveBeenCalledWith(
+        'user-super',
+        true,
+      );
       expect(result).toEqual(mockOrgs);
     });
 
@@ -100,7 +133,10 @@ describe('DashboardController', () => {
 
       const result = await controller.getAvailableOrganizations(managerSession);
 
-      expect(service.getAvailableOrganizations).toHaveBeenCalledWith('user-mgr', false);
+      expect(service.getAvailableOrganizations).toHaveBeenCalledWith(
+        'user-mgr',
+        false,
+      );
       expect(result).toEqual(mockOrgs);
     });
   });
@@ -132,7 +168,10 @@ describe('DashboardController', () => {
 
       const result = await controller.getOverview(managerSession, 'org-1');
 
-      expect(service.validateOrgAccess).toHaveBeenCalledWith('user-mgr', 'org-1');
+      expect(service.validateOrgAccess).toHaveBeenCalledWith(
+        'user-mgr',
+        'org-1',
+      );
       expect(service.getOverview).toHaveBeenCalledWith('org-1');
       expect(result).toEqual(mockOverview);
     });
@@ -162,9 +201,16 @@ describe('DashboardController', () => {
       service.validateOrgAccess.mockResolvedValue(true);
       service.getUserStats.mockResolvedValue(mockUserStats);
 
-      const result = await controller.getUserStats(managerSession, '7d', 'org-1');
+      const result = await controller.getUserStats(
+        managerSession,
+        '7d',
+        'org-1',
+      );
 
-      expect(service.validateOrgAccess).toHaveBeenCalledWith('user-mgr', 'org-1');
+      expect(service.validateOrgAccess).toHaveBeenCalledWith(
+        'user-mgr',
+        'org-1',
+      );
       expect(service.getUserStats).toHaveBeenCalledWith('7d', 'org-1');
       expect(result).toEqual(mockUserStats);
     });
@@ -186,7 +232,11 @@ describe('DashboardController', () => {
       service.validateOrgAccess.mockResolvedValue(true);
       service.getChatStats.mockResolvedValue(mockChatStats);
 
-      const result = await controller.getChatStats(memberSession, '90d', 'org-1');
+      const result = await controller.getChatStats(
+        memberSession,
+        '90d',
+        'org-1',
+      );
 
       expect(service.getChatStats).toHaveBeenCalledWith('90d', 'org-1');
       expect(result).toEqual(mockChatStats);

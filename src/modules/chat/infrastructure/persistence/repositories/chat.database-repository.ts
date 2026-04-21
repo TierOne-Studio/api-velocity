@@ -12,11 +12,35 @@ const CONVERSATION_COLUMNS = `
   c.title,
   c.organization_id,
   c.user_id,
+  c.project_id,
+  p.name AS project_name,
+  ps.project_source_count,
   c.created_at,
   c.updated_at,
   lm.last_message_preview,
   lm.last_message_at,
   mc.message_count
+`;
+
+const CONVERSATION_JOINS = `
+  LEFT JOIN project p ON p.id = c.project_id
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*)::int AS project_source_count
+    FROM project_data_source pds
+    WHERE pds.project_id = c.project_id
+  ) ps ON true
+  LEFT JOIN LATERAL (
+    SELECT LEFT(m.content, 160) AS last_message_preview, m.created_at AS last_message_at
+    FROM message m
+    WHERE m.conversation_id = c.id
+    ORDER BY m.created_at DESC
+    LIMIT 1
+  ) lm ON true
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*)::int AS message_count
+    FROM message m
+    WHERE m.conversation_id = c.id
+  ) mc ON true
 `;
 
 const MESSAGE_COLUMNS = `
@@ -35,27 +59,43 @@ export class ChatDatabaseRepository implements IChatRepository {
   async listConversations(
     userId: string,
     organizationId: string,
+    projectId?: string,
   ): Promise<ConversationRow[]> {
-    return this.db.query<ConversationRow>(
-      `SELECT ${CONVERSATION_COLUMNS}
+    const params: unknown[] = [userId, organizationId];
+    let sql = `SELECT ${CONVERSATION_COLUMNS}
        FROM conversation c
-       LEFT JOIN LATERAL (
-         SELECT LEFT(m.content, 160) AS last_message_preview, m.created_at AS last_message_at
-         FROM message m
-         WHERE m.conversation_id = c.id
-         ORDER BY m.created_at DESC
-         LIMIT 1
-       ) lm ON true
-       LEFT JOIN LATERAL (
-         SELECT COUNT(*)::int AS message_count
-         FROM message m
-         WHERE m.conversation_id = c.id
-       ) mc ON true
+       ${CONVERSATION_JOINS}
        WHERE c.user_id = $1
-         AND c.organization_id = $2
-       ORDER BY c.updated_at DESC`,
-      [userId, organizationId],
-    );
+         AND c.organization_id = $2`;
+
+    if (projectId) {
+      params.push(projectId);
+      sql += ` AND c.project_id = $${params.length}`;
+    }
+
+    sql += ' ORDER BY c.updated_at DESC';
+
+    return this.db.query<ConversationRow>(sql, params);
+  }
+
+  async listAllUserConversations(
+    userId: string,
+    projectId?: string,
+  ): Promise<ConversationRow[]> {
+    const params: unknown[] = [userId];
+    let sql = `SELECT ${CONVERSATION_COLUMNS}
+       FROM conversation c
+       ${CONVERSATION_JOINS}
+       WHERE c.user_id = $1`;
+
+    if (projectId) {
+      params.push(projectId);
+      sql += ` AND c.project_id = $${params.length}`;
+    }
+
+    sql += ' ORDER BY c.updated_at DESC';
+
+    return this.db.query<ConversationRow>(sql, params);
   }
 
   async findConversationById(
@@ -66,18 +106,7 @@ export class ChatDatabaseRepository implements IChatRepository {
     const params: unknown[] = [conversationId, userId];
     let sql = `SELECT ${CONVERSATION_COLUMNS}
        FROM conversation c
-       LEFT JOIN LATERAL (
-         SELECT LEFT(m.content, 160) AS last_message_preview, m.created_at AS last_message_at
-         FROM message m
-         WHERE m.conversation_id = c.id
-         ORDER BY m.created_at DESC
-         LIMIT 1
-       ) lm ON true
-       LEFT JOIN LATERAL (
-         SELECT COUNT(*)::int AS message_count
-         FROM message m
-         WHERE m.conversation_id = c.id
-       ) mc ON true
+       ${CONVERSATION_JOINS}
        WHERE c.id = $1 AND c.user_id = $2`;
 
     if (organizationId) {
@@ -92,25 +121,40 @@ export class ChatDatabaseRepository implements IChatRepository {
     params: CreateConversationParams,
   ): Promise<ConversationRow> {
     const row = await this.db.queryOne<ConversationRow>(
-      `INSERT INTO conversation (
-        id,
-        title,
-        organization_id,
-        user_id,
-        created_at,
-        updated_at
-      ) VALUES ($1, $2, $3, $4, NOW(), NOW())
-      RETURNING
-        id,
-        title,
-        organization_id,
-        user_id,
-        created_at,
-        updated_at,
+      `WITH inserted AS (
+        INSERT INTO conversation (
+          id,
+          title,
+          organization_id,
+          user_id,
+          project_id,
+          created_at,
+          updated_at
+        ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+        RETURNING id, title, organization_id, user_id, project_id, created_at, updated_at
+      )
+      SELECT
+        i.id,
+        i.title,
+        i.organization_id,
+        i.user_id,
+        i.project_id,
+        p.name AS project_name,
+        (SELECT COUNT(*)::int FROM project_data_source pds WHERE pds.project_id = i.project_id) AS project_source_count,
+        i.created_at,
+        i.updated_at,
         NULL::text AS last_message_preview,
         NULL::timestamptz AS last_message_at,
-        0::int AS message_count`,
-      [params.id, params.title, params.organizationId, params.userId],
+        0::int AS message_count
+      FROM inserted i
+      LEFT JOIN project p ON p.id = i.project_id`,
+      [
+        params.id,
+        params.title,
+        params.organizationId,
+        params.userId,
+        params.projectId,
+      ],
     );
 
     if (!row) {

@@ -19,12 +19,14 @@ import {
   getActiveOrganizationId,
   getPlatformRole,
 } from '../../../admin/users/utils/admin.utils';
+import { resolveOrgScope } from '../../../admin/users/utils/org-scope.utils';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { ChatService } from '../../application/services/chat.service';
 
 type CreateConversationBody = {
   title?: string | null;
   organizationId?: string;
+  projectId?: string;
 };
 
 type SendMessageBody = {
@@ -59,11 +61,19 @@ export class ChatController {
     return trimmedValue;
   }
 
-  private getScope(session: UserSession, organizationId?: string) {
+  private getScope(
+    session: UserSession,
+    organizationId?: string,
+    scopeMode?: 'all',
+  ) {
     const platformRole = getPlatformRole(session);
     const activeOrganizationId = getActiveOrganizationId(session);
 
-    if (platformRole !== 'superadmin' && !activeOrganizationId) {
+    if (
+      platformRole !== 'superadmin' &&
+      !activeOrganizationId &&
+      scopeMode !== 'all'
+    ) {
       throw new HttpException(
         'Active organization required',
         HttpStatus.FORBIDDEN,
@@ -74,6 +84,7 @@ export class ChatController {
       platformRole,
       activeOrganizationId,
       organizationId,
+      scopeMode,
     };
   }
 
@@ -82,11 +93,25 @@ export class ChatController {
   async listConversations(
     @Session() session: UserSession,
     @Query('organizationId') organizationId?: string,
+    @Query('projectId') projectId?: string,
+    @Query('scope') scope?: string,
   ) {
+    // Validate scope=all via shared helper (throws 400 for non-superadmin).
+    if (scope === 'all') {
+      resolveOrgScope(session, { scope: 'all' });
+      return {
+        data: await this.chatService.listConversations({
+          ...this.getScope(session, undefined, 'all'),
+          userId: session.user.id,
+          projectId: projectId?.trim() || undefined,
+        }),
+      };
+    }
     return {
       data: await this.chatService.listConversations({
         ...this.getScope(session, organizationId),
         userId: session.user.id,
+        projectId: projectId?.trim() || undefined,
       }),
     };
   }
@@ -97,11 +122,17 @@ export class ChatController {
     @Session() session: UserSession,
     @Body() body: CreateConversationBody,
   ) {
+    const projectId = body.projectId?.trim();
+    if (!projectId) {
+      throw new HttpException('projectId is required', HttpStatus.BAD_REQUEST);
+    }
+
     return {
       data: await this.chatService.createConversation({
         ...this.getScope(session, body.organizationId),
         title: body.title ?? null,
         userId: session.user.id,
+        projectId,
       }),
     };
   }

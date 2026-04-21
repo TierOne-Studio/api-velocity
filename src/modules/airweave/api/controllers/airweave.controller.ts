@@ -13,7 +13,13 @@ import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { RequirePermissions, PermissionsGuard } from '../../../../shared';
 import {
+  AdminOrganizationsService,
+  getActiveOrganizationId,
+  getPlatformRole,
+} from '../../../admin';
+import {
   AirweaveService,
+  type AirweaveCollectionSummary,
   type AirweaveSearchRetrievalStrategy,
   type AirweaveSearchTier,
 } from '../../application/services/airweave.service';
@@ -40,7 +46,10 @@ const RETRIEVAL_STRATEGIES: AirweaveSearchRetrievalStrategy[] = [
 @Controller('api/airweave')
 @UseGuards(PermissionsGuard)
 export class AirweaveController {
-  constructor(private readonly airweaveService: AirweaveService) {}
+  constructor(
+    private readonly airweaveService: AirweaveService,
+    private readonly adminOrganizationsService: AdminOrganizationsService,
+  ) {}
 
   private requireTrimmedString(value: string, fieldName: string): string {
     const trimmedValue = value.trim();
@@ -115,17 +124,54 @@ export class AirweaveController {
   @Get('collections')
   @RequirePermissions('organization:read')
   async listCollections(
+    @Session() session: UserSession,
     @Query('search') search?: string,
     @Query('limit') limit?: string,
     @Query('skip') skip?: string,
   ) {
+    const collections = await this.airweaveService.listCollections({
+      search: search?.trim() || undefined,
+      limit: this.parsePositiveInteger(limit, 'limit'),
+      skip: this.parsePositiveInteger(skip, 'skip', { allowZero: true }),
+    });
+
     return {
-      data: await this.airweaveService.listCollections({
-        search: search?.trim() || undefined,
-        limit: this.parsePositiveInteger(limit, 'limit'),
-        skip: this.parsePositiveInteger(skip, 'skip', { allowZero: true }),
-      }),
+      data: await this.applyAirweaveAllowlist(collections, session),
     };
+  }
+
+  private async applyAirweaveAllowlist(
+    collections: AirweaveCollectionSummary[],
+    session: UserSession,
+  ): Promise<AirweaveCollectionSummary[]> {
+    const platformRole = getPlatformRole(session);
+    if (platformRole === 'superadmin') return collections;
+
+    const activeOrgId = getActiveOrganizationId(session);
+    if (!activeOrgId) return [];
+
+    const organization =
+      await this.adminOrganizationsService.findById(activeOrgId);
+    if (!organization) return [];
+
+    const allowed = this.readAllowedAirweaveCollectionIds(
+      organization.metadata,
+    );
+
+    if (allowed.length === 0) return [];
+    const allowedSet = new Set(allowed);
+    return collections.filter((collection) =>
+      allowedSet.has(collection.readableId),
+    );
+  }
+
+  private readAllowedAirweaveCollectionIds(
+    metadata: Record<string, unknown> | null,
+  ): string[] {
+    if (!metadata) return [];
+    const raw = metadata['allowedAirweaveCollectionIds'];
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((value): value is string => typeof value === 'string');
   }
 
   @Get('collections/:collectionId')

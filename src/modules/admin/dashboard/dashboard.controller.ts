@@ -1,4 +1,10 @@
-import { Controller, Get, Query, UseGuards, ForbiddenException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  UseGuards,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { PermissionsGuard, RequirePermissions } from '../../../shared';
@@ -25,9 +31,14 @@ export class DashboardController {
       return { isSuperadmin, scopedOrgId: null };
     }
     if (!isSuperadmin) {
-      const hasAccess = await this.dashboardService.validateOrgAccess(session.user.id, organizationId);
+      const hasAccess = await this.dashboardService.validateOrgAccess(
+        session.user.id,
+        organizationId,
+      );
       if (!hasAccess) {
-        throw new ForbiddenException('Access to this organization is not permitted');
+        throw new ForbiddenException(
+          'Access to this organization is not permitted',
+        );
       }
     }
     return { isSuperadmin, scopedOrgId: organizationId };
@@ -39,7 +50,10 @@ export class DashboardController {
     @Session() session: UserSession,
   ): Promise<Array<{ id: string; name: string; slug: string }>> {
     const isSuperadmin = getPlatformRole(session) === 'superadmin';
-    return this.dashboardService.getAvailableOrganizations(session.user.id, isSuperadmin);
+    return this.dashboardService.getAvailableOrganizations(
+      session.user.id,
+      isSuperadmin,
+    );
   }
 
   @Get('overview')
@@ -48,7 +62,10 @@ export class DashboardController {
     @Session() session: UserSession,
     @Query('organizationId') organizationId?: string,
   ): Promise<OverviewStatsDto> {
-    const { scopedOrgId } = await this.resolveOrgAccess(session, organizationId);
+    const { scopedOrgId } = await this.resolveOrgAccess(
+      session,
+      organizationId,
+    );
     return this.dashboardService.getOverview(scopedOrgId);
   }
 
@@ -59,7 +76,10 @@ export class DashboardController {
     @Query('range') range: Range = '30d',
     @Query('organizationId') organizationId?: string,
   ): Promise<UserStatsDto> {
-    const { scopedOrgId } = await this.resolveOrgAccess(session, organizationId);
+    const { scopedOrgId } = await this.resolveOrgAccess(
+      session,
+      organizationId,
+    );
     return this.dashboardService.getUserStats(range, scopedOrgId);
   }
 
@@ -70,7 +90,10 @@ export class DashboardController {
     @Query('range') range: Range = '30d',
     @Query('organizationId') organizationId?: string,
   ): Promise<ChatStatsDto> {
-    const { scopedOrgId } = await this.resolveOrgAccess(session, organizationId);
+    const { scopedOrgId } = await this.resolveOrgAccess(
+      session,
+      organizationId,
+    );
     return this.dashboardService.getChatStats(range, scopedOrgId);
   }
 
@@ -80,8 +103,10 @@ export class DashboardController {
     @Session() session: UserSession,
     @Query('organizationId') organizationId?: string,
   ): Promise<OrgStatsDto> {
-    const { scopedOrgId } = await this.resolveOrgAccess(session, organizationId);
+    const { scopedOrgId } = await this.resolveOrgAccess(
+      session,
+      organizationId,
+    );
     return this.dashboardService.getOrgStats(scopedOrgId);
   }
 }
-

@@ -1,11 +1,12 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import type {
-  AirweaveService,
   AirweaveSearchResultSummary,
   AirweaveSearchTier,
   AirweaveSearchRetrievalStrategy,
 } from '../../../airweave/application/services/airweave.service';
+import type { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
+import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
 
 const searchKnowledgeBaseSchema = z.object({
   query: z
@@ -17,11 +18,12 @@ const searchKnowledgeBaseSchema = z.object({
 });
 
 export type CreateSearchKnowledgeBaseToolParams = {
-  collectionId: string;
-  airweaveService: AirweaveService;
+  projectId: string;
+  sources: ProjectDataSource[];
+  registry: DataSourceRegistry;
   /** Mutated across tool calls. Deduped and capped by the caller. */
   sourcesSink: AirweaveSearchResultSummary[];
-  /** Per-call search limit passed to Airweave. */
+  /** Per-call search limit passed to each provider. */
   resultLimit: number;
   /** Per-chunk character cap before handing text to the LLM. */
   resultCharCap: number;
@@ -34,17 +36,18 @@ export type CreateSearchKnowledgeBaseToolParams = {
 /**
  * Builds a `search_knowledge_base` tool bound to a single chat request.
  *
- * The LLM calls this tool multiple times with different natural-language
- * queries. Each call's results are pushed into `sourcesSink` for cross-call
- * metadata aggregation, then deduped by entityId before being returned to
- * the LLM so each entity gets exactly one slot in the response.
+ * Fans out across every project data source via the DataSourceRegistry.
+ * Per-source failures are logged and skipped so one broken source never
+ * breaks the whole retrieval step. Results are aggregated, deduped by
+ * entityId, and returned to the LLM sorted by relevance.
  */
 export function createSearchKnowledgeBaseTool(
   params: CreateSearchKnowledgeBaseToolParams,
 ) {
   const {
-    collectionId,
-    airweaveService,
+    projectId,
+    sources,
+    registry,
     sourcesSink,
     resultLimit,
     resultCharCap,
@@ -56,26 +59,47 @@ export function createSearchKnowledgeBaseTool(
     async (input) => {
       const { query } = input;
 
-      const response = await airweaveService.searchCollection(collectionId, {
-        query,
-        tier: searchTier,
-        limit: resultLimit,
-        offset: 0,
-        retrievalStrategy,
+      const searches = await Promise.allSettled(
+        sources.map(async (source) => {
+          const provider = registry.get(source.kind);
+          const response = await provider.search(source, query, {
+            tier: searchTier,
+            limit: resultLimit,
+            offset: 0,
+            retrievalStrategy,
+          });
+          return response.results;
+        }),
+      );
+
+      const aggregated: AirweaveSearchResultSummary[] = [];
+      searches.forEach((outcome, index) => {
+        if (outcome.status === 'fulfilled') {
+          aggregated.push(...outcome.value);
+        } else {
+          console.warn('[chat-agent-tools] source search failed, skipping', {
+            projectId,
+            sourceId: sources[index]?.id,
+            kind: sources[index]?.kind,
+            error:
+              outcome.reason instanceof Error
+                ? outcome.reason.message
+                : String(outcome.reason),
+          });
+        }
       });
 
-      const results = response.results;
+      sourcesSink.push(...aggregated);
 
-      sourcesSink.push(...results);
-
-      const dedupedForLlm = dedupeAndCapSources(results, results.length);
+      const dedupedForLlm = dedupeAndCapSources(aggregated, aggregated.length);
 
       console.info('[chat-agent-tools] search_knowledge_base called', {
-        collectionId,
+        projectId,
+        sourceCount: sources.length,
         query,
         searchTier,
         retrievalStrategy: retrievalStrategy ?? 'default',
-        rawResultCount: results.length,
+        rawResultCount: aggregated.length,
         dedupedResultCount: dedupedForLlm.length,
         resultNames: dedupedForLlm.map((r) => r.name),
         entityTypes: dedupedForLlm.map((r) => r.entityType),
@@ -113,7 +137,7 @@ export function createSearchKnowledgeBaseTool(
     {
       name: 'search_knowledge_base',
       description: [
-        "Search the organization's indexed knowledge base (Airweave) using semantic retrieval.",
+        "Search the project's data sources (Airweave collections and any other configured providers) using semantic retrieval.",
         'Call this tool MULTIPLE times with different queries to gather complete context before answering any non-trivial question.',
         "IMPORTANT: your FIRST call should use the user's original question verbatim, because the retrieval model is tuned for natural-language phrasing and short keyword queries often return worse results.",
         "On follow-up calls, rephrase with different terminology or ask about specific aspects of the question — e.g. if the user asks 'how does the invitation flow work', follow-ups might be 'invitation email template' or 'accept invitation endpoint'.",
