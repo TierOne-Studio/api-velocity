@@ -31,6 +31,7 @@ type CallerScope = {
   platformRole: PlatformRole;
   activeOrganizationId: string | null;
   organizationId?: string;
+  scopeMode?: 'all';
 };
 
 @Injectable()
@@ -43,6 +44,12 @@ export class ProjectsService {
   ) {}
 
   async listForScope(scope: CallerScope): Promise<ProjectSummary[]> {
+    // Explicit cross-org view via ?scope=all — only for superadmin (controller validates).
+    if (scope.scopeMode === 'all' && scope.platformRole === 'superadmin') {
+      const rows = await this.repository.listAll();
+      return Promise.all(rows.map((row) => this.toSummary(row)));
+    }
+
     const organizationId = this.resolveScopeOrganization(scope);
     const rows =
       scope.platformRole === 'superadmin' && !organizationId

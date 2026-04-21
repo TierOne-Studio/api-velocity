@@ -95,6 +95,36 @@ describe('SessionsController', () => {
         activeOrganizationId: 'org-1',
       });
     });
+
+    it('allows superadmin to scope with ?organizationId', async () => {
+      sessionsService.listUserSessions.mockResolvedValue([] as any);
+
+      await controller.listSessions(superadminSession, 'user-1', 'org-42');
+
+      expect(sessionsService.listUserSessions).toHaveBeenCalledWith({
+        userId: 'user-1',
+        platformRole: 'superadmin',
+        activeOrganizationId: 'org-42',
+      });
+    });
+
+    it('rejects non-superadmin ?organizationId that does not match active org', async () => {
+      await expect(
+        controller.listSessions(managerSession, 'user-2', 'org-other'),
+      ).rejects.toThrow('You can only manage sessions in your active organization');
+    });
+
+    it('accepts non-superadmin ?organizationId that matches active org', async () => {
+      sessionsService.listUserSessions.mockResolvedValue([] as any);
+
+      await controller.listSessions(managerSession, 'user-2', 'org-1');
+
+      expect(sessionsService.listUserSessions).toHaveBeenCalledWith({
+        userId: 'user-2',
+        platformRole: 'manager',
+        activeOrganizationId: 'org-1',
+      });
+    });
   });
 
   // ─── revokeSession ───────────────────────────────────────────────────────
@@ -124,6 +154,22 @@ describe('SessionsController', () => {
         { sessionToken: 'tok' },
         'manager',
         'org-1',
+      );
+    });
+
+    it('allows superadmin to scope with ?organizationId', async () => {
+      sessionsService.revokeSession.mockResolvedValue({ success: true });
+
+      await controller.revokeSession(
+        superadminSession,
+        { sessionToken: 'tok' },
+        'org-42',
+      );
+
+      expect(sessionsService.revokeSession).toHaveBeenCalledWith(
+        { sessionToken: 'tok' },
+        'superadmin',
+        'org-42',
       );
     });
 
@@ -181,6 +227,26 @@ describe('SessionsController', () => {
         { userId: 'user-2' },
         'manager',
         'org-1',
+      );
+    });
+
+    it('allows superadmin to scope with ?organizationId', async () => {
+      sessionsService.revokeAllSessions.mockResolvedValue({ success: true });
+
+      await controller.revokeAll(superadminSession, 'user-1', 'org-42');
+
+      expect(sessionsService.revokeAllSessions).toHaveBeenCalledWith(
+        { userId: 'user-1' },
+        'superadmin',
+        'org-42',
+      );
+    });
+
+    it('rejects non-superadmin ?organizationId that does not match active org', async () => {
+      await expect(
+        controller.revokeAll(managerSession, 'user-2', 'org-other'),
+      ).rejects.toThrow(
+        'You can only manage sessions in your active organization',
       );
     });
   });

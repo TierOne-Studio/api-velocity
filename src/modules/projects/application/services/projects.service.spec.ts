@@ -107,6 +107,31 @@ describe('ProjectsService', () => {
 
       expect(repository.listAll).toHaveBeenCalledTimes(1);
     });
+
+    it('honors scopeMode=all for superadmin even when an active organization is set', async () => {
+      repository.listAll.mockResolvedValue([orgProject]);
+
+      await service.listForScope({
+        ...superadminScope,
+        activeOrganizationId: 'org-1',
+        scopeMode: 'all',
+      });
+
+      expect(repository.listAll).toHaveBeenCalledTimes(1);
+      expect(repository.listForOrganization).not.toHaveBeenCalled();
+    });
+
+    it('ignores scopeMode=all for non-superadmin (guarded by controller)', async () => {
+      repository.listForOrganization.mockResolvedValue([orgProject]);
+
+      await service.listForScope({
+        ...adminScope,
+        scopeMode: 'all',
+      });
+
+      expect(repository.listForOrganization).toHaveBeenCalledWith('org-1');
+      expect(repository.listAll).not.toHaveBeenCalled();
+    });
   });
 
   describe('create', () => {

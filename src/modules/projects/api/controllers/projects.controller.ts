@@ -19,6 +19,7 @@ import {
   getPlatformRole,
   type PlatformRole,
 } from '../../../admin/users/utils/admin.utils';
+import { resolveOrgScope } from '../../../admin/users/utils/org-scope.utils';
 import { ProjectsService } from '../../application/services/projects.service';
 import type {
   CreateDataSourceInput,
@@ -38,16 +39,22 @@ export class ProjectsController {
   private getScope(
     session: UserSession,
     organizationId?: string,
+    scopeMode?: 'all',
   ): {
     userId: string;
     platformRole: PlatformRole;
     activeOrganizationId: string | null;
     organizationId?: string;
+    scopeMode?: 'all';
   } {
     const platformRole = getPlatformRole(session);
     const activeOrganizationId = getActiveOrganizationId(session);
 
-    if (platformRole !== 'superadmin' && !activeOrganizationId) {
+    if (
+      platformRole !== 'superadmin' &&
+      !activeOrganizationId &&
+      scopeMode !== 'all'
+    ) {
       throw new HttpException(
         'Active organization required',
         HttpStatus.FORBIDDEN,
@@ -59,6 +66,7 @@ export class ProjectsController {
       platformRole,
       activeOrganizationId,
       organizationId,
+      scopeMode,
     };
   }
 
@@ -67,7 +75,18 @@ export class ProjectsController {
   async list(
     @Session() session: UserSession,
     @Query('organizationId') organizationId?: string,
+    @Query('scope') scope?: string,
   ) {
+    // Validate scope=all against role via shared helper (throws 400 for non-superadmin).
+    // For any other path we preserve the existing behavior.
+    if (scope === 'all') {
+      resolveOrgScope(session, { scope: 'all' });
+      return {
+        data: await this.projectsService.listForScope(
+          this.getScope(session, undefined, 'all'),
+        ),
+      };
+    }
     return {
       data: await this.projectsService.listForScope(
         this.getScope(session, organizationId),
@@ -140,7 +159,7 @@ export class ProjectsController {
   }
 
   @Post(':id/sources')
-  @RequirePermissions('project:update')
+  @RequirePermissions('project:manage-sources')
   async addSource(
     @Session() session: UserSession,
     @Param('id') id: string,
@@ -160,7 +179,7 @@ export class ProjectsController {
   }
 
   @Delete(':id/sources/:sourceId')
-  @RequirePermissions('project:update')
+  @RequirePermissions('project:manage-sources')
   async removeSource(
     @Session() session: UserSession,
     @Param('id') id: string,

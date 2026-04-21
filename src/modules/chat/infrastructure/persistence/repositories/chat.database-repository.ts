@@ -78,6 +78,26 @@ export class ChatDatabaseRepository implements IChatRepository {
     return this.db.query<ConversationRow>(sql, params);
   }
 
+  async listAllUserConversations(
+    userId: string,
+    projectId?: string,
+  ): Promise<ConversationRow[]> {
+    const params: unknown[] = [userId];
+    let sql = `SELECT ${CONVERSATION_COLUMNS}
+       FROM conversation c
+       ${CONVERSATION_JOINS}
+       WHERE c.user_id = $1`;
+
+    if (projectId) {
+      params.push(projectId);
+      sql += ` AND c.project_id = $${params.length}`;
+    }
+
+    sql += ' ORDER BY c.updated_at DESC';
+
+    return this.db.query<ConversationRow>(sql, params);
+  }
+
   async findConversationById(
     conversationId: string,
     userId: string,

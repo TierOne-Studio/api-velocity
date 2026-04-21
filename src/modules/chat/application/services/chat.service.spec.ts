@@ -116,6 +116,7 @@ describe('ChatService', () => {
   beforeEach(async () => {
     repository = {
       listConversations: jest.fn(),
+      listAllUserConversations: jest.fn(),
       findConversationById: jest.fn(),
       createConversation: jest.fn(),
       updateConversationTitle: jest.fn(),
@@ -209,6 +210,42 @@ describe('ChatService', () => {
       'org-1',
       'proj-1',
     );
+  });
+
+  it('routes superadmin scopeMode=all to listAllUserConversations (skipping org filter)', async () => {
+    repository.listAllUserConversations.mockResolvedValue([]);
+
+    await service.listConversations({
+      platformRole: 'superadmin',
+      activeOrganizationId: 'org-1',
+      userId: 'user-super',
+      scopeMode: 'all',
+    });
+
+    expect(repository.listAllUserConversations).toHaveBeenCalledWith(
+      'user-super',
+      undefined,
+    );
+    expect(repository.listConversations).not.toHaveBeenCalled();
+    expect(organizationsService.findById).not.toHaveBeenCalled();
+  });
+
+  it('ignores scopeMode=all for non-superadmin (falls back to single-org listing)', async () => {
+    repository.listConversations.mockResolvedValue([]);
+
+    await service.listConversations({
+      platformRole: 'manager',
+      activeOrganizationId: 'org-1',
+      userId: 'user-1',
+      scopeMode: 'all',
+    });
+
+    expect(repository.listConversations).toHaveBeenCalledWith(
+      'user-1',
+      'org-1',
+      undefined,
+    );
+    expect(repository.listAllUserConversations).not.toHaveBeenCalled();
   });
 
   it('creates a conversation inside the active organization scope', async () => {

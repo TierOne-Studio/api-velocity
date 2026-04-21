@@ -20,6 +20,7 @@ type ChatScopeParams = {
   platformRole: 'superadmin' | 'admin' | 'manager' | 'member';
   activeOrganizationId: string | null;
   organizationId?: string;
+  scopeMode?: 'all';
 };
 
 @Injectable()
@@ -34,6 +35,15 @@ export class ChatService {
   async listConversations(
     params: ChatScopeParams & { userId: string; projectId?: string },
   ) {
+    // Superadmin cross-org view: caller's own conversations across every org.
+    if (params.scopeMode === 'all' && params.platformRole === 'superadmin') {
+      const rows = await this.chatRepository.listAllUserConversations(
+        params.userId,
+        params.projectId,
+      );
+      return rows.map(rowToConversationSummary);
+    }
+
     const organizationId = await this.requireOrganizationId(params, 'read');
 
     const rows = await this.chatRepository.listConversations(

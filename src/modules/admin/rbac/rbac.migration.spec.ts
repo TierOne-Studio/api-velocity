@@ -78,7 +78,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_015 already run
         .mockResolvedValueOnce(true) // rbac_016 already run
         .mockResolvedValueOnce(true) // rbac_017 already run
-        .mockResolvedValueOnce(true); // rbac_018 already run
+        .mockResolvedValueOnce(true) // rbac_018 already run
+        .mockResolvedValueOnce(true); // rbac_019 already run
 
       const consoleSpy = jest
         .spyOn(console, 'log')
@@ -111,7 +112,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false) // rbac_015 NOT run
         .mockResolvedValueOnce(false) // rbac_016 NOT run
         .mockResolvedValueOnce(false) // rbac_017 NOT run
-        .mockResolvedValueOnce(true); // rbac_018 already run
+        .mockResolvedValueOnce(true) // rbac_018 already run
+        .mockResolvedValueOnce(true); // rbac_019 already run
 
       // rbac_013 calls seedDefaultOrganization → UPSERT returns new org id.
       // Use mockImplementation so it isn't consumed by earlier migrations that also call queryOne.
@@ -434,12 +436,16 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce({ id: 'perm-user-create' })
         .mockResolvedValueOnce({ id: 'perm-user-read' })
         .mockResolvedValueOnce({ id: 'perm-user-update' })
+        .mockResolvedValueOnce({ id: 'perm-project-read' })
+        .mockResolvedValueOnce({ id: 'perm-project-update' })
+        .mockResolvedValueOnce({ id: 'perm-project-manage-sources' })
         .mockResolvedValueOnce({ id: 'perm-dashboard-view' })
         .mockResolvedValueOnce({ id: 'member-role-1' })
         .mockResolvedValueOnce({ id: 'perm-member-org-read' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-read' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-create' })
-        .mockResolvedValueOnce({ id: 'perm-member-chat-stream' });
+        .mockResolvedValueOnce({ id: 'perm-member-chat-stream' })
+        .mockResolvedValueOnce({ id: 'perm-member-project-read' });
 
       await service.normalizeOrganizationDefaultRolePermissions();
 
@@ -473,6 +479,12 @@ describe('RbacMigrationService', () => {
           'read',
           'user',
           'update',
+          'project',
+          'read',
+          'project',
+          'update',
+          'project',
+          'manage-sources',
           'dashboard',
           'view',
         ],
@@ -489,6 +501,8 @@ describe('RbacMigrationService', () => {
           'create',
           'chat',
           'stream',
+          'project',
+          'read',
         ],
       );
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -1033,7 +1047,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_015 already run
         .mockResolvedValueOnce(true) // rbac_016 already run
         .mockResolvedValueOnce(true) // rbac_017 already run
-        .mockResolvedValueOnce(true); // rbac_018 already run
+        .mockResolvedValueOnce(true) // rbac_018 already run
+        .mockResolvedValueOnce(true); // rbac_019 already run
 
       // Needed by backfillRolePermissions and assignAllPermissionsToAdmin
       dbService.queryOne.mockResolvedValue(null);
@@ -1458,7 +1473,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_015
         .mockResolvedValueOnce(true) // rbac_016
         .mockResolvedValueOnce(true) // rbac_017
-        .mockResolvedValueOnce(false); // rbac_018 NOT run
+        .mockResolvedValueOnce(false) // rbac_018 NOT run
+        .mockResolvedValueOnce(true); // rbac_019 already run
 
       dbService.query.mockImplementation(async (sql: string) => {
         if (sql.includes('SELECT id FROM organization')) return [];

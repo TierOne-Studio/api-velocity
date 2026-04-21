@@ -28,6 +28,14 @@ export interface IChatRepository {
     organizationId: string,
     projectId?: string,
   ): Promise<ConversationRow[]>;
+  /**
+   * Cross-organization list for a user (superadmin system view).
+   * Filters only by user_id — returns the caller's own conversations in every org.
+   */
+  listAllUserConversations(
+    userId: string,
+    projectId?: string,
+  ): Promise<ConversationRow[]>;
   findConversationById(
     conversationId: string,
     userId: string,

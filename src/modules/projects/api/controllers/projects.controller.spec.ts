@@ -87,6 +87,25 @@ describe('ProjectsController', () => {
     );
   });
 
+  it('forwards scope=all for superadmin as scopeMode:all', async () => {
+    projectsService.listForScope.mockResolvedValue([]);
+
+    await controller.list(superadminSession, undefined, 'all');
+
+    expect(projectsService.listForScope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platformRole: 'superadmin',
+        scopeMode: 'all',
+      }),
+    );
+  });
+
+  it('rejects scope=all for non-superadmin with BadRequest', async () => {
+    await expect(
+      controller.list(adminSession, undefined, 'all'),
+    ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+  });
+
   it('rejects create calls without a name or organizationId', async () => {
     await expect(
       controller.create(adminSession, { name: 'x' } as never),

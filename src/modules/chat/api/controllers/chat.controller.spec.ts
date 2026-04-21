@@ -88,6 +88,40 @@ describe('ChatController', () => {
     });
   });
 
+  it('forwards scope=all for superadmin as scopeMode:all', async () => {
+    chatService.listConversations.mockResolvedValue([]);
+    const superadminSessionLocal = {
+      user: { id: 'user-super', role: 'superadmin' },
+      session: { activeOrganizationId: null },
+    } as never;
+
+    await controller.listConversations(
+      superadminSessionLocal,
+      undefined,
+      undefined,
+      'all',
+    );
+
+    expect(chatService.listConversations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platformRole: 'superadmin',
+        scopeMode: 'all',
+        userId: 'user-super',
+      }),
+    );
+  });
+
+  it('rejects scope=all for non-superadmin with BadRequest', async () => {
+    await expect(
+      controller.listConversations(
+        managerSession,
+        undefined,
+        undefined,
+        'all',
+      ),
+    ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+  });
+
   it('creates a conversation with actor context', async () => {
     chatService.createConversation.mockResolvedValue({
       id: 'conversation-1',
