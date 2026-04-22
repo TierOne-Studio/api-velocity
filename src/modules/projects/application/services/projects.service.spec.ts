@@ -61,6 +61,20 @@ describe('ProjectsService', () => {
   let repository: jest.Mocked<IProjectsRepository>;
   let airweaveService: jest.Mocked<AirweaveService>;
   let adminOrganizationsService: jest.Mocked<AdminOrganizationsService>;
+  let sqlConnectionsService: {
+    findByIdForAttach: jest.MockedFunction<
+      (
+        orgId: string,
+        id: string,
+      ) => Promise<{
+        id: string;
+        organizationId: string;
+        name: string;
+        status: 'ready' | 'connecting' | 'error';
+        statusError: string | null;
+      } | null>
+    >;
+  };
   let service: ProjectsService;
 
   beforeEach(() => {
@@ -78,10 +92,16 @@ describe('ProjectsService', () => {
       findById: jest.fn(),
     } as unknown as jest.Mocked<AdminOrganizationsService>;
 
+    sqlConnectionsService = {
+      findByIdForAttach:
+        jest.fn() as (typeof sqlConnectionsService)['findByIdForAttach'],
+    };
+
     service = new ProjectsService(
       repository,
       airweaveService,
       adminOrganizationsService,
+      sqlConnectionsService as never,
     );
   });
 
@@ -315,20 +335,44 @@ describe('ProjectsService', () => {
   });
 
   describe('addSource', () => {
-    it('rejects database sources as not yet supported', async () => {
+    it('attaches a database source by resolving the org SQL connection', async () => {
       repository.findById.mockResolvedValue(orgProject);
+      const sqlConn = {
+        id: 'db-1',
+        organizationId: 'org-1',
+        name: 'Prod replica',
+        status: 'ready' as const,
+        statusError: null,
+      };
+      sqlConnectionsService.findByIdForAttach.mockResolvedValue(sqlConn);
+      const createdRow = {
+        id: 'src-db-1',
+        project_id: 'project-1',
+        kind: 'database' as const,
+        name: 'Prod replica',
+        config: { connectionId: 'db-1', connectionName: 'Prod replica' },
+        status: 'ready' as const,
+        status_detail: null,
+        created_at: '2024-01-01T00:00:00.000Z',
+        updated_at: '2024-01-01T00:00:00.000Z',
+      };
+      repository.createSource.mockResolvedValue(createdRow);
 
-      await expect(
-        service.addSource(
-          'project-1',
-          {
-            kind: 'database',
-            name: 'Prod replica',
-            config: { connectionRef: 'db-1' },
-          },
-          adminScope,
-        ),
-      ).rejects.toBeInstanceOf(NotImplementedException);
+      const result = await service.addSource(
+        'project-1',
+        {
+          kind: 'database',
+          name: 'Prod replica',
+          config: { connectionId: 'db-1' },
+        },
+        adminScope,
+      );
+
+      expect(result.kind).toBe('database');
+      expect(result.config).toEqual({
+        connectionId: 'db-1',
+        connectionName: 'Prod replica',
+      });
     });
 
     it('rejects external sources as not yet supported', async () => {

@@ -278,7 +278,7 @@ describe('ConfigService', () => {
       const prompt = configService.getChatSystemPrompt();
       expect(prompt).toContain('expert knowledge assistant');
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('CHAT_SYSTEM_PROMPT_PATH'),
+        expect.stringContaining('chat system prompt'),
         expect.objectContaining({ error: expect.any(String) }),
       );
     });

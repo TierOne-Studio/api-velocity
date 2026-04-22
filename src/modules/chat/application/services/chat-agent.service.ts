@@ -10,6 +10,11 @@ import { createAgent } from 'langchain';
 import { ConfigService } from '../../../../shared/config';
 import type { AirweaveSearchResultSummary } from '../../../airweave/application/services/airweave.service';
 import { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
+import type {
+  AgentToolContext,
+  AgentToolEvent,
+  AgentToolPersistedCall,
+} from '../../../projects/application/providers/data-source-provider.interface';
 import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
 import {
   createSearchKnowledgeBaseTool,
@@ -20,6 +25,9 @@ type GenerateReplyParams = {
   organizationName: string;
   projectName: string;
   projectId: string;
+  orgId: string | null;
+  userId: string;
+  conversationId: string | null;
   sources: ProjectDataSource[];
   question: string;
   previousMessages: Array<{
@@ -37,6 +45,16 @@ export type ChatStreamEvent =
   | { type: 'thinking' }
   | { type: 'searching'; query: string }
   | { type: 'chunk'; content: string }
+  | {
+      type: 'sql_executed';
+      connectionId: string;
+      connectionName: string;
+      sql: string;
+      rowCount: number;
+      rows: unknown[];
+      truncated: boolean;
+      durationMs: number;
+    }
   | { type: 'done'; reply: ChatReply };
 
 // Appended to the configured expert-persona system prompt only in the agent
@@ -156,81 +174,129 @@ export class ChatAgentService {
     apiKey: string,
     params: GenerateReplyParams,
   ): Promise<ChatReply> {
-    const collectedSources: AirweaveSearchResultSummary[] = [];
-    const searchTool = createSearchKnowledgeBaseTool({
-      projectId: params.projectId,
-      sources: params.sources,
-      registry: this.registry,
-      sourcesSink: collectedSources,
-      resultLimit: this.configService.getChatAgentToolResultLimit(),
-      resultCharCap: this.configService.getChatAgentToolResultCharCap(),
-      searchTier: this.configService.getChatAgentSearchTier(),
-      retrievalStrategy: this.configService.getChatAgentRetrievalStrategy(),
-    });
+    const ctx = this.buildAgentContext(params);
+    try {
+      const collectedSources: AirweaveSearchResultSummary[] = [];
+      const searchTool = createSearchKnowledgeBaseTool({
+        projectId: params.projectId,
+        sources: params.sources,
+        registry: this.registry,
+        sourcesSink: collectedSources,
+        resultLimit: this.configService.getChatAgentToolResultLimit(),
+        resultCharCap: this.configService.getChatAgentToolResultCharCap(),
+        searchTier: this.configService.getChatAgentSearchTier(),
+        retrievalStrategy: this.configService.getChatAgentRetrievalStrategy(),
+      });
 
-    const systemPrompt = this.buildAgentSystemPrompt(params);
-    const maxIterations = this.configService.getChatAgentMaxIterations();
-
-    const agent = createAgent({
-      model: this.getOrCreateLlm(apiKey) as BaseChatModel,
-      tools: [searchTool],
-      systemPrompt,
-    });
-
-    const historyWindow = this.configService.getChatAgentHistoryWindow();
-    const historyMessages: BaseMessage[] = params.previousMessages
-      .slice(-historyWindow)
-      .map((message) =>
-        message.role === 'assistant'
-          ? new AIMessage(message.content)
-          : new HumanMessage(message.content),
+      const providerTools = this.registry.getAgentToolsFor(
+        params.sources,
+        ctx,
       );
-    const messages: BaseMessage[] = [
-      ...historyMessages,
-      new HumanMessage(this.buildAgentUserMessage(params)),
-    ];
 
-    const recursionLimit = Math.max(10, maxIterations * 4);
+      const systemPrompt = this.buildAgentSystemPrompt(params);
+      const maxIterations = this.configService.getChatAgentMaxIterations();
 
-    const result = await agent.invoke(
-      { messages } as Parameters<typeof agent.invoke>[0],
-      { recursionLimit },
-    );
+      const agent = createAgent({
+        model: this.getOrCreateLlm(apiKey) as BaseChatModel,
+        tools: [searchTool, ...providerTools],
+        systemPrompt,
+      });
 
-    const resultMessages = (result?.messages ?? []) as BaseMessage[];
-    const finalContent = this.extractFinalAssistantText(resultMessages);
-    if (!finalContent) {
-      throw new Error('Agent produced no assistant content');
+      const historyWindow = this.configService.getChatAgentHistoryWindow();
+      const historyMessages: BaseMessage[] = params.previousMessages
+        .slice(-historyWindow)
+        .map((message) =>
+          message.role === 'assistant'
+            ? new AIMessage(message.content)
+            : new HumanMessage(message.content),
+        );
+      const messages: BaseMessage[] = [
+        ...historyMessages,
+        new HumanMessage(this.buildAgentUserMessage(params)),
+      ];
+
+      const recursionLimit = Math.max(10, maxIterations * 4);
+
+      const result = await agent.invoke(
+        { messages } as Parameters<typeof agent.invoke>[0],
+        { recursionLimit },
+      );
+
+      const resultMessages = (result?.messages ?? []) as BaseMessage[];
+      const finalContent = this.extractFinalAssistantText(resultMessages);
+      if (!finalContent) {
+        throw new Error('Agent produced no assistant content');
+      }
+
+      const toolCallCount = this.countToolMessages(resultMessages);
+      const maxSources = this.configService.getChatAgentMaxSources();
+      const uniqueSources = dedupeAndCapSources(collectedSources, maxSources);
+
+      const finalAiMsg = resultMessages
+        .filter((m) => m._getType() === 'ai')
+        .at(-1) as AIMessage | undefined;
+      const usageMeta = finalAiMsg?.usage_metadata as
+        | {
+            input_tokens?: number;
+            output_tokens?: number;
+            total_tokens?: number;
+          }
+        | undefined;
+      const promptTokens = usageMeta?.input_tokens ?? null;
+      const completionTokens = usageMeta?.output_tokens ?? null;
+      const totalTokens = usageMeta?.total_tokens ?? null;
+
+      return {
+        content: finalContent,
+        metadata: {
+          generator: 'langchain-agent',
+          sources: this.mapSources(uniqueSources),
+          resultCount: uniqueSources.length,
+          toolCallCount,
+          ...(ctx.persistedCalls.length > 0 && {
+            sqlCalls: ctx.persistedCalls,
+          }),
+          ...(totalTokens !== null && {
+            promptTokens,
+            completionTokens,
+            totalTokens,
+          }),
+        },
+      };
+    } finally {
+      await this.runCleanupCallbacks(ctx);
     }
+  }
 
-    const toolCallCount = this.countToolMessages(resultMessages);
-    const maxSources = this.configService.getChatAgentMaxSources();
-    const uniqueSources = dedupeAndCapSources(collectedSources, maxSources);
-
-    const finalAiMsg = resultMessages
-      .filter((m) => m._getType() === 'ai')
-      .at(-1) as AIMessage | undefined;
-    const usageMeta = finalAiMsg?.usage_metadata as
-      | { input_tokens?: number; output_tokens?: number; total_tokens?: number }
-      | undefined;
-    const promptTokens = usageMeta?.input_tokens ?? null;
-    const completionTokens = usageMeta?.output_tokens ?? null;
-    const totalTokens = usageMeta?.total_tokens ?? null;
-
+  private buildAgentContext(params: GenerateReplyParams): AgentToolContext {
     return {
-      content: finalContent,
-      metadata: {
-        generator: 'langchain-agent',
-        sources: this.mapSources(uniqueSources),
-        resultCount: uniqueSources.length,
-        toolCallCount,
-        ...(totalTokens !== null && {
-          promptTokens,
-          completionTokens,
-          totalTokens,
-        }),
-      },
+      orgId: params.orgId,
+      userId: params.userId,
+      conversationId: params.conversationId,
+      projectId: params.projectId,
+      signal: new AbortController().signal,
+      eventSink: [] as AgentToolEvent[],
+      persistedCalls: [] as AgentToolPersistedCall[],
+      cleanupCallbacks: [],
     };
+  }
+
+  private async runCleanupCallbacks(ctx: AgentToolContext): Promise<void> {
+    for (const cb of ctx.cleanupCallbacks) {
+      try {
+        await cb();
+      } catch (error) {
+        console.warn('[ChatAgentService] cleanup callback failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  private drainSqlEvents(ctx: AgentToolContext): AgentToolEvent[] {
+    if (ctx.eventSink.length === 0) return [];
+    const drained = ctx.eventSink.splice(0, ctx.eventSink.length);
+    return drained;
   }
 
   /**
@@ -253,6 +319,8 @@ export class ChatAgentService {
       return;
     }
 
+    const ctx = this.buildAgentContext(params);
+    try {
     const collectedSources: AirweaveSearchResultSummary[] = [];
     const searchTool = createSearchKnowledgeBaseTool({
       projectId: params.projectId,
@@ -265,12 +333,13 @@ export class ChatAgentService {
       retrievalStrategy: this.configService.getChatAgentRetrievalStrategy(),
     });
 
+    const providerTools = this.registry.getAgentToolsFor(params.sources, ctx);
     const systemPrompt = this.buildAgentSystemPrompt(params);
     const maxIterations = this.configService.getChatAgentMaxIterations();
 
     const agent = createAgent({
       model: this.getOrCreateLlm(apiKey) as BaseChatModel,
-      tools: [searchTool],
+      tools: [searchTool, ...providerTools],
       systemPrompt,
     });
 
@@ -314,9 +383,12 @@ export class ChatAgentService {
 
         const messageType = this.getMessageType(message);
 
-        // Tool messages = search tool completed
+        // Tool messages = search tool completed; drain any pushed sql events.
         if (messageType === 'tool') {
           toolCallCount++;
+          for (const ev of this.drainSqlEvents(ctx)) {
+            yield ev;
+          }
           continue;
         }
 
@@ -352,6 +424,11 @@ export class ChatAgentService {
             }
           }
         }
+      }
+
+      // Drain any residual sql events pushed after the final tool message.
+      for (const ev of this.drainSqlEvents(ctx)) {
+        yield ev;
       }
     } catch (streamError) {
       console.warn(
@@ -405,6 +482,9 @@ export class ChatAgentService {
         sources: this.mapSources(uniqueSources),
         resultCount: uniqueSources.length,
         toolCallCount,
+        ...(ctx.persistedCalls.length > 0 && {
+          sqlCalls: ctx.persistedCalls,
+        }),
         ...(streamTotalTokens !== null && {
           promptTokens: streamPromptTokens,
           completionTokens: streamCompletionTokens,
@@ -415,6 +495,9 @@ export class ChatAgentService {
 
     this.logReplySummary(reply, startedAt);
     yield { type: 'done', reply };
+    } finally {
+      await this.runCleanupCallbacks(ctx);
+    }
   }
 
   private fakeChunkContent(content: string, chunkSize = 120): string[] {

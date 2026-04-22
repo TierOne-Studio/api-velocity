@@ -242,6 +242,19 @@ export class ChatController {
           continue;
         }
 
+        if (event.type === 'sql_executed') {
+          this.writeSseEvent(response, 'sql_executed', {
+            connectionId: event.connectionId,
+            connectionName: event.connectionName,
+            sql: event.sql,
+            rowCount: event.rowCount,
+            rows: event.rows,
+            truncated: event.truncated,
+            durationMs: event.durationMs,
+          });
+          continue;
+        }
+
         if (event.type === 'done') {
           finalReply = event.reply;
 

@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@airweave/sdk": "^0.9.60",
+    "@langchain/community": "^1.1.27",
     "@langchain/core": "^1.1.39",
     "@langchain/openai": "^1.4.2",
     "@nestjs/common": "^11.0.17",

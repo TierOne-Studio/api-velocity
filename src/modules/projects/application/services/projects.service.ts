@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { AirweaveService } from '../../../airweave/application/services/airweave.service';
 import { AdminOrganizationsService } from '../../../admin/organizations/application/services/admin-organizations.service';
+import { SqlConnectionsService } from '../../../sql-connections/application/services/sql-connections.service';
 import type {
   CreateDataSourceInput,
   CreateProjectInput,
@@ -41,6 +42,7 @@ export class ProjectsService {
     private readonly repository: IProjectsRepository,
     private readonly airweaveService: AirweaveService,
     private readonly adminOrganizationsService: AdminOrganizationsService,
+    private readonly sqlConnectionsService: SqlConnectionsService,
   ) {}
 
   async listForScope(scope: CallerScope): Promise<ProjectSummary[]> {
@@ -223,10 +225,44 @@ export class ProjectsService {
     input: CreateDataSourceInput,
     platformRole: PlatformRole,
   ): Promise<ProjectDataSourceRow> {
-    if (input.kind === 'database' || input.kind === 'external') {
+    if (input.kind === 'external') {
       throw new NotImplementedException(
-        `Data source kind "${input.kind}" is not yet supported`,
+        'Data source kind "external" is not yet supported',
       );
+    }
+
+    if (input.kind === 'database') {
+      const connectionId = input.config?.connectionId?.trim();
+      if (!connectionId) {
+        throw new BadRequestException('connectionId is required');
+      }
+      const connection =
+        await this.sqlConnectionsService.findByIdForAttach(
+          organizationId,
+          connectionId,
+        );
+      if (!connection) {
+        throw new NotFoundException('SQL connection not found');
+      }
+      // Mirror org-level status into project_data_source.status so the
+      // registry can filter by ready at chat time. Runtime resolver also
+      // re-reads org-level status, so a later flip to error is still safe.
+      const status =
+        connection.status === 'ready' ? 'ready' : connection.status;
+      return this.repository.createSource({
+        id: randomUUID(),
+        projectId,
+        input: {
+          kind: 'database',
+          name: input.name?.trim() || connection.name,
+          config: {
+            connectionId: connection.id,
+            connectionName: connection.name,
+          },
+        },
+        status,
+        statusDetail: connection.statusError ?? null,
+      });
     }
 
     if (input.kind === 'airweave_collection') {
@@ -326,10 +362,14 @@ export class ProjectsService {
     }
 
     if (row.kind === 'database') {
+      const cfg = (row.config ?? {}) as Record<string, unknown>;
       return {
         ...base,
         kind: 'database',
-        config: row.config,
+        config: {
+          connectionId: String(cfg.connectionId ?? ''),
+          connectionName: String(cfg.connectionName ?? ''),
+        },
       };
     }
 

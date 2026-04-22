@@ -145,6 +145,9 @@ export class ChatService {
       organizationName: organization.name,
       projectName,
       projectId: conversation.projectId,
+      orgId: conversation.organizationId,
+      userId: params.userId,
+      conversationId: conversation.id,
       sources,
       question: params.content,
       previousMessages: existingMessages.map((message) => ({
@@ -247,6 +250,9 @@ export class ChatService {
       organizationName: organization.name,
       projectName,
       projectId: conversation.projectId,
+      orgId: conversation.organizationId,
+      userId: params.userId,
+      conversationId: conversation.id,
       sources,
       question: params.content,
       previousMessages: existingMessages.map((message) => ({
