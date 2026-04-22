@@ -42,7 +42,7 @@ export class SqlConnectionTester {
     };
 
     try {
-      await this.raceWithTimeout(ds.initialize(), timeoutMs, 'connect timeout');
+      await this.initWithTimeout(ds, timeoutMs);
       await ds.transaction(async (tx) => {
         await tx.query('SET TRANSACTION READ ONLY');
         await tx.query('SELECT 1');
@@ -56,20 +56,30 @@ export class SqlConnectionTester {
     }
   }
 
-  private raceWithTimeout<T>(
-    promise: Promise<T>,
-    ms: number,
-    label: string,
-  ): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(label)), ms);
-      promise
+  /**
+   * Wraps `ds.initialize()` with a timeout. If the timer fires first, we
+   * still observe the in-flight initialization so a late success can be
+   * destroyed instead of leaking its underlying connection pool.
+   */
+  private initWithTimeout(ds: DataSource, ms: number): Promise<DataSource> {
+    return new Promise<DataSource>((resolve, reject) => {
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        reject(new Error('connect timeout'));
+      }, ms);
+      ds.initialize()
         .then((value) => {
           clearTimeout(timer);
+          if (timedOut) {
+            void value.destroy().catch(() => undefined);
+            return;
+          }
           resolve(value);
         })
         .catch((error) => {
           clearTimeout(timer);
+          if (timedOut) return;
           reject(error);
         });
     });

@@ -99,7 +99,7 @@ export class SqlConnectionsController {
   }
 
   private assertObject(value: unknown, label: string): void {
-    if (!value || typeof value !== 'object') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new BadRequestException(`${label} must be an object`);
     }
   }

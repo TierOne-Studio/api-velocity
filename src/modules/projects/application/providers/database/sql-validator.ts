@@ -37,10 +37,22 @@ const CTE_WRITE_REGEX =
   /\bWITH\b[\s\S]*?\bAS\b[\s\S]*?\b(INSERT|UPDATE|DELETE)\b/i;
 
 export function stripComments(sql: string): string {
-  // Remove /* ... */ block comments and -- line comments.
-  return sql
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/--[^\n]*/g, ' ');
+  // Remove /* ... */ block comments and -- line comments. Block comments
+  // collapse to the empty string so tokens the user split across a comment
+  // (e.g. `IN/*x*/SERT`) fuse back into their underlying keyword — otherwise
+  // the denylist's word-boundary match could be bypassed even though Postgres
+  // would still reject the statement at parse time. Line comments keep a
+  // single space because they always terminate at a newline boundary and
+  // never bridge two halves of the same token.
+  let previous: string;
+  let current = sql;
+  // Loop to handle rare nested block-comment patterns (Postgres supports
+  // `/* /* */ */`). Each pass strips the innermost non-overlapping match.
+  do {
+    previous = current;
+    current = current.replace(/\/\*[\s\S]*?\*\//g, '');
+  } while (current !== previous);
+  return current.replace(/--[^\n]*/g, ' ');
 }
 
 export function validateReadOnlySql(

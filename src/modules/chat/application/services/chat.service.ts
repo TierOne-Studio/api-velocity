@@ -186,6 +186,7 @@ export class ChatService {
       conversationId: string;
       userId: string;
       content: string;
+      signal?: AbortSignal;
     },
   ): AsyncGenerator<
     | ChatStreamEvent
@@ -259,6 +260,7 @@ export class ChatService {
         role: message.role,
         content: message.content,
       })),
+      signal: params.signal,
     });
 
     for await (const event of agentStream) {

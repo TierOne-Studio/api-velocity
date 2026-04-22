@@ -47,9 +47,13 @@ export class DatabaseSourceProvider implements DataSourceProvider {
     const factory = this.chatToSql.createFactory();
     ctx.cleanupCallbacks.push(() => factory.destroyAll());
 
+    // The LLM-facing `source_id` must be the underlying SQL connection id —
+    // that's what the inner `query-database-tool` matches against. Passing
+    // the project-side data-source id here confused the LLM into sending
+    // values the tool then reported as `connection_not_found`.
     const description = this.configService.getQueryDatabaseToolDescription(
       databaseSources.map((s) => ({
-        id: s.id,
+        id: s.config.connectionId,
         name: s.config.connectionName || s.name,
       })),
     );
@@ -105,13 +109,16 @@ export class DatabaseSourceProvider implements DataSourceProvider {
     );
     const rows = await this.sqlConnections.resolveForAgent(orgId, ids);
     const rowById = new Map(rows.map((row) => [row.id, row] as const));
+    // Walk unique ids (not raw sources) to avoid duplicates when two
+    // project_data_source rows point at the same SQL connection.
     const out: ResolvedSqlConnection[] = [];
-    for (const source of sources) {
-      const row = rowById.get(source.config.connectionId);
+    for (const id of ids) {
+      const row = rowById.get(id);
       if (!row || row.status !== 'ready') continue;
+      const source = sources.find((s) => s.config.connectionId === id);
       out.push({
         id: row.id,
-        name: source.config.connectionName || row.name,
+        name: source?.config.connectionName || row.name,
         host: row.host,
         port: row.port,
         database: row.database,

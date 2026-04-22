@@ -33,13 +33,18 @@ export function createQueryDatabaseTool(
     throw new Error('createQueryDatabaseTool requires at least one connection');
   }
 
+  // Always keep `source_id` optional on the schema — `resolveConnection()`
+  // below returns a structured `{ error: 'ambiguous_source', available }`
+  // JSON when it's missing with multiple connections. Letting Zod hard-fail
+  // here instead would bubble up as an unhandled schema error to the LLM.
   const sourceIdSchema =
     connections.length === 1
       ? z.string().optional()
       : z
           .string()
+          .optional()
           .describe(
-            'Required when multiple databases are attached. Must be the id of one of the available connections.',
+            'Required when multiple databases are attached. Must be the id of one of the available connections; omitting it returns an ambiguous_source error listing the available ids.',
           );
 
   const schema = z.object({

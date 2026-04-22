@@ -129,7 +129,15 @@ export class SqlConnectionsService {
     };
 
     let newPasswordPlaintext: string | null = null;
-    if (input.password) {
+    if (input.password !== undefined) {
+      // Empty / whitespace-only means "keep existing". Rather than silently
+      // ignoring we surface it: the form should either omit the field or
+      // supply a real value.
+      if (input.password.trim().length === 0) {
+        throw new BadRequestException(
+          'password cannot be blank; omit the field to keep the existing one',
+        );
+      }
       const encrypted = this.encryptPassword(input.password);
       patch.passwordCiphertext = encrypted.ciphertext;
       patch.passwordIv = encrypted.iv;

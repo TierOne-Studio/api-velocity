@@ -23,6 +23,13 @@ export class ReadOnlySqlDatabase extends SqlDatabase {
   private _limits!: SqlLimits;
   /** Updated every time `run()` passes the validator and begins executing. */
   lastExecutedSql: string | null = null;
+  /**
+   * Captures the raw rows from the most recent `run()` call. Used by the
+   * chat-to-SQL orchestrator to shape results without a second round-trip
+   * to the remote database — the sub-agent consumes only the JSON string
+   * return value, so without this cache we'd have to re-execute the query.
+   */
+  lastExecutedRows: unknown[] | null = null;
 
   static async fromDataSource(
     appDataSource: DataSource,
@@ -51,6 +58,7 @@ export class ReadOnlySqlDatabase extends SqlDatabase {
       throw new ReadOnlyViolation(verdict.reason);
     }
     this.lastExecutedSql = command.trim();
+    this.lastExecutedRows = null;
 
     return this.appDataSource.transaction(async (tx) => {
       await tx.query('SET TRANSACTION READ ONLY');
@@ -61,6 +69,7 @@ export class ReadOnlySqlDatabase extends SqlDatabase {
         `SET LOCAL idle_in_transaction_session_timeout = ${this._limits.idleTimeoutMs}`,
       );
       const rows = await tx.query(command);
+      this.lastExecutedRows = Array.isArray(rows) ? rows : [];
       if (fetch === 'all') return JSON.stringify(rows);
       if (Array.isArray(rows) && rows.length > 0) {
         return JSON.stringify(rows[0]);
@@ -78,6 +87,7 @@ export class ReadOnlySqlDatabase extends SqlDatabase {
       throw new ReadOnlyViolation(verdict.reason);
     }
     this.lastExecutedSql = command.trim();
+    this.lastExecutedRows = null;
     return this.appDataSource.transaction(async (tx) => {
       await tx.query('SET TRANSACTION READ ONLY');
       await tx.query(
@@ -87,7 +97,9 @@ export class ReadOnlySqlDatabase extends SqlDatabase {
         `SET LOCAL idle_in_transaction_session_timeout = ${this._limits.idleTimeoutMs}`,
       );
       const rows = await tx.query(command);
-      return Array.isArray(rows) ? rows : [];
+      const out = Array.isArray(rows) ? rows : [];
+      this.lastExecutedRows = out;
+      return out;
     });
   }
 }

@@ -74,17 +74,24 @@ export class SqlDataSourceFactory {
 
   private raceInit(ds: DataSource, timeoutMs: number): Promise<DataSource> {
     return new Promise<DataSource>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error('connect timeout')),
-        timeoutMs,
-      );
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        reject(new Error('connect timeout'));
+      }, timeoutMs);
       ds.initialize()
         .then((value) => {
           clearTimeout(timer);
+          if (timedOut) {
+            // We've already rejected — cleanup the pool instead of leaking it.
+            void value.destroy().catch(() => undefined);
+            return;
+          }
           resolve(value);
         })
         .catch((err) => {
           clearTimeout(timer);
+          if (timedOut) return;
           reject(err);
         });
     });

@@ -34,6 +34,12 @@ type GenerateReplyParams = {
     role: 'user' | 'assistant' | 'system';
     content: string;
   }>;
+  /**
+   * Optional abort signal from the HTTP transport. Forwarded to every
+   * provider tool via `AgentToolContext.signal` so long-running work
+   * (notably the SQL sub-agent) can cancel when the client disconnects.
+   */
+  signal?: AbortSignal;
 };
 
 type ChatReply = {
@@ -269,12 +275,16 @@ export class ChatAgentService {
   }
 
   private buildAgentContext(params: GenerateReplyParams): AgentToolContext {
+    // Caller-provided signal takes precedence so an HTTP client disconnect
+    // can cancel in-flight tools. When absent we still expose a never-aborted
+    // signal so tool code can rely on the field being present.
+    const signal = params.signal ?? new AbortController().signal;
     return {
       orgId: params.orgId,
       userId: params.userId,
       conversationId: params.conversationId,
       projectId: params.projectId,
-      signal: new AbortController().signal,
+      signal,
       eventSink: [] as AgentToolEvent[],
       persistedCalls: [] as AgentToolPersistedCall[],
       cleanupCallbacks: [],

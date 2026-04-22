@@ -26,6 +26,8 @@ describe('ChatController', () => {
     write: jest.Mock;
     end: jest.Mock;
     flush: jest.Mock;
+    on: jest.Mock;
+    off: jest.Mock;
   };
 
   const managerSession = {
@@ -198,6 +200,8 @@ describe('ChatController', () => {
       write: jest.fn(),
       end: jest.fn(),
       flush: jest.fn(),
+      on: jest.fn(),
+      off: jest.fn(),
     };
 
     // Mock sendMessageStreaming as an async generator
@@ -268,6 +272,8 @@ describe('ChatController', () => {
       write: jest.fn(),
       end: jest.fn(),
       flush: jest.fn(),
+      on: jest.fn(),
+      off: jest.fn(),
     };
 
     async function* failingStream() {

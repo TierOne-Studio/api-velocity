@@ -191,6 +191,13 @@ export class ChatController {
     response.setHeader('Connection', 'keep-alive');
     response.flushHeaders?.();
 
+    // Abort in-flight tool work (notably the SQL sub-agent) when the HTTP
+    // client disconnects. Without this the agent would keep running after
+    // the user closed the tab, wasting downstream DB / LLM budget.
+    const abortController = new AbortController();
+    const onClientClose = () => abortController.abort();
+    response.on('close', onClientClose);
+
     try {
       const scope = this.getScope(session, body.organizationId);
       const validatedConversationId = this.requireTrimmedString(
@@ -207,6 +214,7 @@ export class ChatController {
         conversationId: validatedConversationId,
         content: validatedContent,
         userId: session.user.id,
+        signal: abortController.signal,
       });
 
       let finalReply: {
@@ -295,6 +303,7 @@ export class ChatController {
         message,
       });
     } finally {
+      response.off('close', onClientClose);
       response.end();
     }
   }

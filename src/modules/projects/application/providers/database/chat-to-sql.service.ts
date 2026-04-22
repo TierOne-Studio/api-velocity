@@ -8,7 +8,6 @@ import { runSqlSubAgent } from './sql-sub-agent';
 import {
   ReadOnlyViolation,
   type ResolvedSqlConnection,
-  type ShapedQueryResult,
   type SqlLimits,
 } from './types';
 
@@ -103,7 +102,15 @@ export class ChatToSqlService {
         };
       }
 
-      const shaped = await this.rerunForShapedResult(db, sql, limits);
+      // Reuse the rows captured by the last `run()` call — rerunning to
+      // shape the result doubled the load on the remote database and, under
+      // concurrent traffic, could even produce divergent snapshots.
+      const capturedRows = db.lastExecutedRows;
+      const shaped = shapeQueryResult(capturedRows ?? [], {
+        maxRows: limits.maxRows,
+        maxBytes: limits.maxBytes,
+        maxFieldBytes: limits.maxFieldBytes,
+      });
 
       return {
         ok: true,
@@ -152,21 +159,4 @@ export class ChatToSqlService {
     }
   }
 
-  /**
-   * Re-run the last SQL under the same RO constraints so we can return a
-   * shaped structured result (the sub-agent's tool message contains only the
-   * stringified rows the LLM reasoned over).
-   */
-  private async rerunForShapedResult(
-    db: ReadOnlySqlDatabase,
-    sql: string,
-    limits: SqlLimits,
-  ): Promise<ShapedQueryResult> {
-    const rows = await db.runRaw(sql);
-    return shapeQueryResult(rows, {
-      maxRows: limits.maxRows,
-      maxBytes: limits.maxBytes,
-      maxFieldBytes: limits.maxFieldBytes,
-    });
-  }
 }
