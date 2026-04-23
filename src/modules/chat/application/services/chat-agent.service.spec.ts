@@ -1,5 +1,9 @@
 import { jest } from '@jest/globals';
-import { ChatAgentService } from './chat-agent.service';
+import {
+  ChatAgentService,
+  createStreamingSqlFenceStripper,
+  stripSqlFencesFromReply,
+} from './chat-agent.service';
 import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
 import type { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
 import type {
@@ -392,6 +396,33 @@ describe('ChatAgentService', () => {
       expect(baseIdx).toBeGreaterThanOrEqual(0);
       expect(dbIdx).toBeGreaterThan(baseIdx);
     });
+
+    it('instructs the agent NOT to emit a SQL code block after query_database', () => {
+      // The SPA renders executed SQL from the sql_executed SSE event as a
+      // collapsible panel. If the LLM also emits the SQL in its text reply,
+      // the rendering regularly breaks (closing fence collides with prose,
+      // literal asterisks bleed through). The prompt MUST tell the agent
+      // to reply with prose only.
+      configService.getChatSystemPrompt.mockReturnValue('expert persona body');
+
+      const systemPrompt = (
+        service as unknown as {
+          buildAgentSystemPrompt: (p: {
+            organizationName: string;
+            projectName: string;
+            sources: Array<{ kind: string }>;
+          }) => string;
+        }
+      ).buildAgentSystemPrompt({
+        organizationName: 'Acme',
+        projectName: 'Alpha',
+        sources: [{ kind: 'database' }],
+      });
+
+      expect(systemPrompt).toMatch(/prose only/i);
+      expect(systemPrompt).toMatch(/do not include the sql query/i);
+      expect(systemPrompt).not.toMatch(/closing fence/i);
+    });
   });
 
   describe('LLM caching', () => {
@@ -421,5 +452,115 @@ describe('ChatAgentService', () => {
 
       expect(llm1).not.toBe(llm2);
     });
+  });
+});
+
+describe('stripSqlFencesFromReply', () => {
+  it('removes a properly closed ```sql block', () => {
+    const input =
+      '```sql\nSELECT COUNT(*) FROM "user"\n```\n\nThere are 4 users.';
+    expect(stripSqlFencesFromReply(input)).toBe('There are 4 users.');
+  });
+
+  it('removes a ```sql block whose closing fence is glued to prose (the real-world bug)', () => {
+    // Exact shape from the failing screenshot: closing ``` has no newline
+    // before "Found", so the markdown parser never closes the code block and
+    // the whole rest of the reply renders inside it.
+    const input =
+      '```sql\nSELECT COUNT(*) AS user_count FROM "user" LIMIT 100\n```Found **4** rows in the `"user"` table.';
+    expect(stripSqlFencesFromReply(input)).toBe(
+      'Found **4** rows in the `"user"` table.',
+    );
+  });
+
+  it('is case-insensitive about the SQL language tag', () => {
+    expect(stripSqlFencesFromReply('```SQL\nSELECT 1\n```\nDone.')).toBe(
+      'Done.',
+    );
+  });
+
+  it('removes an unclosed ```sql block that runs to end of reply', () => {
+    expect(stripSqlFencesFromReply('Answer: 4\n```sql\nSELECT 1')).toBe(
+      'Answer: 4',
+    );
+  });
+
+  it('leaves non-SQL fenced code blocks alone', () => {
+    const input = 'Here is code:\n```js\nconsole.log(1)\n```\nEnd.';
+    expect(stripSqlFencesFromReply(input)).toBe(input);
+  });
+
+  it('preserves prose on both sides of the removed block', () => {
+    const input =
+      'There are 4 users.\n\n```sql\nSELECT COUNT(*) FROM "user"\n```\n\nThis reflects current DB state.';
+    expect(stripSqlFencesFromReply(input)).toBe(
+      'There are 4 users.\n\nThis reflects current DB state.',
+    );
+  });
+
+  it('returns the input unchanged when there is no fence', () => {
+    expect(stripSqlFencesFromReply('There are 4 users.')).toBe(
+      'There are 4 users.',
+    );
+  });
+
+  it('handles empty input', () => {
+    expect(stripSqlFencesFromReply('')).toBe('');
+  });
+});
+
+describe('createStreamingSqlFenceStripper', () => {
+  it('strips a ```sql block delivered across multiple chunks', () => {
+    const s = createStreamingSqlFenceStripper();
+    // Token-at-a-time emission simulating an LLM stream
+    const chunks = [
+      '```',
+      'sql\n',
+      'SELECT COUNT(*) FROM "user"\n',
+      '```',
+      'There ',
+      'are 4 users.',
+    ];
+    const out = chunks.map((c) => s.push(c)).join('') + s.flush();
+    expect(out).toBe('There are 4 users.');
+  });
+
+  it('emits content before the fence immediately (minus lookahead)', () => {
+    const s = createStreamingSqlFenceStripper();
+    const emitted = s.push('There are 4 users.\n\n');
+    // Keeps up to 6 chars of lookahead in case ```sql is forming.
+    expect(emitted.length).toBeGreaterThan(0);
+    expect('There are 4 users.\n\n').toContain(emitted);
+
+    // Finishing the stream flushes the retained tail.
+    expect(emitted + s.flush()).toBe('There are 4 users.\n\n');
+  });
+
+  it('passes non-SQL fenced code through untouched', () => {
+    const s = createStreamingSqlFenceStripper();
+    const input = 'Here is JS:\n```js\nconsole.log(1)\n```\nDone.';
+    const out = s.push(input) + s.flush();
+    expect(out).toBe(input);
+  });
+
+  it('drops an unclosed ```sql fence at end of stream', () => {
+    const s = createStreamingSqlFenceStripper();
+    const out =
+      s.push('Answer: 4\n') +
+      s.push('```sql\nSELECT') +
+      s.push(' COUNT(*)') +
+      s.flush();
+    expect(out).toBe('Answer: 4\n');
+  });
+
+  it('handles the glued-closing-fence bug across chunks', () => {
+    const s = createStreamingSqlFenceStripper();
+    // The LLM emits the closing ``` immediately followed by prose in the
+    // same token — exactly the pattern that broke markdown in the screenshot.
+    const out =
+      s.push('```sql\nSELECT 1\n') +
+      s.push('```Found 4 rows.') +
+      s.flush();
+    expect(out).toBe('Found 4 rows.');
   });
 });

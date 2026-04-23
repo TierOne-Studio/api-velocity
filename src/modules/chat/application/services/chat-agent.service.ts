@@ -117,39 +117,155 @@ When you call \`query_database\`, cite the numbers you got back; never reshape t
 
 ## Answer format after query_database
 
-Structure every reply that uses a \`query_database\` result in exactly this order:
+Reply with **prose only** — 1–3 short sentences that directly answer the question using values from \`rows\`. For multi-row results, a small markdown table is fine.
 
-1. The natural-language answer, in plain prose. State the values from \`rows\` directly ("There are 4 users in your database.") — no bold on every number, no backticks around each figure, no headings unless the answer spans multiple entities. Keep it to 1–3 short sentences when the answer is a single number or a handful of rows.
-2. A blank line.
-3. A single fenced SQL block showing the query the inner agent ran, taken verbatim from the tool result's \`sql\` field. This is the LAST thing in the reply. Use exactly this shape (note the closing fence is on its own line with nothing after it):
-
-\`\`\`sql
-SELECT COUNT(*) FROM "user"
-\`\`\`
-
-Never put the closing fence on the same line as SQL or prose. Never put prose after the closing fence. Never wrap the whole reply in a code block. Never nest fences.
-
-For multi-row results, put a short markdown table BEFORE the SQL block (between the prose and the SQL), and still keep the SQL block last so the reply ends cleanly even if a fence is malformed.
+**Do NOT include the SQL query in your reply.** The application UI renders the executed SQL automatically from tool metadata as a separate, collapsible panel beneath your answer. Repeating the SQL in your text creates duplication and renders poorly.
 
 ### Correct example
 
   There are 4 users in your database.
 
-  \`\`\`sql
-  SELECT COUNT(*) AS user_count FROM "user"
-  \`\`\`
-
 ### Incorrect examples (do NOT do this)
 
-- Putting prose inside the code block, or putting the closing fence on the same line as prose:
-
-  \`\`\`sql
-  SELECT COUNT(*) FROM "user"
-  \`\`\`Found **4** users.
-
-- Wrapping the whole reply in one fence.
-- Starting the reply with the SQL block (SQL must come last).
+- Pasting a \`\`\`sql fenced block with the query — the UI already shows it.
+- Wrapping any part of the reply in a code fence.
+- Prefixing the answer with "I ran the query …" or other meta-commentary about tool use.
 `.trim();
+
+// LLMs occasionally ignore the "do not include the SQL query" instruction and
+// emit a fenced code block containing SQL anyway. In practice the model uses
+// either ```sql ... ``` OR a bare ``` ... ``` fence (no language tag). When
+// the closing fence lands on the same line as prose (a common LLM bug), the
+// markdown parser never closes the fence and the whole rest of the reply
+// renders as a single code box with literal **markdown** bleeding through.
+// Since the executed SQL is already carried in metadata.sqlCalls and rendered
+// deterministically on the client via a dedicated panel, any SQL fence in
+// the prose is pure noise. This sanitizer strips it unconditionally but
+// leaves non-SQL fences (```js, ```python, etc.) intact.
+//
+// A fence is treated as SQL if: (a) the language tag is `sql`, OR (b) the
+// first non-whitespace token inside the block is a SQL DML/DDL keyword.
+const SQL_KEYWORDS =
+  '(?:SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|ALTER|DROP|TRUNCATE|MERGE|BEGIN|COMMIT|ROLLBACK|EXPLAIN|SHOW|USE|GRANT|REVOKE)';
+// Matches either explicit ```sql or any ``` followed (after whitespace/newlines) by a SQL keyword.
+const SQL_FENCE_OPEN = new RegExp(
+  `\`\`\`(?:sql\\b|[a-z]*\\s*\\n?\\s*${SQL_KEYWORDS}\\b)`,
+  'i',
+);
+const SQL_FENCE_CLOSED = new RegExp(
+  `\`\`\`(?:sql\\b|[a-z]*\\s*\\n?\\s*${SQL_KEYWORDS}\\b)[\\s\\S]*?\`\`\``,
+  'gi',
+);
+const SQL_FENCE_UNCLOSED = new RegExp(
+  `\`\`\`(?:sql\\b|[a-z]*\\s*\\n?\\s*${SQL_KEYWORDS}\\b)[\\s\\S]*$`,
+  'gi',
+);
+
+export function stripSqlFencesFromReply(content: string): string {
+  if (!content) return content;
+  let out = content;
+  // 1. Properly closed SQL fence (non-greedy so we stop at the FIRST closing
+  //    fence — this also catches the "closing fence glued to prose" bug.)
+  out = out.replace(SQL_FENCE_CLOSED, '');
+  // 2. Unclosed fence running to the end of the reply (defensive).
+  out = out.replace(SQL_FENCE_UNCLOSED, '');
+  // 3. Collapse the blank-line gaps left behind by the removed blocks.
+  out = out.replace(/\n{3,}/g, '\n\n').trim();
+  return out;
+}
+
+// Stateful counterpart for streaming. Each chunk is pushed through `push()`
+// and the stripper returns only the non-SQL tail it is certain about, keeping
+// a small lookahead buffer in case a fence marker straddles a chunk boundary.
+// `flush()` returns any remaining safe tail at end of stream.
+export function createStreamingSqlFenceStripper(): {
+  push(chunk: string): string;
+  flush(): string;
+} {
+  let buf = '';
+  let inFence = false;
+  // When we see a bare ``` we must buffer enough to decide whether it opens
+  // a SQL block (language tag "sql" OR first keyword inside is a SQL verb).
+  // ``` + optional tag + whitespace + longest SQL keyword ("ROLLBACK") easily
+  // fits in 40 chars. Keep generous headroom for models that indent the body.
+  const SQL_DECISION_WINDOW = 64;
+  // The anchored open regex: either ```sql, or ``` followed (optionally by a
+  // lowercase tag and whitespace) by an uppercase SQL keyword.
+  const anchoredOpen = new RegExp(
+    `^\`\`\`(?:sql\\b|[a-z]*\\s*\\n?\\s*${SQL_KEYWORDS}\\b)`,
+    'i',
+  );
+
+  return {
+    push(chunk: string): string {
+      buf += chunk;
+      let out = '';
+      while (buf.length > 0) {
+        if (inFence) {
+          const closeIdx = buf.indexOf('```');
+          if (closeIdx < 0) {
+            // Keep a small tail in case "```" spans chunks, drop the rest.
+            buf = buf.length > 2 ? buf.slice(-2) : buf;
+            return out;
+          }
+          // Skip through the closing fence and any language-tag-like residue.
+          buf = buf.slice(closeIdx + 3);
+          inFence = false;
+          continue;
+        }
+        // Find the next ``` (potential fence open) in the buffer.
+        const tickIdx = buf.indexOf('```');
+        if (tickIdx < 0) {
+          // No backticks at all — emit everything except a 2-char tail in case
+          // "```" straddles the next chunk.
+          if (buf.length > 2) {
+            out += buf.slice(0, buf.length - 2);
+            buf = buf.slice(buf.length - 2);
+          }
+          return out;
+        }
+        // Emit everything BEFORE the backticks immediately.
+        if (tickIdx > 0) {
+          out += buf.slice(0, tickIdx);
+          buf = buf.slice(tickIdx);
+        }
+        // Now buf starts with "```". Decide whether this opens a SQL block.
+        const m = anchoredOpen.exec(buf);
+        if (m) {
+          // Confirmed SQL fence — swallow the opener and enter fence mode.
+          buf = buf.slice(m[0].length);
+          inFence = true;
+          continue;
+        }
+        // Not (yet) a SQL fence. If we have enough characters after ``` to
+        // know for sure (or a second ``` has arrived), emit the ``` as safe
+        // content. Otherwise wait for more chunks.
+        const hasSecondFence = buf.indexOf('```', 3) >= 0;
+        if (buf.length >= SQL_DECISION_WINDOW || hasSecondFence) {
+          // Emit just the first ``` and re-loop; the tail may contain more.
+          out += '```';
+          buf = buf.slice(3);
+          continue;
+        }
+        // Need more data to decide. Hold buf, return what we have so far.
+        return out;
+      }
+      return out;
+    },
+    flush(): string {
+      if (inFence) {
+        // Unclosed fence — drop everything still buffered.
+        buf = '';
+        return '';
+      }
+      // At end of stream, if the buffer still starts with ``` that we were
+      // undecided about, commit to "not SQL" and emit as-is.
+      const tail = buf;
+      buf = '';
+      return tail;
+    },
+  };
+}
 
 @Injectable()
 export class ChatAgentService {
@@ -298,10 +414,11 @@ export class ChatAgentService {
       );
 
       const resultMessages = (result?.messages ?? []) as BaseMessage[];
-      const finalContent = this.extractFinalAssistantText(resultMessages);
-      if (!finalContent) {
+      const rawFinalContent = this.extractFinalAssistantText(resultMessages);
+      if (!rawFinalContent) {
         throw new Error('Agent produced no assistant content');
       }
+      const finalContent = stripSqlFencesFromReply(rawFinalContent);
 
       const toolCallCount = this.countToolMessages(resultMessages);
       const maxSources = this.configService.getChatAgentMaxSources();
@@ -441,6 +558,11 @@ export class ChatAgentService {
     let finalContent = '';
     let toolCallCount = 0;
     let streamFinalAiMsg: AIMessage | undefined;
+    // Strips any ```sql ... ``` blocks token-by-token before yielding chunks
+    // so the live streamed reply never shows the code-block-swallowing bug.
+    // Final content is also run through the pure sanitizer below as a
+    // belt-and-suspenders against token-boundary edge cases.
+    const fenceStripper = createStreamingSqlFenceStripper();
 
     try {
       const stream = await agent.stream(
@@ -496,13 +618,26 @@ export class ChatAgentService {
             // Only yield if this is new content (langgraph can re-emit full state)
             const isLanggraphNode = metadata?.langgraph_node !== undefined;
             if (isLanggraphNode) {
-              // In messages streamMode, each chunk is a delta token — accumulate
-              finalContent += text;
+              // In messages streamMode, each chunk is a delta token — accumulate.
+              // Route through the SQL-fence stripper so any ```sql ... ``` block
+              // is removed from both the streamed chunks and the accumulated
+              // final content before it ever reaches the client or DB.
               streamFinalAiMsg = aiMsg;
-              yield { type: 'chunk', content: text };
+              const safe = fenceStripper.push(text);
+              if (safe.length > 0) {
+                finalContent += safe;
+                yield { type: 'chunk', content: safe };
+              }
             }
           }
         }
+      }
+
+      // Flush any remaining non-SQL tail held back by the stripper.
+      const trailing = fenceStripper.flush();
+      if (trailing.length > 0) {
+        finalContent += trailing;
+        yield { type: 'chunk', content: trailing };
       }
 
       // Drain any residual sql events pushed after the final tool message.
@@ -555,7 +690,10 @@ export class ChatAgentService {
     const streamTotalTokens = streamUsageMeta?.total_tokens ?? null;
 
     const reply: ChatReply = {
-      content: finalContent,
+      // Defensive pass: even though the streaming stripper handles chunks,
+      // a whole-string regex cleanup catches any token-boundary artifacts
+      // (stray backtick residue, double-blank lines).
+      content: stripSqlFencesFromReply(finalContent),
       metadata: {
         generator: 'langchain-agent',
         sources: this.mapSources(uniqueSources),
