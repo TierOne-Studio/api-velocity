@@ -326,17 +326,71 @@ describe('ChatAgentService', () => {
           buildAgentSystemPrompt: (params: {
             organizationName: string;
             projectName: string;
+            sources: unknown[];
           }) => string;
         }
       ).buildAgentSystemPrompt({
         organizationName: 'TierOne',
         projectName: 'General',
+        sources: [],
       });
 
       expect(systemPrompt).toContain('expert persona body');
       expect(systemPrompt).toContain('TierOne');
       expect(systemPrompt).toContain('General');
       expect(systemPrompt).toContain('Tool usage protocol');
+    });
+
+    it('omits the database routing protocol when no database sources are attached', () => {
+      configService.getChatSystemPrompt.mockReturnValue('expert persona body');
+
+      const systemPrompt = (
+        service as unknown as {
+          buildAgentSystemPrompt: (params: {
+            organizationName: string;
+            projectName: string;
+            sources: Array<{ kind: string }>;
+          }) => string;
+        }
+      ).buildAgentSystemPrompt({
+        organizationName: 'TierOne',
+        projectName: 'General',
+        sources: [{ kind: 'airweave_collection' }],
+      });
+
+      expect(systemPrompt).not.toContain('query_database');
+      expect(systemPrompt).not.toContain('attached database');
+    });
+
+    it('appends the database routing protocol when at least one database source is attached', () => {
+      configService.getChatSystemPrompt.mockReturnValue('expert persona body');
+
+      const systemPrompt = (
+        service as unknown as {
+          buildAgentSystemPrompt: (params: {
+            organizationName: string;
+            projectName: string;
+            sources: Array<{ kind: string }>;
+          }) => string;
+        }
+      ).buildAgentSystemPrompt({
+        organizationName: 'TierOne',
+        projectName: 'General',
+        sources: [
+          { kind: 'airweave_collection' },
+          { kind: 'database' },
+        ],
+      });
+
+      expect(systemPrompt).toContain('query_database');
+      expect(systemPrompt).toContain('attached database');
+      // Routing guidance must still land AFTER the base protocol so the
+      // "database" branch overrides "always start with search_knowledge_base"
+      // rather than preceding it.
+      const baseIdx = systemPrompt.indexOf('Tool usage protocol');
+      const dbIdx = systemPrompt.indexOf('attached database');
+      expect(baseIdx).toBeGreaterThanOrEqual(0);
+      expect(dbIdx).toBeGreaterThan(baseIdx);
     });
   });
 

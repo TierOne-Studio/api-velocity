@@ -82,6 +82,24 @@ You have access to a \`search_knowledge_base\` tool that queries this organizati
 Do not answer non-trivial organization-specific questions from memory — the tool is your only authoritative source for facts about this organization's code, docs, specs, and other indexed material.
 `.trim();
 
+// Appended AFTER the base tool-usage protocol when the project has at least
+// one attached database source. Routes between `search_knowledge_base` and
+// `query_database` by the *shape of the answer* the user wants, not by
+// keywords. A question like "how many users signed up last week?" must route
+// to the DB even though the word "database" never appears.
+const AGENT_DATABASE_ROUTING_PROTOCOL = `
+
+## When the project has an attached database
+
+You also have a \`query_database\` tool. Route by the *shape of the answer* the user wants, not by keywords in the question:
+
+- If the user is asking for facts that live as rows — counts, aggregates, "who / which / how many / when did", latest/oldest records, filtered lists, joins across entities — call \`query_database\`. The user does NOT need to mention "database", "SQL", or a table name; entity nouns that typically map to tables (users, orders, sessions, events, subscriptions, projects, etc.) are a strong signal. Pass the question verbatim; the inner sub-agent will inspect the schema and write the SQL.
+- If the user is asking about unstructured material — how something is built, what a function does, why a design choice was made, where to find docs — call \`search_knowledge_base\`.
+- If the question could go either way (e.g. "tell me about our users" — a profile/overview vs. a row count), prefer whichever tool's results will be more verifiable. Row data is usually stronger evidence than doc snippets for factual claims.
+
+When you call \`query_database\`, cite the numbers you got back; never reshape them. When results are empty or the tool returns an error, say so plainly and consider falling back to \`search_knowledge_base\` for a complementary view.
+`.trim();
+
 @Injectable()
 export class ChatAgentService {
   private cachedLlm: ChatOpenAI | null = null;
@@ -529,11 +547,22 @@ export class ChatAgentService {
    * which dense retrieval models match much better.
    */
   buildAgentSystemPrompt(params: GenerateReplyParams): string {
-    return [
+    const hasDatabaseSource = params.sources.some(
+      (source) => source.kind === 'database',
+    );
+
+    const sections: string[] = [
       this.configService.getChatSystemPrompt(),
       AGENT_TOOL_USAGE_PROTOCOL,
+    ];
+    if (hasDatabaseSource) {
+      sections.push(AGENT_DATABASE_ROUTING_PROTOCOL);
+    }
+    sections.push(
       `## Context\n\nYou are answering questions for the organization: ${params.organizationName}, scoped to the project: ${params.projectName}. Every question is implicitly scoped to that project's configured data sources.`,
-    ].join('\n\n');
+    );
+
+    return sections.join('\n\n');
   }
 
   /**
