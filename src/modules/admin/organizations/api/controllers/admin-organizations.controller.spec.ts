@@ -8,12 +8,15 @@ jest.mock('@thallesp/nestjs-better-auth', () => ({
 }));
 
 import type { UserSession } from '@thallesp/nestjs-better-auth';
+import { PERMISSIONS_KEY } from '../../../../../shared';
 import { AdminOrganizationsController } from './admin-organizations.controller';
 import { AdminOrganizationsService } from '../../application/services/admin-organizations.service';
+import { SqlConnectionsService } from '../../../../sql-connections/application/services/sql-connections.service';
 
 describe('AdminOrganizationsController', () => {
   let controller: AdminOrganizationsController;
   let orgService: jest.Mocked<AdminOrganizationsService>;
+  let sqlConnectionsService: jest.Mocked<SqlConnectionsService>;
 
   beforeEach(() => {
     orgService = {
@@ -37,7 +40,66 @@ describe('AdminOrganizationsController', () => {
       delete: jest.fn(),
     } as unknown as jest.Mocked<AdminOrganizationsService>;
 
-    controller = new AdminOrganizationsController(orgService);
+    sqlConnectionsService = {
+      list: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      testById: jest.fn(),
+      testCredentials: jest.fn(),
+      resolveForAgent: jest.fn(),
+      findByIdForAttach: jest.fn(),
+    } as unknown as jest.Mocked<SqlConnectionsService>;
+
+    controller = new AdminOrganizationsController(
+      orgService,
+      sqlConnectionsService,
+    );
+  });
+
+  describe('testSqlConnectionCredentials', () => {
+    it('requires organization:create', () => {
+      const permissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        controller.testSqlConnectionCredentials as object,
+      ) as string[];
+
+      expect(permissions).toContain('organization:create');
+    });
+
+    it('forwards create-organization credential tests without org scope', async () => {
+      sqlConnectionsService.testCredentials.mockResolvedValue({ ok: true } as never);
+      const session = {
+        user: { id: 'manager-1', role: 'manager' },
+        session: { activeOrganizationId: null },
+      } as unknown as UserSession;
+
+      const result = await controller.testSqlConnectionCredentials(session, {
+        host: 'db.example.com',
+        port: 5432,
+        database: 'reporting',
+        username: 'reader',
+        password: 'typed-secret',
+        ssl: false,
+      });
+
+      expect(sqlConnectionsService.testCredentials).toHaveBeenCalledWith(
+        {
+          userId: 'manager-1',
+          platformRole: 'manager',
+          activeOrganizationId: null,
+        },
+        {
+          host: 'db.example.com',
+          port: 5432,
+          database: 'reporting',
+          username: 'reader',
+          password: 'typed-secret',
+          ssl: false,
+        },
+      );
+      expect(result).toEqual({ data: { ok: true } });
+    });
   });
 
   describe('getRolesMetadata', () => {

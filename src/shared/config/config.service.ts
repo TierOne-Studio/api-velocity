@@ -249,7 +249,11 @@ export class ConfigService {
   }
 
   validateEnvironment(): void {
-    const required = ['AUTH_SECRET', 'DATABASE_URL'];
+    const required = [
+      'AUTH_SECRET',
+      'DATABASE_URL',
+      'PROJECT_SOURCE_SECRET_KEY',
+    ];
     const missing = required.filter((key) => !process.env[key]);
 
     if (missing.length > 0) {
@@ -258,15 +262,12 @@ export class ConfigService {
       );
     }
 
-    const secretKey = process.env.PROJECT_SOURCE_SECRET_KEY?.trim();
-    if (secretKey) {
-      try {
-        assertValidBase64Key(secretKey);
-      } catch (error) {
-        throw new Error(
-          `Invalid PROJECT_SOURCE_SECRET_KEY: ${(error as Error).message}`,
-        );
-      }
+    try {
+      assertValidBase64Key(this.getProjectSourceSecretKey());
+    } catch (error) {
+      throw new Error(
+        `Invalid PROJECT_SOURCE_SECRET_KEY: ${(error as Error).message}`,
+      );
     }
 
     console.log('✅ All required environment variables are present');

@@ -18,6 +18,8 @@ import { PermissionsGuard, RequirePermissions } from '../../../../../shared';
 import { AdminOrganizationsService } from '../../application/services/admin-organizations.service';
 import { PaginationQuery, UpdateOrganizationDto } from '../../api/dto';
 import { getPlatformRole, type PlatformRole } from '../../../utils/admin.utils';
+import { SqlConnectionsService } from '../../../../sql-connections/application/services/sql-connections.service';
+import type { TestSqlConnectionInput } from '../../../../sql-connections/api/dto/sql-connection.dto';
 
 /**
  * Controller for platform-level organization management.
@@ -27,7 +29,10 @@ import { getPlatformRole, type PlatformRole } from '../../../utils/admin.utils';
 @Controller('api/platform-admin/organizations')
 @UseGuards(PermissionsGuard)
 export class AdminOrganizationsController {
-  constructor(private readonly orgService: AdminOrganizationsService) {}
+  constructor(
+    private readonly orgService: AdminOrganizationsService,
+    private readonly sqlConnectionsService: SqlConnectionsService,
+  ) {}
 
   private readonly slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -158,6 +163,12 @@ export class AdminOrganizationsController {
     }
   }
 
+  private assertObject(value: unknown, label: string): void {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new HttpException(`${label} must be an object`, HttpStatus.BAD_REQUEST);
+    }
+  }
+
   /**
    * Create a new organization.
    * Managers can create organizations only when explicitly granted organization:create.
@@ -191,6 +202,26 @@ export class AdminOrganizationsController {
     );
 
     return { data: org };
+  }
+
+  @Post('sql-connections/test')
+  @RequirePermissions('organization:create')
+  async testSqlConnectionCredentials(
+    @Session() session: UserSession,
+    @Body() body: TestSqlConnectionInput,
+  ) {
+    this.assertObject(body, 'body');
+    const { role, activeOrgId } = this.getSessionInfo(session);
+    const data = await this.sqlConnectionsService.testCredentials(
+      {
+        userId: session.user.id,
+        platformRole: role,
+        activeOrganizationId: activeOrgId,
+      },
+      body,
+    );
+
+    return { data };
   }
 
   /**

@@ -51,6 +51,16 @@ export type UpdateSqlConnectionInput = {
   schemaName?: string;
 };
 
+export type TestSqlConnectionInput = {
+  connectionId?: string;
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password?: string;
+  ssl?: SqlSslConfig;
+};
+
 export type SqlConnectionRow = {
   id: string;
   organization_id: string;

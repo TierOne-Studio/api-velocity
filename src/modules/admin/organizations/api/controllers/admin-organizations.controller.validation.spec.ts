@@ -11,10 +11,12 @@ import { HttpStatus } from '@nestjs/common';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { AdminOrganizationsController } from './admin-organizations.controller';
 import { AdminOrganizationsService } from '../../application/services/admin-organizations.service';
+import { SqlConnectionsService } from '../../../../sql-connections/application/services/sql-connections.service';
 
 describe('AdminOrganizationsController validation', () => {
   let controller: AdminOrganizationsController;
   let orgService: jest.Mocked<AdminOrganizationsService>;
+  let sqlConnectionsService: jest.Mocked<SqlConnectionsService>;
 
   beforeEach(() => {
     orgService = {
@@ -36,7 +38,14 @@ describe('AdminOrganizationsController validation', () => {
       delete: jest.fn(),
     } as unknown as jest.Mocked<AdminOrganizationsService>;
 
-    controller = new AdminOrganizationsController(orgService);
+    sqlConnectionsService = {
+      testCredentials: jest.fn(),
+    } as unknown as jest.Mocked<SqlConnectionsService>;
+
+    controller = new AdminOrganizationsController(
+      orgService,
+      sqlConnectionsService,
+    );
   });
 
   const adminSession = {

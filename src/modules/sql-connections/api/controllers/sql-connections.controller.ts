@@ -20,6 +20,7 @@ import {
 import { SqlConnectionsService } from '../../application/services/sql-connections.service';
 import type {
   CreateSqlConnectionInput,
+  TestSqlConnectionInput,
   UpdateSqlConnectionInput,
 } from '../dto/sql-connection.dto';
 
@@ -49,6 +50,19 @@ export class SqlConnectionsController {
     const { organizationId, ...input } = body;
     const scope = this.buildScope(session, organizationId);
     const data = await this.service.create(scope, input);
+    return { data };
+  }
+
+  @Post('test')
+  @RequirePermissions('organization:update')
+  async testCredentials(
+    @Session() session: UserSession,
+    @Body() body: TestSqlConnectionInput,
+    @Query('organizationId') organizationId?: string,
+  ) {
+    this.assertObject(body, 'body');
+    const scope = this.buildScope(session, organizationId);
+    const data = await this.service.testCredentials(scope, body);
     return { data };
   }
 

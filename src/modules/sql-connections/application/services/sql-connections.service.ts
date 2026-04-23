@@ -17,6 +17,7 @@ import type {
   SqlConnection,
   SqlConnectionRow,
   SqlConnectionWithSecret,
+  TestSqlConnectionInput,
   UpdateSqlConnectionInput,
 } from '../../api/dto/sql-connection.dto';
 import {
@@ -202,6 +203,38 @@ export class SqlConnectionsService {
     return toPublic(refreshed ?? row);
   }
 
+  async testCredentials(
+    scope: CallerScope,
+    input: TestSqlConnectionInput,
+  ): Promise<ReturnType<SqlConnectionTester['test']> extends Promise<infer TResult> ? TResult : never> {
+    this.validateTestInput(input);
+
+    let password = input.password;
+    if (password === undefined) {
+      if (!input.connectionId) {
+        throw new BadRequestException(
+          'password is required when connectionId is not provided',
+        );
+      }
+
+      const orgId = this.requireOrg(scope);
+      const row = await this.repository.findByIdInOrg(input.connectionId, orgId);
+      if (!row) {
+        throw new NotFoundException('SQL connection not found');
+      }
+      password = this.decryptPassword(row);
+    }
+
+    return this.tester.test({
+      host: input.host.trim(),
+      port: input.port,
+      database: input.database.trim(),
+      username: input.username.trim(),
+      password,
+      ssl: input.ssl,
+    });
+  }
+
   /**
    * Used by DatabaseSourceProvider at chat time to resolve a set of connection
    * ids belonging to an organization. Returns decrypted connections. Callers
@@ -299,6 +332,24 @@ export class SqlConnectionsService {
     }
     if (!input.password) {
       throw new BadRequestException('password is required');
+    }
+  }
+
+  private validateTestInput(input: TestSqlConnectionInput): void {
+    if (!input.host?.trim()) {
+      throw new BadRequestException('host is required');
+    }
+    if (!Number.isInteger(input.port) || input.port < 1 || input.port > 65535) {
+      throw new BadRequestException('port must be an integer in 1..65535');
+    }
+    if (!input.database?.trim()) {
+      throw new BadRequestException('database is required');
+    }
+    if (!input.username?.trim()) {
+      throw new BadRequestException('username is required');
+    }
+    if (input.password !== undefined && input.password.trim().length === 0) {
+      throw new BadRequestException('password cannot be blank');
     }
   }
 }

@@ -511,9 +511,13 @@ describe('ConfigService', () => {
   });
 
   describe('validateEnvironment', () => {
+      const validProjectSourceSecretKey =
+        'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=';
+
     it('should not throw when all required env vars are present', () => {
       process.env.AUTH_SECRET = 'secret';
       process.env.DATABASE_URL = 'postgresql://localhost/db';
+        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).not.toThrow();
     });
@@ -521,6 +525,7 @@ describe('ConfigService', () => {
     it('should throw when AUTH_SECRET is missing', () => {
       delete process.env.AUTH_SECRET;
       process.env.DATABASE_URL = 'postgresql://localhost/db';
+        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).toThrow(
         'Missing required environment variables: AUTH_SECRET',
@@ -530,18 +535,40 @@ describe('ConfigService', () => {
     it('should throw when DATABASE_URL is missing', () => {
       process.env.AUTH_SECRET = 'secret';
       delete process.env.DATABASE_URL;
+        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).toThrow(
         'Missing required environment variables: DATABASE_URL',
       );
     });
 
+      it('should throw when PROJECT_SOURCE_SECRET_KEY is missing', () => {
+        process.env.AUTH_SECRET = 'secret';
+        process.env.DATABASE_URL = 'postgresql://localhost/db';
+        delete process.env.PROJECT_SOURCE_SECRET_KEY;
+        const configService = new ConfigService();
+        expect(() => configService.validateEnvironment()).toThrow(
+          'Missing required environment variables: PROJECT_SOURCE_SECRET_KEY',
+        );
+      });
+
     it('should list all missing vars when multiple are absent', () => {
       delete process.env.AUTH_SECRET;
       delete process.env.DATABASE_URL;
+        delete process.env.PROJECT_SOURCE_SECRET_KEY;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).toThrow('AUTH_SECRET');
     });
+
+      it('should throw when PROJECT_SOURCE_SECRET_KEY is invalid base64', () => {
+        process.env.AUTH_SECRET = 'secret';
+        process.env.DATABASE_URL = 'postgresql://localhost/db';
+        process.env.PROJECT_SOURCE_SECRET_KEY = 'invalid-key';
+        const configService = new ConfigService();
+        expect(() => configService.validateEnvironment()).toThrow(
+          'Invalid PROJECT_SOURCE_SECRET_KEY',
+        );
+      });
   });
 
   describe('shouldEnforceResendTestRecipients', () => {
