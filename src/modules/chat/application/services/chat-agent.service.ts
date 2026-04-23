@@ -98,6 +98,16 @@ You also have a \`query_database\` tool. Route by the *shape of the answer* the 
 - If the question could go either way (e.g. "tell me about our users" — a profile/overview vs. a row count), prefer whichever tool's results will be more verifiable. Row data is usually stronger evidence than doc snippets for factual claims.
 
 When you call \`query_database\`, cite the numbers you got back; never reshape them. When results are empty or the tool returns an error, say so plainly and consider falling back to \`search_knowledge_base\` for a complementary view.
+
+## Answer format after query_database
+
+When your answer is based on a \`query_database\` result, structure the reply in exactly this order:
+
+1. A fenced code block showing the SQL the inner agent actually ran. Use the \`sql\` language tag. Take the query verbatim from the tool result's \`sql\` field. The block MUST end with its own line containing only the closing \`\`\` fence — never put the closing fence on the same line as the SQL, and never put prose on the same line as either fence.
+2. A blank line after the closing fence.
+3. A plain, readable prose answer to the user. State the numbers from \`rows\` directly ("There are 4 users.") without wrapping every figure in \`**bold**\` or backticks. Use short sentences, not headings or bullet lists, unless the answer genuinely needs structure (e.g. a breakdown across several rows).
+
+Never wrap the entire reply inside one code block. Never nest code fences. If you are returning rows (not just an aggregate), prefer a short markdown table after the prose, with the closing fence rule above still applying to any SQL block that precedes it.
 `.trim();
 
 @Injectable()
