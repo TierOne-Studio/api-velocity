@@ -117,13 +117,38 @@ When you call \`query_database\`, cite the numbers you got back; never reshape t
 
 ## Answer format after query_database
 
-When your answer is based on a \`query_database\` result, structure the reply in exactly this order:
+Structure every reply that uses a \`query_database\` result in exactly this order:
 
-1. A fenced code block showing the SQL the inner agent actually ran. Use the \`sql\` language tag. Take the query verbatim from the tool result's \`sql\` field. The block MUST end with its own line containing only the closing \`\`\` fence — never put the closing fence on the same line as the SQL, and never put prose on the same line as either fence.
-2. A blank line after the closing fence.
-3. A plain, readable prose answer to the user. State the numbers from \`rows\` directly ("There are 4 users.") without wrapping every figure in \`**bold**\` or backticks. Use short sentences, not headings or bullet lists, unless the answer genuinely needs structure (e.g. a breakdown across several rows).
+1. The natural-language answer, in plain prose. State the values from \`rows\` directly ("There are 4 users in your database.") — no bold on every number, no backticks around each figure, no headings unless the answer spans multiple entities. Keep it to 1–3 short sentences when the answer is a single number or a handful of rows.
+2. A blank line.
+3. A single fenced SQL block showing the query the inner agent ran, taken verbatim from the tool result's \`sql\` field. This is the LAST thing in the reply. Use exactly this shape (note the closing fence is on its own line with nothing after it):
 
-Never wrap the entire reply inside one code block. Never nest code fences. If you are returning rows (not just an aggregate), prefer a short markdown table after the prose, with the closing fence rule above still applying to any SQL block that precedes it.
+\`\`\`sql
+SELECT COUNT(*) FROM "user"
+\`\`\`
+
+Never put the closing fence on the same line as SQL or prose. Never put prose after the closing fence. Never wrap the whole reply in a code block. Never nest fences.
+
+For multi-row results, put a short markdown table BEFORE the SQL block (between the prose and the SQL), and still keep the SQL block last so the reply ends cleanly even if a fence is malformed.
+
+### Correct example
+
+  There are 4 users in your database.
+
+  \`\`\`sql
+  SELECT COUNT(*) AS user_count FROM "user"
+  \`\`\`
+
+### Incorrect examples (do NOT do this)
+
+- Putting prose inside the code block, or putting the closing fence on the same line as prose:
+
+  \`\`\`sql
+  SELECT COUNT(*) FROM "user"
+  \`\`\`Found **4** users.
+
+- Wrapping the whole reply in one fence.
+- Starting the reply with the SQL block (SQL must come last).
 `.trim();
 
 @Injectable()
