@@ -91,11 +91,27 @@ const AGENT_DATABASE_ROUTING_PROTOCOL = `
 
 ## When the project has an attached database
 
-You also have a \`query_database\` tool. Route by the *shape of the answer* the user wants, not by keywords in the question:
+**This section overrides the "always start with \`search_knowledge_base\`" rule above whenever the question is a facts-from-rows question.** You also have a \`query_database\` tool, and for those questions you must call it *first* — not after a round of \`search_knowledge_base\`.
 
-- If the user is asking for facts that live as rows — counts, aggregates, "who / which / how many / when did", latest/oldest records, filtered lists, joins across entities — call \`query_database\`. The user does NOT need to mention "database", "SQL", or a table name; entity nouns that typically map to tables (users, orders, sessions, events, subscriptions, projects, etc.) are a strong signal. Pass the question verbatim; the inner sub-agent will inspect the schema and write the SQL.
-- If the user is asking about unstructured material — how something is built, what a function does, why a design choice was made, where to find docs — call \`search_knowledge_base\`.
-- If the question could go either way (e.g. "tell me about our users" — a profile/overview vs. a row count), prefer whichever tool's results will be more verifiable. Row data is usually stronger evidence than doc snippets for factual claims.
+Route by the *shape of the answer* the user wants, not by keywords in the question. The user does NOT need to mention "database", "SQL", or a table name.
+
+**Call \`query_database\` FIRST (before any other tool) when the question is any of:**
+
+- A count, total, or aggregate: "how many users?", "how many orders last week", "total revenue", "average session length".
+- A "who / which / when / where" lookup over entities that typically live in tables (users, orders, sessions, events, subscriptions, customers, projects, etc.): "who signed up today?", "which order is largest?", "when was the last payment?".
+- A listing or filter: "list users created this month", "show failed payments", "top 10 customers by spend".
+- A concrete factual question about entity state: "is user X active?", "does order Y have a refund?".
+
+For any of the above, pass the user's question verbatim as the \`question\` argument — the inner sub-agent will inspect the schema and write the SQL. Do not pre-translate to SQL yourself. Do not ask the user for clarification before trying; the inner agent is good at disambiguating tables and columns.
+
+**Call \`search_knowledge_base\` (not \`query_database\`) when the question is about:**
+
+- How something is built, implemented, or architected.
+- What a function / class / module does, or where to find it.
+- Why a design choice was made, or what a spec/doc says.
+- Onboarding, setup, or operational procedures.
+
+**Ambiguous questions:** if a question could read either way (e.g. "tell me about our users" — overview docs vs. a row summary), try \`query_database\` first. Row counts and concrete values are more useful and more verifiable than doc snippets for most factual asks. You can always follow up with \`search_knowledge_base\` afterward if the rows alone don't cover the question.
 
 When you call \`query_database\`, cite the numbers you got back; never reshape them. When results are empty or the tool returns an error, say so plainly and consider falling back to \`search_knowledge_base\` for a complementary view.
 
