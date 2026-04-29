@@ -87,8 +87,8 @@ for s in $OWNED_SKILLS; do
     FAIL=$((FAIL+1)); FAILED_TESTS="$FAILED_TESTS T14:$sk"; continue
   fi
   desc=$(awk '/^description:/{sub(/^description:[[:space:]]*/,""); print; exit}' "$sk")
-  if ! printf '%s' "$desc" | grep -Eq '^Use (when|ALWAYS when|BEFORE|PROACTIVELY)'; then
-    echo "FAIL: T14 $sk description does not start with 'Use when/ALWAYS when/BEFORE/PROACTIVELY' (got: ${desc:0:60})"
+  if ! printf '%s' "$desc" | grep -Eq '^Use (when|ALWAYS when|BEFORE|PROACTIVELY|TWICE)'; then
+    echo "FAIL: T14 $sk description does not start with 'Use when/ALWAYS when/BEFORE/PROACTIVELY/TWICE' (got: ${desc:0:60})"
     FAIL=$((FAIL+1)); FAILED_TESTS="$FAILED_TESTS T14:$sk"; continue
   fi
   if ! printf '%s' "$desc" | grep -q 'NOT for'; then
@@ -199,7 +199,7 @@ assert_true "T29: covers RBAC scope contract"      "grep -qi 'RBAC\\|scope=' .cl
 echo
 echo "=== T30: failure-mode-analysis skill well-formed ==="
 FMA_DESC=$(awk '/^description:/{sub(/^description:[[:space:]]*/,""); print; exit}' .claude/skills/failure-mode-analysis/SKILL.md)
-assert_true "T30: description starts 'Use BEFORE'" "echo '$FMA_DESC' | grep -q '^Use BEFORE'"
+assert_true "T30: description starts 'Use TWICE' (plan-mode + tdd-workflow)" "echo '$FMA_DESC' | grep -qE '^Use (BEFORE|TWICE)'"
 assert_true "T30: description has 'NOT for'"       "echo '$FMA_DESC' | grep -q 'NOT for'"
 assert_true "T30: lists 8 categories"              "grep -Ec '^### [0-9]\\.' .claude/skills/failure-mode-analysis/SKILL.md | grep -q '^8$'"
 
@@ -515,6 +515,80 @@ assert_true "T57: acceptance script preflights required CLI tools" "grep -q 'req
 for skill in code-simplifier js-performance-patterns nestjs-best-practices nodejs-best-practices typescript-advanced-types; do
   assert_true "T57: ruler-managed skill '$skill' is git-tracked" "git ls-files --error-unmatch .claude/skills/$skill/SKILL.md > /dev/null 2>&1"
 done
+
+echo
+echo "=== T58: subagents are aware of all skills (Discovery step + nestjs-best-practices coverage) ==="
+# nestjs-best-practices in always-read for architect-reviewer + code-reviewer.
+assert_true "T58: architect-reviewer always-reads nestjs-best-practices" "grep -q 'nestjs-best-practices/SKILL.md' .claude/agents/architect-reviewer.md"
+assert_true "T58: code-reviewer always-reads nestjs-best-practices"      "grep -q 'nestjs-best-practices/SKILL.md' .claude/agents/code-reviewer.md"
+# nestjs-best-practices conditionally referenced by qa-validator + security-reviewer.
+assert_true "T58: qa-validator references nestjs-best-practices test rules"   "grep -q 'nestjs-best-practices' .claude/agents/qa-validator.md"
+assert_true "T58: security-reviewer references nestjs-best-practices security rules" "grep -q 'nestjs-best-practices' .claude/agents/security-reviewer.md"
+# code-reviewer also reads code-simplifier and typescript-advanced-types conditionally.
+assert_true "T58: code-reviewer references code-simplifier"              "grep -q 'code-simplifier/SKILL.md' .claude/agents/code-reviewer.md"
+assert_true "T58: code-reviewer references typescript-advanced-types"    "grep -q 'typescript-advanced-types/SKILL.md' .claude/agents/code-reviewer.md"
+# Discovery step in all 4 review subagents.
+for agent in architect-reviewer code-reviewer qa-validator security-reviewer; do
+  assert_true "T58: $agent has Discovery step (floor not ceiling)" "grep -qE 'Discovery|floor, not the ceiling' .claude/agents/$agent.md"
+done
+# lessons-curator survey enumerates all skill categories explicitly.
+assert_true "T58: lessons-curator survey names all skill categories" "grep -qE 'workflow skills.*reference skills.*tactical patterns|all.*workflow.*reference|enumerate' .claude/agents/lessons-curator.md"
+# architect-reviewer cites the arch-* rules from nestjs-best-practices.
+assert_true "T58: architect-reviewer names arch-* rules"             "grep -qE 'arch-avoid-circular-deps|arch-feature-modules|arch-\\*' .claude/agents/architect-reviewer.md"
+
+echo
+echo "=== T59: Round-9 capability improvements (verdict aggregation, attestation, workflow chains, meta-findings, fma-earlier) ==="
+# 1. Verdict aggregation rule in CLAUDE.md P8.2
+assert_true "T59: P8.2 Aggregating subagent confidence section present" "grep -q 'P8.2 Aggregating subagent confidence' CLAUDE.md"
+assert_true "T59: aggregation uses minimum, not average"                "grep -qiE 'minimum, not.*average|min\\(model_rubric_outcome' CLAUDE.md"
+assert_true "T59: BLOCK supersedes rubric arithmetic"                   "grep -qiE 'BLOCK supersedes|BLOCK.*final confidence is.*0' CLAUDE.md"
+
+# 2. Skills-consulted attestation as P8 item 11
+assert_true "T59: P8 item 11 'Skills consulted:' attestation"           "grep -qE '11\\..*Skills consulted' CLAUDE.md"
+assert_true "T59: attestation forbids listing skills not actually read" "grep -qiE 'not.*list skills you only saw|do NOT list skills you only saw' CLAUDE.md"
+
+# 3. Workflow chains section in CLAUDE.md
+assert_true "T59: Workflow chains section present"                      "grep -q '^## Workflow chains' CLAUDE.md"
+assert_true "T59: Workflow chain — New feature"                         "grep -q 'New feature' CLAUDE.md"
+assert_true "T59: Workflow chain — Bug fix"                             "grep -qE '^\\| \\*\\*Bug fix\\*\\*' CLAUDE.md"
+assert_true "T59: Workflow chain — Auth/RBAC/payments/migration"        "grep -qiE 'Auth.*RBAC.*payments|high-risk per P3.3' CLAUDE.md"
+assert_true "T59: Workflow chain — Refactor"                            "grep -qE '^\\| \\*\\*Refactor' CLAUDE.md"
+assert_true "T59: Workflow chain — Performance work"                    "grep -qE '^\\| \\*\\*Performance' CLAUDE.md"
+assert_true "T59: Workflow chain — Async / external-integration"        "grep -qiE 'Async.*external|external-integration' CLAUDE.md"
+assert_true "T59: Workflow chain — NestJS module / provider design"     "grep -qiE 'NestJS module.*provider|module / provider design' CLAUDE.md"
+
+# 4. Meta-findings section in 4 review subagents
+for agent in architect-reviewer code-reviewer qa-validator security-reviewer; do
+  assert_true "T59: $agent has Meta-findings section"                       "grep -q '## Meta-findings' .claude/agents/$agent.md"
+  assert_true "T59: $agent Meta-findings cites '3+ times' or 'recurring'"   "grep -qiE '3\\+ times|recurring' .claude/agents/$agent.md"
+  assert_true "T59: $agent Meta-findings forbids invented findings"         "grep -qiE 'Do not invent meta-findings|do not invent meta-findings' .claude/agents/$agent.md"
+done
+
+# 5. failure-mode-analysis usable earlier in workflow
+assert_true "T59: plan-mode Step 0 includes 'Anticipated failure modes'" "grep -q 'Anticipated failure modes' .claude/skills/plan-mode/SKILL.md"
+assert_true "T59: failure-mode-analysis description says 'Use TWICE'"   "grep -qE 'Use TWICE|use TWICE' .claude/skills/failure-mode-analysis/SKILL.md"
+assert_true "T59: failure-mode-analysis description names plan-mode Step 0" "grep -q 'plan-mode.*Step 0\\|during.*plan-mode' .claude/skills/failure-mode-analysis/SKILL.md"
+
+echo
+echo "=== T60: RLM operationalized in subagents + workflow chains + lessons-curator ==="
+# Each review subagent's Read step branches on small/large change size.
+for agent in architect-reviewer code-reviewer qa-validator security-reviewer; do
+  assert_true "T60: $agent Read step branches on Small/Large change"  "grep -qiE 'Small change|Small plan' .claude/agents/$agent.md && grep -qiE 'Large change|Large plan' .claude/agents/$agent.md"
+  assert_true "T60: $agent Read step references rlm-explore"          "grep -q 'rlm-explore' .claude/agents/$agent.md"
+  assert_true "T60: $agent Read step uses LOCATE/EXTRACT/CHUNK/TRANSFORM/VERIFY" "grep -qE 'LOCATE.*EXTRACT|LOCATE:|EXTRACT:|CHUNK:|TRANSFORM:|VERIFY:' .claude/agents/$agent.md"
+  # Working Set in output format.
+  assert_true "T60: $agent output has Working Set section"            "grep -q '### Working Set' .claude/agents/$agent.md"
+done
+
+# CLAUDE.md workflow chains include rlm-explore for the relevant chains.
+assert_true "T60: workflow chain — Bug fix dense-stack-trace uses rlm-explore"  "grep -qE 'Bug fix.*dense.*rlm-explore|dense stack trace.*rlm-explore' CLAUDE.md"
+assert_true "T60: workflow chain — Performance starts with rlm-explore"         "grep -qE 'Performance.*rlm-explore.*hot path|rlm-explore.*LOCATE the hot path' CLAUDE.md"
+assert_true "T60: workflow chain — Large code review row present"               "grep -qE 'Large code review|>4 files OR >500 LOC' CLAUDE.md"
+assert_true "T60: workflow chain — New feature unfamiliar uses rlm-explore"     "grep -qE 'New feature.*unfamiliar|unfamiliar code.*rlm-explore' CLAUDE.md"
+
+# lessons-curator uses LOCATE/EXTRACT instead of loading all skills.
+assert_true "T60: lessons-curator survey uses LOCATE/EXTRACT pattern"           "grep -qE 'LOCATE.*EXTRACT|LOCATE — find candidates|grep the correction' .claude/agents/lessons-curator.md"
+assert_true "T60: lessons-curator forbids loading all 25 skills by default"     "grep -qiE 'do not load every skill|anti-RLM and wasteful|not.*load.*25' .claude/agents/lessons-curator.md"
 
 echo
 echo "==========================="

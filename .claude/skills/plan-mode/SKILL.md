@@ -14,6 +14,7 @@ Output explicitly:
 - **Non-goals / out of scope** — what we are *not* doing.
 - **Assumptions** — only the ones that affect behavior, architecture, or delivery risk.
 - **Multiple interpretations** — if more than one reasonable reading exists, list them. Do **not** choose silently.
+- **Anticipated failure modes** — for non-trivial changes, name the top 2–3 failure modes the design must handle (per `failure-mode-analysis` categories: null, empty, large, race, partial, network, malformed, boundary). Surfacing these during planning prevents brittle API shapes that lock in bad assumptions before tests are written. Detailed per-test enumeration still happens in `failure-mode-analysis` before TDD Step 1.
 - **Blocking questions** — max 3, only if truly blocking.
 
 If blocking ambiguity exists → STOP and ask. Do not proceed.

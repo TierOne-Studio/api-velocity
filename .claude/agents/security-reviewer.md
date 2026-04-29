@@ -51,15 +51,24 @@ Before evaluating, MUST Read:
 
 - `.claude/skills/database-transactions/SKILL.md` — when the change includes multi-statement DB writes. Partial-state windows are security-adjacent: a half-committed permission grant is a privilege-escalation surface. Verify: (a) atomic boundary present, (b) `WHERE organization_id` inside the transaction, (c) no external HTTP inside the transaction (DoS amplifier).
 - `.claude/skills/async-error-handling/SKILL.md` — when the change adds outbound calls or auth flows: missing timeouts on auth-related I/O are a DoS surface; catch-and-swallow on auth checks can silently bypass policy.
+- `.claude/skills/nestjs-best-practices/SKILL.md` § security rules — cross-check against `rules/security-auth-jwt.md`, `rules/security-rate-limiting.md`, `rules/security-sanitize-output.md`, `rules/security-use-guards.md`, `rules/security-validate-all-input.md` for NestJS-specific security checks beyond generic OWASP.
+
+### 0.5 Discovery (when Required Reading doesn't cover the surface)
+
+If the change touches a security-adjacent domain not in your Required Reading list, list `.claude/skills/` and identify any skill whose description matches. Read it before evaluating. **Required Reading is the floor, not the ceiling** — when a relevant skill exists, use it.
 
 This repo has a *specific* RBAC contract that differs from generic OWASP advice. Read it before lensing.
 
-### 1. Read
+### 1. Read (RLM-native; branch on change size)
 
-- Modified files (full).
-- Auth/permission middleware in the call path.
-- The repo's security conventions: existing guards, RBAC helpers, error mapping, redaction utilities.
-- Tests for the affected surface.
+**Small change (≤4 files OR ≤500 LOC modified):** read modified files (full), auth/permission middleware in the call path, repo security conventions (existing guards, RBAC helpers, error mapping, redaction utilities), tests for the affected surface.
+
+**Large change (>4 files OR >500 LOC modified):** apply RLM mechanics from `rlm-explore`:
+- **LOCATE:** `grep`/`Glob` for trust-boundary symbols (`@RequirePermissions`, `@UseGuards`, `resolveOrgScope`, password/token/session field names, `organization_id`); identify every entry point in the diff.
+- **EXTRACT:** read only the entry-point handlers + their guards + the org/scope resolution path + tests asserting the negative cases. Skip implementation details that don't cross a trust boundary.
+- **CHUNK:** split review by trust boundary (e.g., "auth gate", "RBAC scope check", "PII handling", "secret use") rather than by file.
+- **TRANSFORM:** build a Working Set (5–15 bullets) of "every place this change crosses a trust boundary AND what protects it" — vulnerabilities are the unprotected entries in this list.
+- **VERIFY:** cross-check the Working Set against OWASP top-10 + project-specific RBAC contract. If a trust-boundary crossing isn't in your bullets, you missed it.
 
 ### 2. Run static checks (if Bash permits)
 
@@ -118,6 +127,10 @@ Verdict: APPROVE | CHANGES REQUESTED | BLOCK
 Scope reviewed: <files, security-sensitive surfaces touched>
 Static checks: <results of grep/scan if run>
 
+### Working Set (required for large changes, optional for small)
+- <5–15 bullets enumerating every trust-boundary crossing introduced/modified by this change AND the protection mechanism for each>
+- Include this section whenever you used RLM mechanics in step 1 (large changes). Skip for small changes.
+
 ### Findings
 
 #### CRITICAL
@@ -161,6 +174,18 @@ Static checks: <results of grep/scan if run>
 
 Confidence: 0.XX (computed per CLAUDE.md P8.1 rubric)
 ```
+
+## Meta-findings (skill-improvement signal)
+
+If you flag the same kind of security issue **3+ times across this single review**, OR if a recurring weakness suggests an existing rule needs sharpening or a new rule is missing, surface it as a `### Meta-finding` block in your verdict:
+
+```
+### Meta-findings (skill-improvement signal)
+- **Recurring vulnerability class:** <e.g., "missing `where: { organizationId }` in TypeORM repos in 4 of 5 reviewed files">. Consider sharpening `repo-conventions` § RBAC or adding to the P3.4 mandatory invocation matrix.
+- **Coverage gap:** <description>. Consider proposing a rule via `meta-skill-hygiene` or `lessons-curator`.
+```
+
+Turns each review into a skill-improvement signal. **Do not invent meta-findings** — omit if no recurring pattern.
 
 ## Forbidden behaviors
 

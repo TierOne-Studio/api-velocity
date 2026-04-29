@@ -36,15 +36,24 @@ Before evaluating coverage, MUST Read:
 **Read conditionally:**
 
 - `.claude/skills/database-transactions/SKILL.md` — when DB writes are touched: is a rollback path tested? Is the transactional boundary exercised by a test that triggers an error mid-callback?
+- `.claude/skills/nestjs-best-practices/SKILL.md` § test rules — when reviewing tests, cross-check against `rules/test-use-testing-module.md`, `rules/test-mock-external-services.md`, `rules/test-e2e-supertest.md` for NestJS-aware testing patterns.
+
+### 0.5 Discovery (when Required Reading doesn't cover the surface)
+
+If the change touches a domain not in your Required Reading list, list `.claude/skills/` and identify any skill whose description matches. Read it before evaluating coverage. **Required Reading is the floor, not the ceiling** — when a relevant skill exists, use it.
 
 Subagents work from current canonical sources. If `tdd-workflow` Step 5 grew new items or `failure-mode-analysis` updated its categories, your evaluation must reflect that.
 
-### 1. Read
+### 1. Read (RLM-native; branch on change size)
 
-- Modified files (full).
-- Test files corresponding to those modules (full).
-- One level of context: callers of changed functions, immediate imports, type definitions.
-- Relevant docs: top-level README (if changed area is publicly documented), `docs/`, OpenAPI specs, JSDoc comments on public surfaces.
+**Small change (≤4 files OR ≤500 LOC modified):** read modified files (full), corresponding test files (full), one level of context (callers of changed functions, immediate imports, type definitions), and relevant docs (top-level README if change is publicly documented, `docs/`, OpenAPI specs, JSDoc).
+
+**Large change (>4 files OR >500 LOC modified):** apply RLM mechanics from `rlm-explore`:
+- **LOCATE:** `grep`/`Glob` the changed symbols; for each symbol, find its test file and any cross-test references.
+- **EXTRACT:** read only changed functions + their tests + tests for callers (not entire test suites for unrelated modules).
+- **CHUNK:** split coverage analysis by responsibility (which failure-mode category, which integration boundary) rather than by file count.
+- **TRANSFORM:** build a Working Set (5–15 bullets) of "what changed AND what tests claim to cover it" — the gap between those bullets is what your verdict reports.
+- **VERIFY:** cross-check the Working Set against the failure-mode bridge categories (null/empty/large/race/partial/network/malformed/boundary) — every changed code path should map to at least one bullet.
 
 ### 2. Run tests
 
@@ -137,6 +146,10 @@ Verdict: PASS | GAPS | BLOCK
 Scope reviewed: <files modified, lines changed>
 Tests: <ran / passed / failed / not run + reason>
 
+### Working Set (required for large changes, optional for small)
+- <5–15 bullets pairing each changed code path with the test that claims to cover it; gaps surface as Coverage gaps below>
+- Include this section whenever you used RLM mechanics in step 1 (large changes). Skip for small changes.
+
 ### Coverage gaps (HIGH/MED/LOW)
 1. [HIGH] <file:lines> — <failure mode> not tested: <why it matters> — <recommended test>
 2. [MED]  <file:lines> — <edge case> not tested
@@ -179,6 +192,18 @@ Tests: <ran / passed / failed / not run + reason>
 
 Confidence: 0.XX (computed per CLAUDE.md P8.1 rubric)
 ```
+
+## Meta-findings (skill-improvement signal)
+
+If you flag the same coverage gap **3+ times across this single review** (e.g., the same failure-mode category is consistently untested across multiple files), OR if you notice a category of test gap that the test-quality rubric doesn't capture, surface it as a `### Meta-finding` block in your verdict:
+
+```
+### Meta-findings (skill-improvement signal)
+- **Coverage gap pattern:** <category, e.g., "no `partial` failure-mode tests in any of the 4 reviewed files">. Existing `failure-mode-analysis` skill may not be firing during TDD step 0; consider sharpening the trigger.
+- **Rubric gap:** <description>. Consider extending `tdd-workflow` Step 5 self-review or `failure-mode-analysis` categories.
+```
+
+Turns each review into a skill-improvement signal. **Do not invent meta-findings** — omit if no recurring pattern.
 
 ## Forbidden behaviors
 

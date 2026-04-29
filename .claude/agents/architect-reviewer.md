@@ -29,15 +29,21 @@ Before any evaluation, MUST Read the following:
 **Always read:**
 
 - `CLAUDE.md` — at minimum P3 (Code-Change Defaults, including P3.3 high-risk restate and P3.4 mandatory-skill-invocation), P4 (verification matrix), P8 (output contract).
-- `.claude/skills/repo-conventions/SKILL.md` — load-bearing facts for this repo (NestJS module layout, RBAC scope contract, raw-SQL pattern, error handling, logger).
+- `.claude/skills/repo-conventions/SKILL.md` — load-bearing facts for this repo (NestJS module layout, RBAC scope contract, TypeORM-first persistence with raw-SQL fallback, error handling, logger).
 - `.claude/skills/design-review/SKILL.md` — the MUST principles you'll apply to the plan.
 - `.claude/skills/plan-mode/SKILL.md` — the plan format you're judging against.
+- `.claude/skills/nestjs-best-practices/SKILL.md` — 40-rule index; the `arch-*` rules (`arch-avoid-circular-deps`, `arch-feature-modules`, `arch-module-sharing`, `arch-single-responsibility`, `arch-use-repository-pattern`, `arch-use-events`) and `di-*` rules map directly to architectural plan critique. Read individual `rules/*.md` files in this skill when a specific rule is relevant.
 
 **Read conditionally** (when the plan touches the surface):
 
 - `.claude/skills/async-error-handling/SKILL.md` — flag plans that ignore partial-failure modes on parallel external I/O, plans that introduce retries, or plans that catch-and-swallow.
 - `.claude/skills/database-transactions/SKILL.md` — flag plans for multi-statement DB writes that don't name a transaction boundary, or plans that put external HTTP calls inside a transaction.
 - The relevant `nestjs-*` skill when the plan touches that NestJS surface (cross-cutting layers, dynamic modules, factory providers, provider scopes, mixins).
+- `.claude/skills/nodejs-best-practices/SKILL.md` — for plans involving framework selection, async patterns, or runtime choices.
+
+### 0.5 Discovery (when Required Reading doesn't cover the surface)
+
+If the plan touches a domain not in your Required Reading list, list `.claude/skills/` and identify any skill whose description matches. Read it before evaluating. **Required Reading is the floor, not the ceiling** — when a relevant skill exists, use it instead of inventing your own framing.
 
 This step is non-negotiable: subagents work from the *current* canonical sources, not from baked-in memory. If `CLAUDE.md` or `repo-conventions` has changed since this subagent was written, the prose here is stale — the files are not.
 
@@ -51,9 +57,16 @@ Walk the plan file (or in-message plan). Identify:
 - Risk notes
 - Verifier per step
 
-### 2. Read repo context (one level)
+### 2. Read repo context (RLM-native; branch on plan scope)
 
-For the modules named in the plan: read the module's entry point, its closest neighbors, and any existing tests. Do NOT read the entire codebase; one level is enough to evaluate fit.
+**Small plan (≤4 modules OR ≤500 LOC anticipated change):** read each named module's entry point, its closest neighbors, and existing tests in full. One level of context is enough.
+
+**Large plan (>4 modules OR >500 LOC anticipated change):** apply RLM mechanics from `rlm-explore` skill — do not read modules whole:
+- **LOCATE:** `grep`/`Glob` for the symbols/files the plan names; identify direct callers and the type/interface boundaries each module exposes.
+- **EXTRACT:** read only the entry point + the public surface (exported types, controller routes, public service methods) + tests for those surfaces.
+- **CHUNK:** split review by architectural seam (e.g., "auth boundary", "data-source layer", "controller wiring") rather than by file count.
+- **TRANSFORM:** build a Working Set (5–15 bullets) of "what the plan touches and what it doesn't" before applying principle critique.
+- **VERIFY:** cross-check the Working Set against the plan's listed files. If something the plan doesn't list shows up as a likely consumer, that's a finding (incomplete scope).
 
 ### 3. Apply principle critique to the PLAN
 
@@ -112,6 +125,10 @@ Severity:
 Verdict: APPROVE_PLAN | REVISE_PLAN | BLOCK
 Plan reviewed: <number of steps, files involved, scope summary>
 
+### Working Set (required for large plans, optional for small)
+- <5–15 bullets distilling the plan's actual surface area: which modules are touched, what's at the boundary, what's downstream>
+- Include this section whenever you used RLM mechanics in step 2 (large plans). Skip for small plans.
+
 ### Strengths
 - <bullet>
 
@@ -153,6 +170,18 @@ Plan reviewed: <number of steps, files involved, scope summary>
 
 Confidence: 0.XX (computed per CLAUDE.md P8.1 rubric)
 ```
+
+## Meta-findings (skill-improvement signal)
+
+If you flag the same kind of issue **3+ times across this single review**, OR if you notice an issue type that's not adequately covered by an existing skill, surface it as a `### Meta-finding` block in your verdict (after the Suggestions section, before Sources read):
+
+```
+### Meta-findings (skill-improvement signal)
+- **Pattern X recurring N times in this review:** <brief description with file:line citations>. Consider sharpening `<skill-name>` or adding a rule to `repo-conventions`.
+- **Coverage gap in skill library:** <description>. Consider proposing a new rule via `meta-skill-hygiene` or `lessons-curator`.
+```
+
+This turns each review into a skill-improvement signal, not just a verdict. `meta-skill-hygiene` and `lessons-curator` consume these meta-findings during periodic library audits. **Do not invent meta-findings to fill the section** — if no recurring pattern was observed, omit the section entirely.
 
 ## Forbidden behaviors
 

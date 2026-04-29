@@ -34,15 +34,22 @@ Quote the user's correction text. Restate the desired behavior change in one sen
 | Mechanical-rule violation | A rule that should be enforced at the tool boundary isn't | Propose adding to `.claude/settings.json` `permissions.deny` (or, if the user wants hooks, propose a hook) |
 | One-off mistake | Genuinely unique; no general rule warranted | NO proposal — short reply only |
 
-### 3. Survey existing system
+### 3. Survey existing system (RLM-native — do not load every skill)
 
-Read (do not edit):
-- `~/.claude/projects/.../memory/MEMORY.md` (the auto-memory index) and any linked `feedback`-type memory files — **start here**: the main agent has already captured this correction as a feedback memory per `CLAUDE.md` P7. Read it, and check whether a near-duplicate feedback already exists from a prior correction.
-- `CLAUDE.md` — top-level rules
-- `.claude/skills/*/SKILL.md` — workflow skills
-- `.claude/settings.json` — `permissions.deny` (the actual mechanical enforcement in this repo)
-- `.claude/agents/*.md` — subagent prompts
-- `.claude/hooks/*.sh` — only if the directory exists (this repo currently has no hooks)
+The skill library has 25+ entries. Reading every `SKILL.md` is anti-RLM and wasteful. Use `LOCATE → EXTRACT` from the `rlm-explore` skill:
+
+**LOCATE — find candidates by keyword match, not by enumerate-and-load:**
+1. **Memory first:** Read `~/.claude/projects/.../memory/MEMORY.md` (the auto-memory index) and any linked `feedback`-type memory files — the main agent has already captured this correction per `CLAUDE.md` P7. Check for near-duplicates from prior corrections.
+2. **`grep` the correction's keywords** across `CLAUDE.md`, `.claude/skills/`, `.claude/agents/`, and `.claude/settings.json`. Examples: if the correction names "TypeORM transaction", grep for `transaction` and `TypeORM`. If it names a behavior pattern, grep for that pattern's exact phrasing.
+3. **Match descriptions:** if `grep` is too broad or too narrow, list `.claude/skills/` directories and pattern-match each skill's `description:` frontmatter against the correction's domain (e.g., "this is about RBAC" → load `repo-conventions`, `nestjs-cross-cutting`, `security-reviewer`).
+
+**EXTRACT — load only the matches:**
+- Read only the `SKILL.md` files whose descriptions or content matched. Typically 2–5 files for any given correction, not 25.
+- For deeper detail (e.g., `nestjs-best-practices/rules/*.md`), load the specific rule file only if the correction names that area.
+
+**For library-wide audits (rare):** the full survey (CLAUDE.md + all SKILL.md + settings + agents + hooks-if-present) is appropriate. State explicitly that this is a library-wide audit, not a single-correction proposal.
+
+The library currently includes (for reference, not "load all of these"): workflow skills (`tdd-workflow`, `design-review`, `plan-mode`, `failure-mode-analysis`, `bug-investigation`, `decision-rules`, `pushback-templates`, `meta-skill-hygiene`, `rlm-explore`, `code-simplifier`, `cyclomatic-complexity`), reference skills (`repo-conventions`, `nestjs-best-practices`, `nodejs-best-practices`, `typescript-advanced-types`, `js-performance-patterns`), tactical patterns (`nestjs-factory-providers`, `nestjs-dynamic-modules`, `nestjs-cross-cutting`, `nestjs-provider-scopes`, `nestjs-mixins`), reliability (`async-error-handling`, `database-transactions`), operational (`git-workflow`, `db-write-protocol`).
 
 Look for:
 - An **existing feedback memory** that already encodes this rule — if so, the work is already persistent; the question is whether to elevate it from memory into a skill / `CLAUDE.md` / hook (recurring pattern) or leave it in memory only (one-off context).

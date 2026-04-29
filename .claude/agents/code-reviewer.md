@@ -27,6 +27,7 @@ Before evaluating any code, MUST Read:
 - `.claude/skills/repo-conventions/SKILL.md` — what's correct *for this repo* (NestJS exceptions; TypeORM-first with raw-SQL fallback; `where: { organizationId }` or `WHERE organization_id`; `Logger` per service; no class-validator; no custom error classes; expanded logging discipline).
 - `.claude/skills/async-error-handling/SKILL.md` — Promise composition, error propagation, AbortSignal, no-retries, catch-at-the-boundary.
 - `.claude/skills/cyclomatic-complexity/SKILL.md` — early returns, guard clauses, no-`else`-after-`return`, the rough metric.
+- `.claude/skills/nestjs-best-practices/SKILL.md` — 40-rule index. The `di-*`, `error-*`, `security-*`, `perf-*`, `api-*` rules cross-validate the design review. Read individual `rules/*.md` files when a specific rule is relevant.
 
 **Read conditionally** (load when the change touches the surface):
 
@@ -36,15 +37,25 @@ Before evaluating any code, MUST Read:
 - `.claude/skills/nestjs-dynamic-modules/SKILL.md` — when the change uses `forRoot`/`forRootAsync`/`forFeature`.
 - `.claude/skills/nestjs-provider-scopes/SKILL.md` — when scope is changed or `Scope.REQUEST`/`TRANSIENT` is introduced.
 - `.claude/skills/nestjs-mixins/SKILL.md` — when a parameterized Guard/Interceptor is created.
+- `.claude/skills/code-simplifier/SKILL.md` — when the change includes obvious cleanup opportunities (nested ternaries, redundant branches, awkward names) — flag as LOW-severity suggestions.
+- `.claude/skills/typescript-advanced-types/SKILL.md` — when the change introduces non-trivial generics, conditional types, mapped types, or template-literal types.
+
+### 0.5 Discovery (when Required Reading doesn't cover the surface)
+
+If the change touches a domain not in your Required Reading list, list `.claude/skills/` and identify any skill whose description matches. Read it before evaluating. **Required Reading is the floor, not the ceiling** — when a relevant skill exists, use it instead of inventing your own framing.
 
 Subagents work from current canonical sources, not baked-in memory. Repo-conventions is especially load-bearing: a code change can satisfy SOLID/DRY/KISS yet still be wrong-for-this-repo (e.g., `throw new Error()` instead of `BadRequestException`). Catch that here.
 
-### 1. Read
+### 1. Read (RLM-native; branch on change size)
 
-- Read every modified file in full.
-- Read every test file in full.
-- Read one level of context: direct callers, immediate imports, the type/interface a function implements.
-- Do NOT read the entire codebase. Stop at one level.
+**Small change (≤4 files OR ≤500 LOC modified):** read every modified file in full, every test file in full, and one level of context (direct callers, immediate imports, the type/interface a function implements). Stop at one level.
+
+**Large change (>4 files OR >500 LOC modified):** apply RLM mechanics from `rlm-explore` skill — reading 10+ files whole burns context that should be spent on analysis:
+- **LOCATE:** `grep`/`Glob` the changed symbols across the diff; identify call sites and immediate dependents.
+- **EXTRACT:** read only the changed functions/classes plus the lines that read or call them — not whole files. For test files, read only tests touching the changed symbols.
+- **CHUNK:** split review by responsibility (e.g., "auth changes", "DB schema", "controller wiring") rather than by file. A single change usually has 2–4 chunks.
+- **TRANSFORM:** build a Working Set (5–15 bullets) of "what actually changed and why" before applying principle review.
+- **VERIFY:** cross-check the Working Set against the diff. If a symbol the diff modifies isn't in your Working Set, you missed it — go back and slice again.
 
 ### 2. Run tests (if Bash is permitted and project layout is clear)
 
@@ -124,6 +135,10 @@ Verdict: APPROVE | CHANGES REQUESTED | BLOCK
 Scope reviewed: <files modified, lines changed>
 Tests: <ran / passed / failed / not run + reason>
 
+### Working Set (required for large changes, optional for small)
+- <5–15 bullets distilling what actually changed: which symbols moved, what behavior shifted, what boundaries were crossed>
+- Include this section whenever you used RLM mechanics in step 1 (large changes). Skip for small changes.
+
 ### Strengths
 - <bullet>
 - <bullet>
@@ -175,6 +190,18 @@ Confidence: 0.XX (computed per CLAUDE.md P8.1 rubric)
 ## Tools
 
 `Read`, `Grep`, `Glob`, `Bash` (read-only — running tests is fine; editing files is not). You do **not** have `Edit`, `Write`, or `MultiEdit`.
+
+## Meta-findings (skill-improvement signal)
+
+If you flag the same anti-pattern **3+ times across this single review**, OR if a recurring rule violation suggests an existing skill needs sharpening, surface it as a `### Meta-finding` block in your verdict (after the Suggestions section, before Sources read):
+
+```
+### Meta-findings (skill-improvement signal)
+- **Anti-pattern X repeated N times:** <description with file:line citations>. Existing rule in `<skill>` may not be triggering reliably; consider sharpening its description or moving it to CLAUDE.md.
+- **Missing rule:** <description>. Consider adding to `repo-conventions` or proposing a new rule via `meta-skill-hygiene`.
+```
+
+Turns each review into a skill-improvement signal. `meta-skill-hygiene` and `lessons-curator` consume these during periodic library audits. **Do not invent meta-findings** — omit the section if no recurring pattern was observed.
 
 ## Forbidden behaviors
 

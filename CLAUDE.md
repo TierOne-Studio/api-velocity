@@ -220,6 +220,7 @@ The response for any code change MUST include these items, in order:
 8. `Design review:` block (principle grid + trade-offs)
 9. `Confidence:` 0.0–1.0 + key risks
 10. Optional out-of-scope improvements (proposals only — no implementation)
+11. `Skills consulted:` line — alphabetical list of every skill whose `SKILL.md` was actually read this turn (e.g., `Skills consulted: design-review, repo-conventions, tdd-workflow`). Self-attestation; do NOT list skills you only saw in CLAUDE.md's pointer table.
 
 **Multi-file output formatting:** when changing 2+ files, MUST output file-by-file with clear path headers (e.g., `### src/foo.ts` then the diff/code). MUST avoid dumping unrelated context. MUST output only what's required to apply the change.
 
@@ -240,6 +241,23 @@ The `Confidence:` line in item 9 is NOT a vibe — it's the sum of an objective 
 Sum the earned values — that's your confidence. **If sum < 0.90, MUST revise the weakest area before declaring done. Do NOT round up.** If you're at 0.80 because the security gate didn't run, run it (or explicitly state why N/A) — don't just write 0.90.
 
 Calibration anchors and the rubric output format live in the `design-review` skill.
+
+### P8.2 Aggregating subagent confidence
+
+When subagents (`architect-reviewer`, `code-reviewer`, `qa-validator`, `security-reviewer`) ran and each returned its own `Confidence:` value, the response's final `Confidence:` is computed as:
+
+```
+final = min(model_rubric_outcome, every_subagent_confidence_that_ran)
+```
+
+**The minimum, not the average.** Averaging hides the weakest dimension; the user reads `Confidence:` to decide whether to ship, and the weakest signal is the one that should set the ceiling. Concretely:
+
+- If `code-reviewer` returned 0.95 and `qa-validator` returned 0.85 (coverage gap), final is **0.85**, not 0.90.
+- If any subagent returned **BLOCK**, final confidence is **0** regardless of others — BLOCK supersedes any rubric arithmetic.
+- If no subagents ran, final is just the model's own rubric outcome.
+- Never round up. If the minimum is 0.85, write 0.85.
+
+Cite the binding subagent in the response when it's not the model's own rubric: `Confidence: 0.85 (set by qa-validator coverage gap)`.
 
 ---
 
@@ -284,5 +302,22 @@ Situation → skill lookup. The model loads a skill on description match; this t
 | Advanced TypeScript types — generics, conditional types, mapped types, template literals | `typescript-advanced-types` |
 | Optimizing measured hot paths — tight loops, large datasets, high-frequency events | `js-performance-patterns` |
 | Cleanup pass on recently modified code (clarity, consistency, no behavior change) | `code-simplifier` |
+
+## Workflow chains
+
+Common task types and the skill chains they invoke. The Skill Pointers table is the menu; this is the recipe book. **Treat each chain as the default sequence — deviate only with reason.**
+
+| Task type | Chain (left → right; subagents in **bold**) |
+|---|---|
+| **New feature** (familiar code) | `plan-mode` (with failure-mode anticipation) → `failure-mode-analysis` → `tdd-workflow` → `repo-conventions` → `design-review` → **architect-reviewer** (pre-impl) → **code-reviewer** + **qa-validator** (post-impl) |
+| **New feature** (unfamiliar code) | `rlm-explore` (slice the relevant module first) → then the standard New feature chain above |
+| **Bug fix** (clear repro) | `bug-investigation` → `failure-mode-analysis` → `tdd-workflow` → `repo-conventions` → `design-review` → **code-reviewer** |
+| **Bug fix** (dense stack trace / unfamiliar codebase) | `rlm-explore` (LOCATE the relevant slices from the trace; EXTRACT only those) → `bug-investigation` → `failure-mode-analysis` → `tdd-workflow` → `repo-conventions` → `design-review` → **code-reviewer** |
+| **Auth / RBAC / payments / migration** (high-risk per P3.3) | `plan-mode` (with P3.3 explicit restate) → **architect-reviewer** (early) → `tdd-workflow` → `repo-conventions` (RBAC section) → `database-transactions` (if multi-statement) → `design-review` → **security-reviewer** + **code-reviewer** + **qa-validator** |
+| **Refactor (no behavior change)** | `code-simplifier` → `cyclomatic-complexity` → `repo-conventions` → `design-review` → **code-reviewer** |
+| **Performance work** | `rlm-explore` (LOCATE the hot path; don't read whole modules) → `js-performance-patterns` → `failure-mode-analysis` → `tdd-workflow` → `repo-conventions` → `design-review` → **code-reviewer** + **qa-validator** |
+| **Async / external-integration code** | `async-error-handling` → `failure-mode-analysis` (network/partial categories) → `tdd-workflow` → `repo-conventions` → `design-review` → **code-reviewer** |
+| **NestJS module / provider design** | `nestjs-best-practices` (relevant `arch-*`/`di-*` rules) → relevant `nestjs-*` skill → `repo-conventions` → `design-review` → **architect-reviewer** + **code-reviewer** |
+| **Large code review** (>4 files OR >500 LOC) | All review subagents (`architect-reviewer`, `code-reviewer`, `qa-validator`, `security-reviewer`) automatically apply RLM in their step 1. They report a **Working Set** in the verdict — read that section first to see what they actually evaluated. |
 
 After a user correction, see [P7 — Reflexive Lesson Capture](#p7--reflexive-lesson-capture-after-corrections).
