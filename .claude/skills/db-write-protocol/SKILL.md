@@ -1,0 +1,63 @@
+---
+name: db-write-protocol
+description: Use when ANY database write is required — INSERT, UPDATE, DELETE, schema change, migration, destructive maintenance. NOT for SELECT, read-only investigations, JQL queries, or schema introspection.
+---
+
+# Database Write Protocol
+
+DB writes need explicit user approval. The `guard-sql-writes.sh` hook is the safety net; this skill is the workflow.
+
+## Three-step protocol (mandatory)
+
+1. **Show the exact SQL** that will run. Not a description — the literal statement(s).
+2. **Explain impact** (see analysis fields below).
+3. **WAIT** for explicit approval. Then run.
+
+## Impact analysis fields
+
+For every write, present:
+
+```
+Tables:        <name(s)>
+Rows affected: <run COUNT(*) for the WHERE clause first; cite the number>
+WHERE clause:  <restate it; flag if missing or overly broad>
+Reversibility: <can this be undone? how? backup taken?>
+Cascading:     <foreign keys, triggers, materialized views, audit logs>
+Production:    <is this prod? what's the user-visible impact during the write?>
+```
+
+If you cannot answer any field, stop and gather the info before asking for approval.
+
+## Approval keywords
+
+**Explicit only:** `approve`, `yes`, `go ahead`, `proceed`.
+**NOT acceptable:** `ok`, `looks fine`, `sure`, `sounds good`, silence, thumbs up emoji.
+
+If the user's reply is ambiguous, ask again with the exact phrasing required.
+
+## Migration-specific extensions
+
+For schema changes / data migrations:
+
+- **Up + down both required.** Provide the rollback before asking for approval.
+- **Table state:** row count, indexes, constraints, locks held.
+- **Large-table warning:** for tables > ~1M rows, warn about lock duration. Prefer online schema-change tools (`pt-online-schema-change`, `gh-ost`) where appropriate.
+- **Deploy ordering:** schema vs. application code — explicit which goes first and why.
+
+## Pre-authorized shell escape
+
+For non-interactive CI / scripted runs the user pre-authorized, set:
+
+```
+CLAUDE_DB_WRITE_APPROVED=1
+```
+
+This bypasses `guard-sql-writes.sh` for that shell only. Do **not** set it persistently in `.envrc` / shell rc files.
+
+## Anti-patterns
+
+- Running an `UPDATE` without a `WHERE` clause "to test the syntax".
+- Running `DELETE` and `then` checking `SELECT COUNT(*)` to see what got deleted.
+- Treating "ok" as approval.
+- Skipping the down migration "because it's a one-way change".
+- Migration in production at peak hours without an explicit window.
