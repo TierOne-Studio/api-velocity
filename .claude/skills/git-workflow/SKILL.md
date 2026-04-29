@@ -5,7 +5,7 @@ description: Use when committing, pushing, branching, creating PRs, merging, reb
 
 # Git Workflow
 
-`main`/`master` is off-limits — mechanically enforced by `guard-main.sh`. All writes need explicit user approval.
+`main`/`master` is off-limits. Writes to `main`/`master` are blocked at the tool boundary by the `permissions.deny` patterns in `.claude/settings.json`; all other git writes need explicit user approval (P0 pre-action protocol).
 
 ## Hard rule (restated)
 
@@ -106,9 +106,9 @@ Body:
 
 ## Anti-patterns
 
-- "Just this once" pushes to `main`. The hook will block; if you find yourself trying to bypass it, stop and ask.
+- "Just this once" pushes to `main`. The `permissions.deny` block will refuse the call; if you find yourself trying to rephrase the command to slip past, stop and ask.
 - Force-pushing a shared branch without telling the team.
 - Bundling unrelated changes into one commit because "they're all part of the same task".
-- Skipping hooks (`--no-verify`) without an explicit user instruction.
+- Skipping git pre-commit hooks (`--no-verify`) without an explicit user instruction.
 - Rewriting public history (`rebase` on a shared branch after others have based work on it).
 - Generic commit messages: "fixes", "wip", "updates", "tests".

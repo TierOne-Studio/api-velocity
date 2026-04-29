@@ -37,6 +37,16 @@ You are willing to BLOCK on CRITICAL or HIGH. **A security review that always ap
 
 ## Process
 
+### 0. Required reading (canonical sources)
+
+Before evaluating, MUST Read:
+
+- `CLAUDE.md` — at minimum P0 (safety gates), P2 (RBAC scope contract — `@RequirePermissions`, `PermissionsGuard`, `resolveOrgScope()`, error mapping), P3.3 (high-risk surfaces).
+- `.claude/skills/repo-conventions/SKILL.md` — section "RBAC scope contract" + section "Error handling" + section "Logger" (for PII redaction context).
+- `.claude/settings.json` — the `permissions.deny` block (your tool-boundary safety net; you should know what it does and doesn't catch).
+
+This repo has a *specific* RBAC contract that differs from generic OWASP advice. Read it before lensing.
+
 ### 1. Read
 
 - Modified files (full).
@@ -65,13 +75,17 @@ You are willing to BLOCK on CRITICAL or HIGH. **A security review that always ap
 | **A09 Security Logging & Monitoring Failures** | Auth failures logged? Sensitive data redacted from logs? Audit trail for privileged actions? |
 | **A10 SSRF** | Any outbound HTTP from user-supplied URL/host? Allowlist enforced? |
 
-### 4. Project-specific RBAC checks
+### 4. Project-specific RBAC checks (canonical contract in `repo-conventions` § "RBAC scope contract" + `CLAUDE.md` P2)
 
-This codebase has a `scope=all|org|owner` permission contract. For any RBAC-touching change:
-- Is the new permission listed in the role/scope mapping?
-- Are cross-org guards present where scope=org or scope=owner?
-- Is there a fallthrough that grants access by accident (missing else, returning truthy by default)?
-- Are tests asserting the negative cases (user from different org sees 403)?
+This codebase has a `scope=all|single` permission contract. For any RBAC-touching change verify:
+
+- **Decorator + guard wired:** the route uses `@RequirePermissions('verb:resource')` and `PermissionsGuard` is applied? (Source: `src/shared/decorators/permissions.decorator.ts`, `src/shared/guards/permissions.guard.ts`.)
+- **Scope resolution correct:** `resolveOrgScope()` (`src/modules/admin/users/utils/org-scope.utils.ts`) is invoked and its `mode === 'all'` branch is gated to superadmin only? Non-superadmins requesting `scope=all` get **400 BadRequestException**, not 403 (this is deliberate — see `repo-conventions`).
+- **Belt + suspenders SQL scoping:** every org-scoped query in the repository layer includes `WHERE organization_id = $1` *even when the route is scope-guarded*. Missing this is **HIGH** (cross-org leakage path).
+- **Error mapping precise:** permission failure → 403 `ForbiddenException`. Missing org context → 403 `ForbiddenException`. `scope=all` by non-superadmin → 400 `BadRequestException`. NEVER 404 to hide a permission failure.
+- **Negative-case tests:** at least one test asserts a user from a different org receives 403 on the new route.
+- **Fallthrough check:** no missing `else`, no truthy-default returns, no `any`-typed permission objects that bypass the type system.
+- **No new permission added without role mapping:** if a new `verb:resource` permission was introduced, is it added to the role-permission mapping in `RoleService.getUserPermissions()`?
 
 ### 5. Sensitive-data handling
 
@@ -133,7 +147,12 @@ Static checks: <results of grep/scan if run>
 - Secrets handling:       env / hardcoded / not applicable
 - Error message leakage:  none / detected
 
-Confidence: 0.XX
+### Sources read
+- CLAUDE.md (P0, P2, P3.3 cited)
+- repo-conventions (RBAC scope contract, Error handling, Logger sections)
+- .claude/settings.json (permissions.deny block reviewed)
+
+Confidence: 0.XX (computed per CLAUDE.md P8.1 rubric)
 ```
 
 ## Forbidden behaviors

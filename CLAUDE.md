@@ -99,6 +99,24 @@ The only valid `<reason>` values are: `non-code change`, `type-only`, `config ch
 
 `"small change"`, `"obvious fix"`, `"trivial"`, `"just a refactor"`. These are NEVER bypasses.
 
+### P3.3 High-risk restate
+
+For changes touching **auth, sessions, RBAC, payments, secrets, encryption, PII, public API, or data migrations** — regardless of step count or file count — MUST restate the requirements explicitly in your own words BEFORE writing any test or code. State: what the user asked for, what's in scope, what's NOT in scope, and any assumptions. This catches misinterpretation early on the surfaces where misinterpretation is most expensive. The restate happens even if `plan-mode` doesn't fire (e.g., 1-step changes).
+
+### P3.4 Mandatory skill invocation (override description-trigger)
+
+Skills load on description match — that's a heuristic, not a guarantee. For executable-code work in this repo, the following skills MUST be invoked **even if their description didn't auto-fire**:
+
+| Skill | When MUST fire | What goes wrong if it doesn't |
+|---|---|---|
+| `tdd-workflow` | Any executable-code change | No failing test written first; rule erosion |
+| `failure-mode-analysis` | Any non-trivial change, BEFORE the failing test | Tests miss failure modes (null, race, partial, malformed, boundary); `qa-validator` later finds gaps |
+| `repo-conventions` | Any code change in `api-velocity` | Plausible-but-wrong-for-this-repo code (custom errors, wrong logger, missing org_id scope) |
+| `design-review` | Before declaring complete | No principle grid, no `Design review:` block, no Confidence rubric output |
+| `plan-mode` | 3+ steps OR multi-file OR architectural OR risky | Silent interpretation of ambiguous request, no `verify:` clauses |
+
+If a listed skill genuinely doesn't apply (e.g., `plan-mode` for a single-line typo), state which one and why in the response. Do NOT silently skip.
+
 ---
 
 ## P4 — MANDATORY VERIFICATION (review subagents)
@@ -108,6 +126,8 @@ For any change touching **3+ files** OR **auth/payments/sessions/RBAC/data-migra
 - `architect-reviewer` — runs PRE-implementation on the plan. Plan critique. Verdict: **APPROVE_PLAN / REVISE_PLAN / BLOCK**.
 - `code-reviewer` — runs POST-implementation. DESIGN principles only. Verdict: **APPROVE / CHANGES REQUESTED / BLOCK**.
 - `qa-validator` — runs POST-implementation in parallel with code-reviewer. Test coverage + edge cases + docs + backward compat. Verdict: **PASS / GAPS / BLOCK**.
+
+For **1–2 file** changes that alter observable behavior (new failure modes, new branches, new public-API shapes), MUST invoke `qa-validator`. Trivial edits (typo, comment-only, type-only, one-line fix with regression test in place) are exempt.
 
 Additionally, for any change touching **auth, sessions, secrets, encryption, payments, PII, RBAC, or public API**:
 
@@ -121,6 +141,7 @@ MUST address every HIGH/CRITICAL issue before declaring done. A BLOCK from any r
 
 These bullets apply to every turn, every change.
 
+- **Consult feedback memories first.** Before any code change, MUST read the auto-memory `MEMORY.md` index (always loaded at session start) AND the linked `feedback`-type memory files for any rule that touches the area being changed. Past corrections only protect future work if you actively consult them.
 - **Scope discipline.** MUST do only the requested task. Propose adjacent work and STOP for approval.
 - **Surgical diffs.** Every changed line MUST trace directly to the request. NO adjacent cleanup.
 - **Local cleanup only.** MUST remove only items made obsolete by THIS change. MUST NOT delete pre-existing dead code unless asked.
@@ -170,13 +191,16 @@ Full templates for all four cases (simpler-alternative, scope-creep, hidden-risk
 
 ## P7 — REFLEXIVE LESSON CAPTURE (after corrections)
 
-When the user issues a correction — signals: `"no, that's wrong"`, `"you should have"`, `"we discussed this"`, `"stop doing X"`, `"next time"`, `"don't do that"`, `"that's not what I asked"` — the IMMEDIATE next response MUST include the literal line:
+When the user issues a correction — signals: `"no, that's wrong"`, `"you should have"`, `"we discussed this"`, `"stop doing X"`, `"next time"`, `"don't do that"` — the IMMEDIATE next response MUST do both, in order:
+
+1. **Capture to memory unconditionally.** Write a `feedback`-type memory file to `~/.claude/projects/.../memory/` with the rule, the **Why**, and **How to apply**. Not opt-in.
+2. **Output:**
 
 ```
-Detected a correction. Want me to invoke lessons-curator to capture the lesson? (reply 'yes' / 'curate that' / 'skip')
+Lesson captured to memory. Want lessons-curator to refine it? (reply 'yes' / 'curate that' / 'skip')
 ```
 
-MUST NOT move past the correction without offering this. The `lessons-curator` subagent is read-only — it proposes ONE concrete change for your approval and does not write files itself.
+The `lessons-curator` subagent (read-only) proposes ONE concrete skill/CLAUDE.md/settings change for approval — it does not write files. Memory is the durable record; curator is optional refinement.
 
 ---
 
@@ -198,6 +222,22 @@ The response for any code change MUST include these items, in order:
 **Multi-file output formatting:** when changing 2+ files, MUST output file-by-file with clear path headers (e.g., `### src/foo.ts` then the diff/code). MUST avoid dumping unrelated context. MUST output only what's required to apply the change.
 
 Quality criteria per item: see `design-review` skill (Output contract — quality criteria section).
+
+### P8.1 Confidence rubric (the 0.9 gate)
+
+The `Confidence:` line in item 9 is NOT a vibe — it's the sum of an objective rubric. Compute it as:
+
+| Item | Worth | Earned when |
+|---|---|---|
+| Tests pass (full suite ran AND green) | 0.20 | Full suite ran without skips/excludes. Cite the command. |
+| Principles checked (every MUST has a verdict) | 0.20 | All 9 MUST principles have pass / pass-with-note / fail in the design-review grid. |
+| No HIGH issues from any reviewer | 0.20 | No HIGH from `code-reviewer`, `qa-validator`, `architect-reviewer`, or `security-reviewer` (those that ran). |
+| Domain gates passed (when applicable) | 0.20 | Auth/payments/sessions/RBAC: `security-reviewer` returned APPROVE. 3+ files: `qa-validator` returned PASS. Otherwise N/A — earns 0.20 free. |
+| No open assumptions or unresolved questions | 0.20 | Every assumption stated was either validated or recorded as a known risk. No "I think" or "should be" hedging on load-bearing facts. |
+
+Sum the earned values — that's your confidence. **If sum < 0.90, MUST revise the weakest area before declaring done. Do NOT round up.** If you're at 0.80 because the security gate didn't run, run it (or explicitly state why N/A) — don't just write 0.90.
+
+Calibration anchors and the rubric output format live in the `design-review` skill.
 
 ---
 

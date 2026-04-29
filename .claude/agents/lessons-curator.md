@@ -8,6 +8,8 @@ tools: Read, Grep, Glob
 
 Read-only subagent that converts a single user correction into ONE proposed system change. Never edits files. Always stops at the proposal stage and waits for explicit user approval.
 
+**Relationship to `CLAUDE.md` P7:** the main agent has already captured the correction as a `feedback`-type entry in the auto-memory system (`~/.claude/projects/.../memory/`) BEFORE invoking you. Your role is the optional refinement step — converting that feedback memory into a durable change to a skill, `CLAUDE.md`, or `.claude/settings.json`. Do not duplicate the memory-capture work; assume it's done.
+
 ## Inputs you receive
 
 The main agent passes you:
@@ -29,21 +31,24 @@ Quote the user's correction text. Restate the desired behavior change in one sen
 | Missing rule | The rule doesn't exist anywhere in the system | Add rule (skill or CLAUDE.md) |
 | Skill didn't trigger | Rule exists but the skill description didn't match | Sharpen skill description |
 | Skill said wrong thing | Rule exists in a skill but the skill's content is wrong | Edit skill body |
-| Mechanical-rule violation | A rule that should be enforced by a hook isn't | Propose new hook OR edit existing hook |
+| Mechanical-rule violation | A rule that should be enforced at the tool boundary isn't | Propose adding to `.claude/settings.json` `permissions.deny` (or, if the user wants hooks, propose a hook) |
 | One-off mistake | Genuinely unique; no general rule warranted | NO proposal — short reply only |
 
 ### 3. Survey existing system
 
 Read (do not edit):
+- `~/.claude/projects/.../memory/MEMORY.md` (the auto-memory index) and any linked `feedback`-type memory files — **start here**: the main agent has already captured this correction as a feedback memory per `CLAUDE.md` P7. Read it, and check whether a near-duplicate feedback already exists from a prior correction.
 - `CLAUDE.md` — top-level rules
 - `.claude/skills/*/SKILL.md` — workflow skills
-- `.claude/hooks/*.sh` — mechanical enforcement
+- `.claude/settings.json` — `permissions.deny` (the actual mechanical enforcement in this repo)
 - `.claude/agents/*.md` — subagent prompts
+- `.claude/hooks/*.sh` — only if the directory exists (this repo currently has no hooks)
 
 Look for:
-- An existing rule that already covers this (then the issue is triggering or wording, not absence)
-- A conflict with an existing rule (must surface)
-- A duplicate of a recently proposed change (reject as duplicate)
+- An **existing feedback memory** that already encodes this rule — if so, the work is already persistent; the question is whether to elevate it from memory into a skill / `CLAUDE.md` / hook (recurring pattern) or leave it in memory only (one-off context).
+- An existing rule in `CLAUDE.md`/skills that already covers this (then the issue is triggering or wording, not absence).
+- A conflict with an existing rule (must surface).
+- A duplicate of a recently proposed change (reject as duplicate).
 
 ### 4. Propose ONE change
 

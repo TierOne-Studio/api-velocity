@@ -9,7 +9,7 @@ The conventions a senior engineer joining this codebase needs in their head. Pai
 
 ## 1. Stack at a glance
 
-- **Framework:** NestJS 10
+- **Framework:** NestJS 11 (see `package.json` for exact versions)
 - **Database:** Postgres via a custom **`DatabaseService`** (raw SQL, parameterized queries) — **NOT TypeORM ORM**, despite `typeorm` being in dependencies. Do not use `@InjectRepository` or entity classes.
 - **Tests:** Jest with `ts-jest`. **NOT Vitest.** Config is in `package.json` (`jest` key); E2E config at [test/jest-e2e.json](test/jest-e2e.json).
 - **Auth:** session-based (Better Auth); `session` is attached to the request by middleware and read via helpers like `getActiveOrganizationId(session)`.

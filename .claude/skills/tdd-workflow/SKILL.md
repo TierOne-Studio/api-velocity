@@ -5,7 +5,7 @@ description: Use ALWAYS when implementing, modifying, or fixing executable code 
 
 # TDD Workflow
 
-Strict test-driven development. Mechanically enforced by `enforce-tdd-postedit` (PostToolUse) and `enforce-tdd-stop` (Stop) — turn-end is blocked if source is edited without a test or a valid waiver.
+Strict test-driven development. This is a workflow expectation, not a runtime hook: write or update a test first, verify it fails for the right reason, then make the minimal code change to pass it. If a change cannot follow TDD, the response MUST include one of the three valid waiver phrases at the bottom of this file.
 
 ## Step 1 — Failing test FIRST
 
@@ -32,11 +32,16 @@ Strict test-driven development. Mechanically enforced by `enforce-tdd-postedit` 
 
 ## Step 5 — Mini self-review
 
-Before declaring the change complete, verify:
-- Every changed line traces to the request.
-- Errors are actionable (typed, contextual, redacted).
-- Backward compatibility preserved unless explicitly told otherwise.
-- Confidence ≥ 0.9; if lower, revise the weakest area.
+Before declaring the change complete, verify (in order):
+- **Requirement coverage.** Every requirement / acceptance criterion has at least one passing test or an explicit waiver.
+- **Assumptions validated.** Every assumption stated up front is either confirmed by the code/tests or recorded as a known risk in the response.
+- **Every changed line traces to the request.** No drive-by edits.
+- **Errors are actionable** (typed, contextual, redacted). NestJS built-in exceptions, not plain `Error` (see `repo-conventions`).
+- **Backward compatibility preserved** unless the user explicitly told you otherwise.
+- **Security / performance flags raised explicitly** when applicable: new auth surface, new external call, new SQL, new big-O hot path. If none apply, state "no security/perf flags raised."
+- **Confidence ≥ 0.9** per the rubric in `CLAUDE.md` P8.1. If lower, revise the weakest area before declaring done.
+
+The design-principles check is delegated to `design-review`; do not duplicate it here.
 
 ## Interaction with `design-review`
 
@@ -79,7 +84,7 @@ A test that *passes* is necessary; a test that's *good* is what catches regressi
 
 9. **Tests one error path explicitly.** For every non-trivial failure mode (validation failure, downstream timeout, conflict, scope mismatch), have a test that triggers it and asserts on the surfaced error. "It should throw" is not enough — assert on the *kind* of error.
    - **Bad:** `expect(() => fn(bad)).toThrow()`.
-   - **Good:** `await expect(fn(bad)).rejects.toThrow(InvalidScopeError)`.
+   - **Good:** `await expect(fn(bad)).rejects.toThrow(ForbiddenException)` — assert on the NestJS built-in exception type the service actually throws (this repo does not use custom error classes; see `repo-conventions`).
 
 10. **Lives next to the code, named consistently.** Match the project's convention for test file location and suffix. If the codebase uses `*.spec.ts`, don't introduce `*.test.ts`.
 

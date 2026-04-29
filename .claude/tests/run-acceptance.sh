@@ -57,12 +57,12 @@ assert_true "T1: .claude/hooks/ is removed" "! test -d .claude/hooks"
 assert_true "T1: .claude/.state/ is removed" "! test -d .claude/.state"
 
 echo
-echo "=== T13: CLAUDE.md size <= 2100 words (priority-structured mode — index + P0..P9 + MUST/SHOULD/MAY) ==="
+echo "=== T13: CLAUDE.md size <= 3500 words (priority-structured mode — index + P0..P9 + MUST/SHOULD/MAY + inline rubric for parity) ==="
 WORDS=$(wc -w < CLAUDE.md | tr -d '[:space:]')
-if [ "$WORDS" -le 2100 ]; then
-  echo "PASS: T13 (CLAUDE.md is $WORDS words; gate is 2100 in priority-structured mode)"; PASS=$((PASS+1))
+if [ "$WORDS" -le 3500 ]; then
+  echo "PASS: T13 (CLAUDE.md is $WORDS words; gate is 3500 to accommodate the inline confidence rubric and high-risk restate rule)"; PASS=$((PASS+1))
 else
-  echo "FAIL: T13 (CLAUDE.md is $WORDS words, expected <= 2100)"
+  echo "FAIL: T13 (CLAUDE.md is $WORDS words, expected <= 3500)"
   FAIL=$((FAIL+1)); FAILED_TESTS="$FAILED_TESTS T13"
 fi
 
@@ -201,9 +201,12 @@ assert_true "T31: delegates to security-reviewer"           "grep -q 'security-r
 assert_true "T31: NO 'what TDD missed' section in body"    "! grep -q 'what TDD missed' .claude/agents/code-reviewer.md"
 
 echo
-echo "=== T32: design-review has calibration rubric ==="
-assert_true "T32: 'Confidence calibration rubric' present"   "grep -q 'Confidence calibration rubric' .claude/skills/design-review/SKILL.md"
-assert_true "T32: 5 rubric items (each worth 0.20)"          "[ \$(grep -c '0.20 / 0.20\\|| 0.20 |' .claude/skills/design-review/SKILL.md) -ge 5 ]"
+echo "=== T32: confidence rubric present (CLAUDE.md canonical, design-review carries calibration depth) ==="
+assert_true "T32: 'Confidence rubric' canonical in CLAUDE.md P8.1"  "grep -q 'P8.1 Confidence rubric' CLAUDE.md"
+assert_true "T32: 5 rubric items (each worth 0.20) in CLAUDE.md"    "[ \$(grep -c '| 0.20 |' CLAUDE.md) -ge 5 ]"
+assert_true "T32: 0.9 gate enforced in CLAUDE.md"                   "grep -q 'sum < 0.90, MUST revise' CLAUDE.md"
+assert_true "T32: design-review keeps calibration anchors"           "grep -q 'Calibration anchors' .claude/skills/design-review/SKILL.md"
+assert_true "T32: design-review references CLAUDE.md as canonical"   "grep -q 'CLAUDE.md.*P8.1' .claude/skills/design-review/SKILL.md"
 
 echo
 echo "=== T33: CLAUDE.md mandates all 4 review subagents ==="
@@ -282,6 +285,84 @@ assert_true "T41: P6.2 condensed (refs pushback-templates skill)" "grep -q 'in \
 assert_true "T41: skill pointers row for decision-rules"     "grep -q '\`decision-rules\`' CLAUDE.md"
 assert_true "T41: skill pointers row for pushback-templates" "grep -q '\`pushback-templates\`' CLAUDE.md"
 assert_true "T41: P9 'no retries' duplicate removed (only in P5)" "[ \$(grep -c 'No retries\\|MUST NOT implement retries' CLAUDE.md) -le 1 ]"
+
+echo
+echo "=== T42: parity-with-monolith rules inlined into CLAUDE.md ==="
+assert_true "T42: P3.3 high-risk restate rule present"            "grep -q 'P3.3 High-risk restate' CLAUDE.md"
+assert_true "T42: high-risk surface list explicit"                "grep -q 'auth, sessions, RBAC, payments' CLAUDE.md"
+assert_true "T42: restate happens regardless of plan-mode firing" "grep -q 'plan-mode.*does.*not fire\\|even if .plan-mode. doesn.t fire' CLAUDE.md"
+assert_true "T42: P5 memory-consultation bullet"                  "grep -q 'Consult feedback memories' CLAUDE.md"
+assert_true "T42: P5 names MEMORY.md as the index"                "grep -q 'MEMORY.md' CLAUDE.md"
+assert_true "T42: tdd-workflow Step 5 — requirement coverage"     "grep -qi 'requirement coverage' .claude/skills/tdd-workflow/SKILL.md"
+assert_true "T42: tdd-workflow Step 5 — assumptions validated"    "grep -qi 'assumptions validated' .claude/skills/tdd-workflow/SKILL.md"
+assert_true "T42: tdd-workflow Step 5 — security/perf flags"      "grep -qi 'security.*perf' .claude/skills/tdd-workflow/SKILL.md"
+assert_true "T42: tdd-workflow refs CLAUDE.md P8.1 for confidence" "grep -q 'CLAUDE.md.*P8.1' .claude/skills/tdd-workflow/SKILL.md"
+
+echo
+echo "=== T43: P3.4 mandatory-skill-invocation matrix forces fire-even-if-not-triggered ==="
+assert_true "T43: P3.4 section header present"                "grep -q 'P3.4 Mandatory skill invocation' CLAUDE.md"
+assert_true "T43: tdd-workflow named MUST-fire"               "grep -q '| \`tdd-workflow\` |' CLAUDE.md"
+assert_true "T43: failure-mode-analysis named MUST-fire"      "grep -q '| \`failure-mode-analysis\` |' CLAUDE.md"
+assert_true "T43: repo-conventions named MUST-fire"           "grep -q '| \`repo-conventions\` |' CLAUDE.md"
+assert_true "T43: design-review named MUST-fire"              "grep -q '| \`design-review\` |' CLAUDE.md"
+assert_true "T43: plan-mode named MUST-fire"                  "grep -q '| \`plan-mode\` |' CLAUDE.md"
+assert_true "T43: 'override description-trigger' framing"     "grep -qi 'override description-trigger\\|even if their description' CLAUDE.md"
+assert_true "T43: silent-skip explicitly forbidden"           "grep -q 'Do NOT silently skip' CLAUDE.md"
+
+echo
+echo "=== T44: cross-validation — load-bearing rules don't drift between CLAUDE.md and skills ==="
+# Each rule in CLAUDE.md must also appear in its canonical skill so the deeper content stays consistent.
+assert_true "T44: P3.3 high-risk surfaces also listed in security-reviewer mandate" \
+  "grep -qi 'auth.*RBAC\\|RBAC.*auth\\|auth.*payments\\|payments.*auth' .claude/agents/security-reviewer.md"
+assert_true "T44: P5 'Consult feedback memories' mirrored — lessons-curator names feedback memory" \
+  "grep -qi 'feedback' .claude/agents/lessons-curator.md"
+assert_true "T44: tdd-workflow Step 5 confidence cross-link to CLAUDE.md P8.1" \
+  "grep -q 'CLAUDE.md.*P8.1' .claude/skills/tdd-workflow/SKILL.md"
+assert_true "T44: design-review confidence cross-link to CLAUDE.md P8.1" \
+  "grep -q 'CLAUDE.md.*P8.1' .claude/skills/design-review/SKILL.md"
+assert_true "T44: P0 deny-list patterns are real git syntax (no fake 'merge --into')" \
+  "! grep -q 'merge --into' .claude/settings.json"
+assert_true "T44: P0 deny-list patterns are real git syntax (no fake 'rebase --root <branch>')" \
+  "! grep -qE 'rebase --root (main|master)' .claude/settings.json"
+assert_true "T44: no orphan hook-enforcement claims in skills" \
+  "! grep -rE 'enforce-tdd|enforce-design|guard-main|guard-sql|CLAUDE_DB_WRITE_APPROVED' .claude/skills/ .claude/agents/ CLAUDE.md"
+assert_true "T44: NestJS version in repo-conventions matches package.json (no 'NestJS 10')" \
+  "! grep -q 'NestJS 10$\\|NestJS 10 ' .claude/skills/repo-conventions/SKILL.md"
+
+echo
+echo "=== T45: subagents have Required Reading preamble (canonical-source loading) ==="
+assert_true "T45: architect-reviewer Required reading"   "grep -q 'Required reading' .claude/agents/architect-reviewer.md"
+assert_true "T45: code-reviewer Required reading"        "grep -q 'Required reading' .claude/agents/code-reviewer.md"
+assert_true "T45: qa-validator Required reading"         "grep -q 'Required reading' .claude/agents/qa-validator.md"
+assert_true "T45: security-reviewer Required reading"    "grep -q 'Required reading' .claude/agents/security-reviewer.md"
+assert_true "T45: architect-reviewer reads CLAUDE.md"    "grep -q 'Read.*CLAUDE.md\\|CLAUDE.md.*Read\\|MUST Read' .claude/agents/architect-reviewer.md"
+assert_true "T45: code-reviewer reads repo-conventions"  "grep -q 'repo-conventions' .claude/agents/code-reviewer.md"
+assert_true "T45: security-reviewer reads repo-conventions" "grep -q 'repo-conventions' .claude/agents/security-reviewer.md"
+assert_true "T45: qa-validator reads failure-mode-analysis" "grep -q 'failure-mode-analysis' .claude/agents/qa-validator.md"
+
+echo
+echo "=== T46: subagents perform CLAUDE.md compliance audits ==="
+assert_true "T46: architect-reviewer audits plan format"        "grep -q 'CLAUDE.md compliance' .claude/agents/architect-reviewer.md"
+assert_true "T46: architect-reviewer checks high-risk restate"  "grep -qi 'high-risk restate.*P3.3\\|P3.3.*high-risk' .claude/agents/architect-reviewer.md"
+assert_true "T46: code-reviewer checks Design review block"     "grep -q 'Design review.*block\\|Design review:.*block' .claude/agents/code-reviewer.md"
+assert_true "T46: code-reviewer checks Confidence line"         "grep -qE '\\\`Confidence:\\\`' .claude/agents/code-reviewer.md"
+assert_true "T46: code-reviewer checks repo-conventions"        "grep -q 'NestJS exceptions' .claude/agents/code-reviewer.md"
+assert_true "T46: code-reviewer flags forbidden waiver phrases" "grep -q 'forbidden waiver phrases\\|Forbidden waiver phrases\\|forbidden non-waiver\\|small change.*obvious fix' .claude/agents/code-reviewer.md"
+assert_true "T46: qa-validator failure-mode bridge (8 categories)" "[ \$(grep -cE '^\\| \\*\\*(null|empty|large|race|partial|network|malformed|boundary)\\*\\*' .claude/agents/qa-validator.md) -ge 8 ]"
+assert_true "T46: qa-validator checks tests-before-impl ordering"  "grep -qi 'tests.*before.*implementation\\|Tests-before-implementation\\|tests-before-impl' .claude/agents/qa-validator.md"
+
+echo
+echo "=== T47: subagent confidence aligned with CLAUDE.md P8.1 rubric ==="
+assert_true "T47: architect-reviewer cites P8.1 for confidence"  "grep -q 'P8.1' .claude/agents/architect-reviewer.md"
+assert_true "T47: code-reviewer cites P8.1 for confidence"       "grep -q 'P8.1' .claude/agents/code-reviewer.md"
+assert_true "T47: qa-validator cites P8.1 for confidence"        "grep -q 'P8.1' .claude/agents/qa-validator.md"
+assert_true "T47: security-reviewer cites P8.1 for confidence"   "grep -q 'P8.1' .claude/agents/security-reviewer.md"
+
+echo
+echo "=== T48: lessons-curator consults auto-memory before proposing ==="
+assert_true "T48: lessons-curator references MEMORY.md"           "grep -q 'MEMORY.md' .claude/agents/lessons-curator.md"
+assert_true "T48: lessons-curator checks for duplicate feedback"  "grep -qi 'near-duplicate feedback\\|existing feedback memory' .claude/agents/lessons-curator.md"
+assert_true "T48: lessons-curator survey order — memory first"    "[ \$(grep -nE 'MEMORY.md|CLAUDE.md.*top-level rules' .claude/agents/lessons-curator.md | head -2 | sort -n | head -1 | grep -c MEMORY) -eq 1 ]"
 
 echo
 echo "==========================="

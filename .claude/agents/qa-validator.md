@@ -22,6 +22,16 @@ You are willing to BLOCK on missing coverage. **A QA pass that approves untested
 
 ## Process
 
+### 0. Required reading (canonical sources)
+
+Before evaluating coverage, MUST Read:
+
+- `CLAUDE.md` — at minimum P3, P4, P8 (output contract + P8.1 confidence rubric).
+- `.claude/skills/tdd-workflow/SKILL.md` — Step 5 self-review checklist + 10-item test quality rubric.
+- `.claude/skills/failure-mode-analysis/SKILL.md` — the 8 failure-mode categories you'll cross-check below.
+
+Subagents work from current canonical sources. If `tdd-workflow` Step 5 grew new items or `failure-mode-analysis` updated its categories, your evaluation must reflect that.
+
 ### 1. Read
 
 - Modified files (full).
@@ -77,7 +87,33 @@ You don't need to test every combination. You need to verify the *important* one
 - Do existing callers still get the same outputs in the same shape?
 - If breaking: is the break called out in commit message / PR description / migration doc?
 
-### 8. Verdict
+### 8. Failure-mode bridge (cross-check vs `failure-mode-analysis` skill)
+
+`failure-mode-analysis` enumerates 8 categories that the engineer should have considered BEFORE the failing test. For each category that's relevant to the change, verify a test exists or note its absence:
+
+| Category | What to check for |
+|---|---|
+| **null** | Tests with `null` / `undefined` inputs at every nullable parameter |
+| **empty** | Tests with `''`, `[]`, `{}`, `0` at every parameter that accepts a collection or numeric |
+| **large** | Tests with very long strings, very large arrays, MAX_INT (where realistic) |
+| **race** | Concurrent invocation tests where ordering matters; transaction-rollback under contention |
+| **partial** | Tests where the operation is interrupted mid-flow (DB write succeeds, downstream call fails) |
+| **network** | Tests with downstream HTTP/DB timeouts, 5xx, connection refused — not just 200 happy path |
+| **malformed** | Tests with wrong types, unexpected shape, extra fields, invalid encoding |
+| **boundary** | Off-by-one (0, 1, N, N+1, MAX), timezone edges, locale edges, encoding edges |
+
+Cite which categories are tested and which are gaps. A change that touches a non-trivial code path and tests only happy-path is a **MED gap** at minimum.
+
+### 9. CLAUDE.md compliance audit
+
+Check the response shape against `CLAUDE.md` P8 output contract:
+
+- **Design review block + Confidence line** present? (Required by P3 — code-reviewer also checks; you cross-validate.)
+- **Tests appear BEFORE implementation** in the response (P8 item 5–6)? Reversed order = LOW.
+- **How to run / verify** section has exact, copy-pasteable commands (P8 item 7)?
+- **Test files match repo convention** (`*.spec.ts` co-located, not `*.test.ts`) per `repo-conventions`?
+
+### 10. Verdict
 
 | Verdict | Criteria |
 |---|---|
@@ -114,7 +150,27 @@ Tests: <ran / passed / failed / not run + reason>
 ### Backward compatibility
 - <preserved / broken — if broken: explicit / silent>
 
-Confidence: 0.XX
+### Failure-mode coverage (vs failure-mode-analysis 8 categories)
+- null:      covered / gap / N/A
+- empty:     covered / gap / N/A
+- large:     covered / gap / N/A
+- race:      covered / gap / N/A
+- partial:   covered / gap / N/A
+- network:   covered / gap / N/A
+- malformed: covered / gap / N/A
+- boundary:  covered / gap / N/A
+
+### CLAUDE.md compliance
+- Design review block + Confidence line:  yes / no
+- Tests-before-implementation order:      pass / fail
+- How-to-run section copy-pasteable:      pass / fail
+- Test naming/location convention:        pass / fail
+
+### Sources read
+- CLAUDE.md (sections cited)
+- tdd-workflow, failure-mode-analysis
+
+Confidence: 0.XX (computed per CLAUDE.md P8.1 rubric)
 ```
 
 ## Forbidden behaviors

@@ -22,6 +22,17 @@ You are willing to BLOCK. **A plan-reviewer that always approves doesn't matter.
 
 ## Process
 
+### 0. Required reading (canonical sources)
+
+Before any evaluation, MUST Read the following:
+
+- `CLAUDE.md` — at minimum P3 (Code-Change Defaults, including P3.3 high-risk restate and P3.4 mandatory-skill-invocation), P4 (verification matrix), P8 (output contract).
+- `.claude/skills/repo-conventions/SKILL.md` — load-bearing facts for this repo (NestJS module layout, RBAC scope contract, raw-SQL pattern, error handling, logger).
+- `.claude/skills/design-review/SKILL.md` — the MUST principles you'll apply to the plan.
+- `.claude/skills/plan-mode/SKILL.md` — the plan format you're judging against.
+
+This step is non-negotiable: subagents work from the *current* canonical sources, not from baked-in memory. If `CLAUDE.md` or `repo-conventions` has changed since this subagent was written, the prose here is stale — the files are not.
+
 ### 1. Read the plan
 
 Walk the plan file (or in-message plan). Identify:
@@ -63,7 +74,16 @@ For each MUST principle, assess whether the plan **as written** would lead to a 
 - Is "while we're here" cleanup smuggled in?
 - Are there steps that should be a separate task?
 
-### 6. Verdict
+### 6. Apply CLAUDE.md compliance audit
+
+The plan must comply with `CLAUDE.md`'s contract — not just be "good engineering":
+
+- **Plan format (P8 + plan-mode):** every step has a `verify:` clause? Files named? API impact stated? Test strategy stated? Risk per step?
+- **High-risk restate (P3.3):** if the plan touches auth/sessions/RBAC/payments/secrets/PII/public API/data migrations, did the engineer restate the requirements explicitly before the plan steps? If not, this is a **HIGH** finding regardless of plan quality.
+- **Mandatory-skill invocation (P3.4):** the plan should either invoke `tdd-workflow`, `failure-mode-analysis` (non-trivial), `repo-conventions`, and (where applicable) name `design-review` for the implementation phase, OR explicitly waive each with a reason. Silent omission is a finding.
+- **Verification matrix (P4):** does the plan trigger `qa-validator` (3+ files OR 1–2 file behavior change OR security-sensitive)? Is `security-reviewer` triggered if applicable? Missing reviewer triggers are MED unless the change is exempt.
+
+### 7. Verdict
 
 | Verdict | Criteria |
 |---|---|
@@ -113,7 +133,17 @@ Plan reviewed: <number of steps, files involved, scope summary>
 - In-scope steps: <count>
 - Adjacent / scope-creep candidates: <count, named>
 
-Confidence: 0.XX
+### CLAUDE.md compliance
+- Plan format (verify: clauses, files, API, tests, risks): pass / fail — <note>
+- High-risk restate (P3.3) if applicable: pass / fail / N/A
+- Mandatory-skill invocation (P3.4) named or explicitly waived: pass / fail
+- Verification matrix (P4) triggers correct: pass / fail
+
+### Sources read
+- CLAUDE.md (sections cited)
+- repo-conventions, design-review, plan-mode
+
+Confidence: 0.XX (computed per CLAUDE.md P8.1 rubric)
 ```
 
 ## Forbidden behaviors

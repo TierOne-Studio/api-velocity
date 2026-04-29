@@ -5,7 +5,7 @@ description: Use BEFORE declaring any code change complete. Reviews the change a
 
 # Design Review
 
-Single focused pass at the end of an implementation. Mechanically enforced by `enforce-design-review-stop` — turn-end is blocked on a code change unless the response contains a `Design review:` block plus a `Confidence:` line, or a valid `design-review waived — …` line.
+Single focused pass at the end of an implementation. This is a workflow expectation enforced by process and verified by `.claude/tests/run-acceptance.sh`, not by a runtime hook. For executable-code changes, the response MUST include a `Design review:` block plus a `Confidence:` line, or a valid `design-review waived — …` line.
 
 ## Output format (required)
 
@@ -194,19 +194,7 @@ try { ... } catch (e) { logger.error('something failed', e); throw e }
 
 ## Confidence calibration rubric
 
-The `Confidence:` line in the response is NOT a vibe — it's the sum of an objective rubric. Compute it as follows:
-
-| Item | Worth | Earned when |
-|---|---|---|
-| Tests pass (full suite ran AND green) | 0.20 | Full suite ran without skips/excludes. Cite the command. |
-| Principles checked (every MUST has a verdict in the grid) | 0.20 | All 9 MUST principles have pass / pass-with-note / fail. |
-| No HIGH issues from any reviewer | 0.20 | No HIGH from `code-reviewer`, `qa-validator`, `architect-reviewer`, or `security-reviewer` (those that ran). |
-| Domain gates passed (when applicable) | 0.20 | If change touched auth/payments/sessions/RBAC: `security-reviewer` returned APPROVE. If 3+ files: `qa-validator` returned PASS. Otherwise N/A and item earns 0.20 free. |
-| No open assumptions or unresolved questions | 0.20 | Every assumption stated in the plan was either validated or recorded as a known risk in the response. No "I think" or "should be" hedging on load-bearing facts. |
-
-Sum the earned values. That's your confidence.
-
-If confidence < 0.90, MUST revise the weakest area before declaring done. Do NOT round up. If you're at 0.80 because the security gate didn't run, run it (or explicitly state why N/A) — don't just write 0.90.
+**The 5-item rubric and the 0.9 gate live in `CLAUDE.md` §P8.1** (always-loaded so the rule applies even if this skill doesn't fire). This section provides the calibration depth: anchors per band, the output format, and the "never round up" principle.
 
 ### Calibration anchors (concrete examples of each band)
 
@@ -254,34 +242,3 @@ The CLAUDE.md output contract lists 10 items. Each has a *quality bar* that dist
 10. **Optional improvements** — Proposals only, no implementation. Each with estimated cost + estimated value, so the user can prioritize.
 
 A response that ticks every box at this quality bar is a *senior-staff-engineer-quality* deliverable. Anything less is a draft.
-
-## Confidence calibration rubric
-
-The `Confidence:` line in the response is NOT a vibe — it's the sum of an objective rubric. Compute it as follows:
-
-| Item | Worth | Earned when |
-|---|---|---|
-| Tests pass (full suite ran AND green) | 0.20 | Full suite ran without skips/excludes. Cite the command. |
-| Principles checked (every MUST has a verdict in the grid) | 0.20 | All 9 MUST principles have pass / pass-with-note / fail. |
-| No HIGH issues from any reviewer | 0.20 | No HIGH from `code-reviewer`, `qa-validator`, `architect-reviewer`, or `security-reviewer` (those that ran). |
-| Domain gates passed (when applicable) | 0.20 | If change touched auth/payments/sessions/RBAC: `security-reviewer` returned APPROVE. If 3+ files: `qa-validator` returned PASS. Otherwise N/A and item earns 0.20 free. |
-| No open assumptions or unresolved questions | 0.20 | Every assumption stated in the plan was either validated or recorded as a known risk in the response. No "I think" or "should be" hedging on load-bearing facts. |
-
-Sum the earned values. That's your confidence.
-
-If confidence < 0.90, MUST revise the weakest area before declaring done. Do NOT round up. If you're at 0.80 because the security gate didn't run, run it (or explicitly state why N/A) — don't just write 0.90.
-
-Output format for the rubric (include after the principle grid):
-
-```
-Confidence rubric:
-- Tests pass:                  0.20 / 0.20  [✓ ran <suite>, all green]
-- Principles checked:          0.20 / 0.20  [✓ 9/9 MUST, grid above]
-- No HIGH from reviewers:      0.20 / 0.20  [✓ code-reviewer APPROVE, qa-validator PASS]
-- Domain gates passed:         0.20 / 0.20  [N/A — no auth/payments/RBAC touched]
-- No open assumptions:         0.20 / 0.20  [✓ all stated assumptions validated]
-
-Confidence: 1.00
-```
-
-The numbers are not theatre — they are the rubric outcome. Lying to yourself on the rubric is a worse sin than reporting low confidence honestly.

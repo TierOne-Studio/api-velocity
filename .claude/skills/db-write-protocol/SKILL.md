@@ -5,7 +5,7 @@ description: Use when ANY database write is required — INSERT, UPDATE, DELETE,
 
 # Database Write Protocol
 
-DB writes need explicit user approval. The `guard-sql-writes.sh` hook is the safety net; this skill is the workflow.
+DB writes need explicit user approval. Catastrophic destructive SQL (`DELETE`, `DROP`, `TRUNCATE`, `UPDATE`, `INSERT`, `ALTER`, `CREATE`, `REPLACE`, `GRANT`, `REVOKE`, `RENAME` via `mysql`/`psql`/`sqlite3`) is also denied at the tool boundary by `.claude/settings.json` `permissions.deny`. This skill is the workflow on top of those gates.
 
 ## Three-step protocol (mandatory)
 
@@ -44,15 +44,15 @@ For schema changes / data migrations:
 - **Large-table warning:** for tables > ~1M rows, warn about lock duration. Prefer online schema-change tools (`pt-online-schema-change`, `gh-ost`) where appropriate.
 - **Deploy ordering:** schema vs. application code — explicit which goes first and why.
 
-## Pre-authorized shell escape
+## Non-interactive / scripted runs
 
-For non-interactive CI / scripted runs the user pre-authorized, set:
+There is no shell-level pre-authorization mechanism for database writes in this repo. CI or scripted execution follows the same standard as interactive use:
 
-```
-CLAUDE_DB_WRITE_APPROVED=1
-```
+- show the exact SQL,
+- explain the impact (using the fields above),
+- obtain explicit user approval in the current task before running.
 
-This bypasses `guard-sql-writes.sh` for that shell only. Do **not** set it persistently in `.envrc` / shell rc files.
+Do not rely on environment variables, shell configuration, or out-of-band approval to authorize a write.
 
 ## Anti-patterns
 
