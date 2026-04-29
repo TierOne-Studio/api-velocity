@@ -166,6 +166,6 @@ Node 15+ crashes on unhandled rejections by default. **Don't add `process.on('un
 ## Cross-references
 
 - `repo-conventions` § "Error handling" — NestJS exception types this codebase uses.
-- `nestjs-cross-cutting` — exception filter is the boundary handler.
+- `nestjs-patterns/patterns/cross-cutting.md` — exception filter is the boundary handler.
 - `failure-mode-analysis` — `network` and `partial` categories enumerate failure modes this skill helps handle.
 - `CLAUDE.md` P5 — fail-fast, no retries, root-cause focus.

@@ -1,13 +1,8 @@
----
-name: nestjs-cross-cutting
-description: Use when adding cross-cutting behavior to a NestJS request — authorization, input validation, transformation, logging, response shaping, exception mapping, rate limiting. Helps choose between Guard, Pipe, Interceptor, and Middleware. NOT for business logic (services), framework-internal concerns, or pure utility functions.
----
-
 # NestJS Cross-Cutting: Guards, Pipes, Interceptors, Middleware
 
-The four cross-cutting layers in NestJS look similar but each owns a specific responsibility. Picking the wrong one is one of the most common NestJS antipatterns: authorization stuffed into an interceptor, validation stuffed into a guard, response shaping done in a pipe. This skill encodes the decision and the request-pipeline order.
+The four cross-cutting layers in NestJS look similar but each owns a specific responsibility. Picking the wrong one is one of the most common NestJS antipatterns: authorization stuffed into an interceptor, validation stuffed into a guard, response shaping done in a pipe. This file encodes the decision and the request-pipeline order.
 
-## When this fires
+## When this pattern applies
 
 - Adding or modifying authorization logic (RBAC, ownership, feature flags) → Guard.
 - Adding or modifying input parsing/validation/transformation → Pipe.
@@ -15,7 +10,7 @@ The four cross-cutting layers in NestJS look similar but each owns a specific re
 - Adding pre-Nest plumbing (raw body, CORS, CSRF, request-id assignment) → Middleware.
 - Reviewing existing cross-cutting code and unsure if it's in the right layer.
 
-## When this does NOT fire
+## When this pattern does NOT apply
 
 - The work belongs in a service (it's business logic, not cross-cutting).
 - The work is a one-line `if` inside a controller and doesn't need to be reusable.
@@ -185,5 +180,6 @@ intercept(ctx: ExecutionContext, next: CallHandler) {
 
 - `repo-conventions` § "RBAC scope contract" — how `PermissionsGuard` and `@RequirePermissions` work together.
 - `repo-conventions` § "Error handling" — always throw NestJS exceptions.
-- `nestjs-mixins` — for parameterized guards (`RolesGuard(['admin'])`).
+- [mixins.md](mixins.md) — for parameterized guards (`RolesGuard(['admin'])`).
+- `nestjs-best-practices` § `api-use-pipes`, `api-use-interceptors`, `security-use-guards`.
 - `CLAUDE.md` P0.2 + P3.3 — auth/RBAC changes are high-risk and require restate + `security-reviewer`.

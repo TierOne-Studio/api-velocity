@@ -381,34 +381,40 @@ for gof in command-pattern factory-pattern flyweight-pattern mediator-pattern mi
 done
 
 echo
-echo "=== T50: 5 NestJS-aware adaptation skills present and well-formed ==="
-for skill in nestjs-factory-providers nestjs-dynamic-modules nestjs-cross-cutting nestjs-provider-scopes nestjs-mixins; do
-  assert_true "T50: $skill SKILL.md exists"             "test -f .claude/skills/$skill/SKILL.md"
-  assert_true "T50: $skill has frontmatter description" "grep -q '^description:' .claude/skills/$skill/SKILL.md"
-  assert_true "T50: $skill has at least one '## When ...' section" "grep -qE '^## When ' .claude/skills/$skill/SKILL.md"
-  assert_true "T50: $skill has 'NOT for' / 'When this does NOT fire' guidance" "grep -qiE 'NOT for|When this does NOT fire|When NOT|When this does not fire' .claude/skills/$skill/SKILL.md"
-  assert_true "T50: $skill has 'Common LLM mistakes' or 'mistakes' section" "grep -qiE 'LLM mistakes|Common mistakes' .claude/skills/$skill/SKILL.md"
-  assert_true "T50: $skill cross-references repo-conventions or CLAUDE.md" "grep -qE 'repo-conventions|CLAUDE.md' .claude/skills/$skill/SKILL.md"
+echo "=== T50: nestjs-patterns parent skill present + 5 pattern files inside ==="
+assert_true "T50: nestjs-patterns/SKILL.md exists (parent skill)" "test -f .claude/skills/nestjs-patterns/SKILL.md"
+assert_true "T50: nestjs-patterns has frontmatter description"   "grep -q '^description:' .claude/skills/nestjs-patterns/SKILL.md"
+assert_true "T50: nestjs-patterns description names NestJS"       "grep -q 'NestJS' .claude/skills/nestjs-patterns/SKILL.md"
+assert_true "T50: nestjs-patterns has Patterns index table"       "grep -qE '^## Patterns|^## Patterns \\(index\\)' .claude/skills/nestjs-patterns/SKILL.md"
+assert_true "T50: nestjs-patterns has decision tree"              "grep -qE 'Quick decision tree|Decision tree' .claude/skills/nestjs-patterns/SKILL.md"
+assert_true "T50: nestjs-patterns 'NOT for' guidance"             "grep -qiE 'NOT for|When this skill does NOT fire' .claude/skills/nestjs-patterns/SKILL.md"
+# 5 pattern files exist inside patterns/
+for pattern in factory-providers dynamic-modules cross-cutting provider-scopes mixins; do
+  assert_true "T50: nestjs-patterns/patterns/$pattern.md exists" "test -f .claude/skills/nestjs-patterns/patterns/$pattern.md"
+  assert_true "T50: $pattern has 'Common LLM mistakes' section"  "grep -qiE 'LLM mistakes|Common mistakes' .claude/skills/nestjs-patterns/patterns/$pattern.md"
+  assert_true "T50: $pattern cross-references repo-conventions or CLAUDE.md" "grep -qE 'repo-conventions|CLAUDE.md' .claude/skills/nestjs-patterns/patterns/$pattern.md"
+done
+# Old standalone skills are gone
+for old in nestjs-factory-providers nestjs-dynamic-modules nestjs-cross-cutting nestjs-provider-scopes nestjs-mixins; do
+  assert_true "T50: old standalone skill '$old' is removed" "! test -d .claude/skills/$old"
 done
 
 echo
-echo "=== T51: NestJS adaptation descriptions don't collide with GoF terminology ==="
-# 'provider-pattern' was the React Context skill — its description used 'sharing data across component trees'.
-# Make sure none of the new skills accidentally inherit that React-y framing.
-assert_true "T51: nestjs-factory-providers names NestJS, not generic 'factory'"   "grep -q 'NestJS' .claude/skills/nestjs-factory-providers/SKILL.md"
-assert_true "T51: nestjs-dynamic-modules names forRoot/forRootAsync"             "grep -qE 'forRoot|forRootAsync' .claude/skills/nestjs-dynamic-modules/SKILL.md"
-assert_true "T51: nestjs-cross-cutting names Guard/Pipe/Interceptor"             "grep -qE 'Guard.*Pipe.*Interceptor|Guards, Pipes, Interceptors' .claude/skills/nestjs-cross-cutting/SKILL.md"
-assert_true "T51: nestjs-provider-scopes names Scope.REQUEST"                    "grep -q 'Scope.REQUEST' .claude/skills/nestjs-provider-scopes/SKILL.md"
-assert_true "T51: nestjs-mixins references mixin() helper from @nestjs/common"   "grep -q '@nestjs/common' .claude/skills/nestjs-mixins/SKILL.md"
+echo "=== T51: nestjs-patterns content has NestJS-specific anchors (no generic GoF framing) ==="
+assert_true "T51: factory-providers names useFactory:"                "grep -q 'useFactory:' .claude/skills/nestjs-patterns/patterns/factory-providers.md"
+assert_true "T51: dynamic-modules names forRoot/forRootAsync"         "grep -qE 'forRoot|forRootAsync' .claude/skills/nestjs-patterns/patterns/dynamic-modules.md"
+assert_true "T51: cross-cutting names Guard/Pipe/Interceptor"         "grep -qE 'Guard.*Pipe.*Interceptor|Guards, Pipes, Interceptors' .claude/skills/nestjs-patterns/patterns/cross-cutting.md"
+assert_true "T51: provider-scopes names Scope.REQUEST"                "grep -q 'Scope.REQUEST' .claude/skills/nestjs-patterns/patterns/provider-scopes.md"
+assert_true "T51: mixins references mixin() helper from @nestjs/common" "grep -q '@nestjs/common' .claude/skills/nestjs-patterns/patterns/mixins.md"
 
 echo
-echo "=== T52: NestJS adaptation skills cite real repo files (repo-fit verification) ==="
-assert_true "T52: nestjs-cross-cutting cites permissions.guard.ts"               "grep -q 'permissions.guard.ts' .claude/skills/nestjs-cross-cutting/SKILL.md"
-assert_true "T52: nestjs-cross-cutting cites permissions.decorator.ts"           "grep -q 'permissions.decorator.ts' .claude/skills/nestjs-cross-cutting/SKILL.md"
-assert_true "T52: nestjs-mixins references the existing PermissionsGuard pattern" "grep -q 'PermissionsGuard' .claude/skills/nestjs-mixins/SKILL.md"
-assert_true "T52: nestjs-provider-scopes references DatabaseService"             "grep -q 'DatabaseService' .claude/skills/nestjs-provider-scopes/SKILL.md"
-assert_true "T52: nestjs-dynamic-modules references actual repo modules"         "grep -qE 'DatabaseModule|ProjectsModule|ChatModule' .claude/skills/nestjs-dynamic-modules/SKILL.md"
-assert_true "T52: nestjs-factory-providers references ConfigService"             "grep -q 'ConfigService' .claude/skills/nestjs-factory-providers/SKILL.md"
+echo "=== T52: nestjs-patterns content cites real repo files (repo-fit verification) ==="
+assert_true "T52: cross-cutting cites permissions.guard.ts"               "grep -q 'permissions.guard.ts' .claude/skills/nestjs-patterns/patterns/cross-cutting.md"
+assert_true "T52: cross-cutting cites permissions.decorator.ts"           "grep -q 'permissions.decorator.ts' .claude/skills/nestjs-patterns/patterns/cross-cutting.md"
+assert_true "T52: mixins references the existing PermissionsGuard"        "grep -q 'PermissionsGuard' .claude/skills/nestjs-patterns/patterns/mixins.md"
+assert_true "T52: provider-scopes references DatabaseService"             "grep -q 'DatabaseService' .claude/skills/nestjs-patterns/patterns/provider-scopes.md"
+assert_true "T52: dynamic-modules references actual repo modules"         "grep -qE 'DatabaseModule|ProjectsModule|ChatModule|RbacModule' .claude/skills/nestjs-patterns/patterns/dynamic-modules.md"
+assert_true "T52: factory-providers references ConfigService"             "grep -q 'ConfigService' .claude/skills/nestjs-patterns/patterns/factory-providers.md"
 
 echo
 echo "=== T53: Node.js reliability skills present and well-formed ==="
@@ -456,8 +462,8 @@ echo "=== T56: CLAUDE.md and subagents are aligned to new skills (no orphans) ==
 assert_true "T56: P3.4 names async-error-handling as MUST-fire"     "grep -q '| \`async-error-handling\` |' CLAUDE.md"
 assert_true "T56: P3.4 names database-transactions as MUST-fire"    "grep -q '| \`database-transactions\` |' CLAUDE.md"
 
-# CLAUDE.md Skill Pointers references all 9 new skills.
-for new_skill in async-error-handling database-transactions cyclomatic-complexity nestjs-factory-providers nestjs-dynamic-modules nestjs-cross-cutting nestjs-provider-scopes nestjs-mixins; do
+# CLAUDE.md Skill Pointers references the reliability skills + the consolidated nestjs-patterns.
+for new_skill in async-error-handling database-transactions cyclomatic-complexity nestjs-patterns; do
   assert_true "T56: Skill Pointers row for $new_skill" "grep -q '\`$new_skill\`' CLAUDE.md"
 done
 

@@ -1,20 +1,15 @@
----
-name: nestjs-dynamic-modules
-description: Use when designing a NestJS module that needs configuration from its consumer — `forRoot`/`forRootAsync` for app-wide setup, `forFeature` for per-feature scoping, or `@Global()` for cross-cutting modules. NOT for plain feature modules whose providers and imports are fixed at module-definition time.
----
-
 # NestJS Dynamic Modules
 
 A static `@Module({...})` is fine when the providers and imports are known at definition time. The moment a consumer needs to *configure* the module — pass an API key, choose a strategy, scope to a feature — you're in dynamic-module territory. This is one of the highest-leverage NestJS patterns and one the LLM gets wrong most reliably.
 
-## When this fires
+## When this pattern applies
 
 - The module wraps a third-party SDK that needs a key/endpoint (Stripe, Resend, Redis, OpenAI).
 - The module exposes a feature that should be configured differently per environment (logging level, retry policy, sample rate).
 - The module is a feature module that's instantiated multiple times for different feature scopes (per-entity, per-domain).
 - Consumers need to compose the module's setup from their own providers (e.g., supplying an HTTP client, a logger, a config source).
 
-## When this does NOT fire
+## When this pattern does NOT apply
 
 - A simple feature module whose providers don't depend on consumer-supplied values → static `@Module({...})` is correct.
 - A module that holds *only* its own internal services with internal config from `ConfigService` → no need to expose `forRoot`. Just import `ConfigModule` and `ConfigService` and read directly.
@@ -113,7 +108,7 @@ export class AuditModule {
 export class AppModule {}
 ```
 
-The async variant is what you almost always want when config comes from env. It plays nicely with `nestjs-factory-providers`.
+The async variant is what you almost always want when config comes from env. It plays nicely with [factory-providers.md](factory-providers.md).
 
 ### 4. `forFeature` — per-feature registration
 
@@ -179,10 +174,11 @@ A `@Global()` decorator is a confession that you didn't want to write `imports: 
 
 - `DatabaseModule` (`src/shared/infrastructure/database/database.module.ts`) — currently a static module exposing `DatabaseService`. If it ever needed per-tenant DB credentials, `forRootAsync` would be the move.
 - `ProjectsModule` and `ChatModule` — static feature modules. The known import-order coupling (Projects must come before Chat per `repo-conventions` § "Module load order") is a structural concern; dynamic modules wouldn't change that.
+- `RbacModule` — uses `TypeOrmModule.forFeature(...)` (see § 4 above).
 
 ## Cross-references
 
-- `nestjs-factory-providers` — what `useFactory` does inside `forRootAsync`.
+- [factory-providers.md](factory-providers.md) — what `useFactory` does inside `forRootAsync`.
 - `nestjs-best-practices` — `arch-feature-modules`, `arch-module-sharing`.
 - `repo-conventions` § "Module layout" — domain module structure for this repo.
 - `CLAUDE.md` P5 explicitness — `@Global()` discussion.

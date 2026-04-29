@@ -52,6 +52,7 @@ Before evaluating, MUST Read:
 - `.claude/skills/database-transactions/SKILL.md` — when the change includes multi-statement DB writes. Partial-state windows are security-adjacent: a half-committed permission grant is a privilege-escalation surface. Verify: (a) atomic boundary present, (b) `WHERE organization_id` inside the transaction, (c) no external HTTP inside the transaction (DoS amplifier).
 - `.claude/skills/async-error-handling/SKILL.md` — when the change adds outbound calls or auth flows: missing timeouts on auth-related I/O are a DoS surface; catch-and-swallow on auth checks can silently bypass policy.
 - `.claude/skills/nestjs-best-practices/SKILL.md` § security rules — cross-check against `rules/security-auth-jwt.md`, `rules/security-rate-limiting.md`, `rules/security-sanitize-output.md`, `rules/security-use-guards.md`, `rules/security-validate-all-input.md` for NestJS-specific security checks beyond generic OWASP.
+- `.claude/skills/nestjs-patterns/patterns/cross-cutting.md` — when the change adds/modifies a Guard, Pipe, or Interceptor in an auth-relevant flow. The wrong-layer antipattern (authz in interceptor, validation in guard) has security implications: an authorization check in an interceptor runs AFTER guards, defeating the gate.
 
 ### 0.5 Discovery (when Required Reading doesn't cover the surface)
 

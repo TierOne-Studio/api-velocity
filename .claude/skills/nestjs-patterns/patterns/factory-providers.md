@@ -1,20 +1,15 @@
----
-name: nestjs-factory-providers
-description: Use when designing a NestJS provider whose creation depends on environment values, requires async initialization (DB, Redis, secret manager, third-party SDK), or composes values from multiple existing providers. NOT for plain class providers (use `useClass:` or implicit constructor injection) or for parameterizing services at call time (that's a method argument, not a provider concern).
----
-
 # NestJS Factory Providers
 
-When `useClass:` (or just constructor injection) is not enough — because creation needs runtime values, awaited setup, or composition of other providers — NestJS gives you `useFactory:`. This skill encodes the decision points and the failure modes the model commonly trips on.
+When `useClass:` (or just constructor injection) is not enough — because creation needs runtime values, awaited setup, or composition of other providers — NestJS gives you `useFactory:`. This file encodes the decision points and the failure modes the model commonly trips on.
 
-## When this fires
+## When this pattern applies
 
 - A provider's concrete type is selected at runtime (env var, feature flag, tenant config).
 - A provider needs `await` during construction (DB pool, Redis client, secret-manager fetch).
 - One provider value is computed from several others (e.g., a config object built from `ConfigService` + `EncryptionService`).
 - A third-party SDK requires options that are themselves derived from injected services.
 
-## When this does NOT fire
+## When this pattern does NOT apply
 
 - Plain class with constructor-injected deps → use `useClass:` (or omit and let Nest infer):
   ```ts
@@ -132,7 +127,7 @@ FeatureModule.forRootAsync({
 })
 ```
 
-(See `nestjs-dynamic-modules` skill for the full dynamic-module pattern.)
+(See [dynamic-modules.md](dynamic-modules.md) for the full dynamic-module pattern.)
 
 ## Common LLM mistakes (catch these in `code-reviewer`)
 
@@ -166,7 +161,8 @@ FeatureModule.forRootAsync({
 
 ## Cross-references
 
-- `nestjs-dynamic-modules` — for `forRoot`/`forRootAsync` consumer APIs.
-- `nestjs-provider-scopes` — factories return per-resolution values when scope is non-default.
+- [dynamic-modules.md](dynamic-modules.md) — for `forRoot`/`forRootAsync` consumer APIs.
+- [provider-scopes.md](provider-scopes.md) — factories return per-resolution values when scope is non-default.
 - `repo-conventions` § "Stack at a glance" — uses `ConfigService` for env var access.
+- `nestjs-best-practices` § DI rules (`di-prefer-constructor-injection`, `di-use-interfaces-tokens`).
 - `CLAUDE.md` P5 fail-fast — async factories should throw on bad config rather than defer.

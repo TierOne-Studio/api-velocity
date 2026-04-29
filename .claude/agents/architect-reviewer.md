@@ -38,7 +38,12 @@ Before any evaluation, MUST Read the following:
 
 - `.claude/skills/async-error-handling/SKILL.md` — flag plans that ignore partial-failure modes on parallel external I/O, plans that introduce retries, or plans that catch-and-swallow.
 - `.claude/skills/database-transactions/SKILL.md` — flag plans for multi-statement DB writes that don't name a transaction boundary, or plans that put external HTTP calls inside a transaction.
-- The relevant `nestjs-*` skill when the plan touches that NestJS surface (cross-cutting layers, dynamic modules, factory providers, provider scopes, mixins).
+- `.claude/skills/nestjs-patterns/SKILL.md` — index of 5 NestJS tactical patterns. When the plan touches a NestJS surface (cross-cutting layers, dynamic modules, factory providers, provider scopes, mixins), read the index first, then load the relevant `patterns/<name>.md`:
+  - `patterns/cross-cutting.md` — plan involves Guard / Pipe / Interceptor / Middleware design.
+  - `patterns/dynamic-modules.md` — plan introduces `forRoot`/`forRootAsync`/`forFeature`.
+  - `patterns/factory-providers.md` — plan introduces `useFactory:` providers.
+  - `patterns/provider-scopes.md` — plan introduces `Scope.REQUEST`/`TRANSIENT`.
+  - `patterns/mixins.md` — plan introduces parameterized Guards/Interceptors with DI.
 - `.claude/skills/nodejs-best-practices/SKILL.md` — for plans involving framework selection, async patterns, or runtime choices.
 
 ### 0.5 Discovery (when Required Reading doesn't cover the surface)

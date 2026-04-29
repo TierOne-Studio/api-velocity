@@ -32,11 +32,12 @@ Before evaluating any code, MUST Read:
 **Read conditionally** (load when the change touches the surface):
 
 - `.claude/skills/database-transactions/SKILL.md` — when the change includes any multi-statement DB write or read-then-write.
-- `.claude/skills/nestjs-cross-cutting/SKILL.md` — when the change adds/modifies a Guard, Pipe, Interceptor, or Middleware.
-- `.claude/skills/nestjs-factory-providers/SKILL.md` — when the change adds/modifies `useFactory:` providers.
-- `.claude/skills/nestjs-dynamic-modules/SKILL.md` — when the change uses `forRoot`/`forRootAsync`/`forFeature`.
-- `.claude/skills/nestjs-provider-scopes/SKILL.md` — when scope is changed or `Scope.REQUEST`/`TRANSIENT` is introduced.
-- `.claude/skills/nestjs-mixins/SKILL.md` — when a parameterized Guard/Interceptor is created.
+- `.claude/skills/nestjs-patterns/SKILL.md` — index of 5 NestJS tactical patterns. Read the index first, then load the relevant `patterns/<name>.md`:
+  - `patterns/cross-cutting.md` — when the change adds/modifies a Guard, Pipe, Interceptor, or Middleware.
+  - `patterns/factory-providers.md` — when the change adds/modifies `useFactory:` providers.
+  - `patterns/dynamic-modules.md` — when the change uses `forRoot`/`forRootAsync`/`forFeature`.
+  - `patterns/provider-scopes.md` — when scope is changed or `Scope.REQUEST`/`TRANSIENT` is introduced.
+  - `patterns/mixins.md` — when a parameterized Guard/Interceptor is created.
 - `.claude/skills/code-simplifier/SKILL.md` — when the change includes obvious cleanup opportunities (nested ternaries, redundant branches, awkward names) — flag as LOW-severity suggestions.
 - `.claude/skills/typescript-advanced-types/SKILL.md` — when the change introduces non-trivial generics, conditional types, mapped types, or template-literal types.
 

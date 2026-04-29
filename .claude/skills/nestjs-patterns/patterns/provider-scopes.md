@@ -1,11 +1,6 @@
----
-name: nestjs-provider-scopes
-description: Use when a NestJS provider needs per-request or per-injection state — multi-tenancy, request correlation, per-user context, pluggable strategies. NOT for stateless services; the default singleton scope is correct for those. Helps decide between `Scope.DEFAULT`, `Scope.REQUEST`, and `Scope.TRANSIENT`.
----
-
 # NestJS Provider Scopes
 
-NestJS providers are **singletons by default**. Most services in a typical app should stay that way. This skill is the inverse-question: **when should you opt OUT of singleton scope, and what does it cost?**
+NestJS providers are **singletons by default**. Most services in a typical app should stay that way. This pattern is the inverse-question: **when should you opt OUT of singleton scope, and what does it cost?**
 
 LLMs default to `Scope.DEFAULT` (the assumption) and don't reach for `REQUEST` when multi-tenancy or per-request context demands it. They also sometimes apply `REQUEST` to stateless services, paying a real perf cost for nothing.
 
@@ -111,7 +106,7 @@ For most app code, `TRANSIENT` is wrong. If you're tempted to use it, ask whethe
 
 ## Cross-references
 
-- `nestjs-factory-providers` — `useFactory` providers can also declare scope.
-- `nestjs-cross-cutting` — guards/interceptors read `request` directly without needing request-scoped DI.
+- [factory-providers.md](factory-providers.md) — `useFactory` providers can also declare scope.
+- [cross-cutting.md](cross-cutting.md) — guards/interceptors read `request` directly without needing request-scoped DI.
 - `nestjs-best-practices` § DI — `di-scope-awareness`.
 - `repo-conventions` § "RBAC scope contract" — how org/role data flows through the request today.

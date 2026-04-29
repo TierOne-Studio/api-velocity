@@ -1,8 +1,3 @@
----
-name: nestjs-mixins
-description: Use when creating parameterized NestJS Guards or Interceptors that need to receive arguments AND keep dependency injection working — for example, `RolesGuard(['admin', 'editor'])`. NOT for unparameterized classes (just register the class) or for parameterizing services (use a config provider).
----
-
 # NestJS Mixins
 
 A non-obvious NestJS pattern. When a Guard or Interceptor needs to take arguments at usage time (`@UseGuards(RolesGuard(['admin']))`), naive implementations either lose DI ergonomics or break entirely. The `mixin()` helper from `@nestjs/common` is the idiomatic answer, and few engineers — or LLMs — know it exists.
@@ -73,13 +68,13 @@ content() {}
 
 Each `@UseGuards` call gets its own class with its own captured `minRole`, but they all share the same DI graph.
 
-## When this fires
+## When this pattern applies
 
 - Parameterized **Guards** that need DI (most common use case).
 - Parameterized **Interceptors** that need DI — e.g., a `CacheInterceptor(ttl, namespace)` that injects a cache client.
 - Parameterized **Pipes** (rare; usually a regular pipe with config injected via `@Inject(TOKEN)` is enough).
 
-## When this does NOT fire
+## When this pattern does NOT apply
 
 - **Unparameterized Guard** → just register the class:
   ```ts
@@ -89,7 +84,7 @@ Each `@UseGuards` call gets its own class with its own captured `minRole`, but t
   @UseGuards(PermissionsGuard)
   ```
 - **Parameterization via metadata decorator** → `@RequirePermissions('verb:resource')` + `Reflector.get(...)` inside an unparameterized guard is usually cleaner than `mixin()`. This is the pattern used by `PermissionsGuard` in this repo.
-- **Parameterizing services** → that's a config provider concern, not a mixin concern. Use `useFactory` (see `nestjs-factory-providers`).
+- **Parameterizing services** → that's a config provider concern, not a mixin concern. Use `useFactory` (see [factory-providers.md](factory-providers.md)).
 
 ## When metadata is the better choice (this repo's existing pattern)
 
@@ -142,6 +137,6 @@ This is **simpler than mixin()** when the guard is registered once and parameter
 
 ## Cross-references
 
-- `nestjs-cross-cutting` — guards/interceptors/pipes/middleware decision tree.
+- [cross-cutting.md](cross-cutting.md) — guards/interceptors/pipes/middleware decision tree.
 - `repo-conventions` § "RBAC scope contract" — how the existing `PermissionsGuard` uses metadata-based parameterization.
-- `nestjs-best-practices` § DI.
+- `nestjs-best-practices` § DI rules.

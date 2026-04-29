@@ -41,7 +41,7 @@ The skill library has 25+ entries. Reading every `SKILL.md` is anti-RLM and wast
 **LOCATE — find candidates by keyword match, not by enumerate-and-load:**
 1. **Memory first:** Read `~/.claude/projects/.../memory/MEMORY.md` (the auto-memory index) and any linked `feedback`-type memory files — the main agent has already captured this correction per `CLAUDE.md` P7. Check for near-duplicates from prior corrections.
 2. **`grep` the correction's keywords** across `CLAUDE.md`, `.claude/skills/`, `.claude/agents/`, and `.claude/settings.json`. Examples: if the correction names "TypeORM transaction", grep for `transaction` and `TypeORM`. If it names a behavior pattern, grep for that pattern's exact phrasing.
-3. **Match descriptions:** if `grep` is too broad or too narrow, list `.claude/skills/` directories and pattern-match each skill's `description:` frontmatter against the correction's domain (e.g., "this is about RBAC" → load `repo-conventions`, `nestjs-cross-cutting`, `security-reviewer`).
+3. **Match descriptions:** if `grep` is too broad or too narrow, list `.claude/skills/` directories and pattern-match each skill's `description:` frontmatter against the correction's domain (e.g., "this is about RBAC" → load `repo-conventions`, `nestjs-patterns` and its `patterns/cross-cutting.md`, `security-reviewer`).
 
 **EXTRACT — load only the matches:**
 - Read only the `SKILL.md` files whose descriptions or content matched. Typically 2–5 files for any given correction, not 25.
@@ -49,7 +49,7 @@ The skill library has 25+ entries. Reading every `SKILL.md` is anti-RLM and wast
 
 **For library-wide audits (rare):** the full survey (CLAUDE.md + all SKILL.md + settings + agents + hooks-if-present) is appropriate. State explicitly that this is a library-wide audit, not a single-correction proposal.
 
-The library currently includes (for reference, not "load all of these"): workflow skills (`tdd-workflow`, `design-review`, `plan-mode`, `failure-mode-analysis`, `bug-investigation`, `decision-rules`, `pushback-templates`, `meta-skill-hygiene`, `rlm-explore`, `code-simplifier`, `cyclomatic-complexity`), reference skills (`repo-conventions`, `nestjs-best-practices`, `nodejs-best-practices`, `typescript-advanced-types`, `js-performance-patterns`), tactical patterns (`nestjs-factory-providers`, `nestjs-dynamic-modules`, `nestjs-cross-cutting`, `nestjs-provider-scopes`, `nestjs-mixins`), reliability (`async-error-handling`, `database-transactions`), operational (`git-workflow`, `db-write-protocol`).
+The library currently includes (for reference, not "load all of these"): workflow skills (`tdd-workflow`, `design-review`, `plan-mode`, `failure-mode-analysis`, `bug-investigation`, `decision-rules`, `pushback-templates`, `meta-skill-hygiene`, `rlm-explore`, `code-simplifier`, `cyclomatic-complexity`), reference skills (`repo-conventions`, `nestjs-best-practices`, `nodejs-best-practices`, `typescript-advanced-types`, `js-performance-patterns`), tactical patterns (`nestjs-patterns` — index over `patterns/factory-providers.md`, `patterns/dynamic-modules.md`, `patterns/cross-cutting.md`, `patterns/provider-scopes.md`, `patterns/mixins.md`), reliability (`async-error-handling`, `database-transactions`), operational (`git-workflow`, `db-write-protocol`).
 
 Look for:
 - An **existing feedback memory** that already encodes this rule — if so, the work is already persistent; the question is whether to elevate it from memory into a skill / `CLAUDE.md` / hook (recurring pattern) or leave it in memory only (one-off context).

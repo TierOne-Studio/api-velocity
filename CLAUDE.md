@@ -292,11 +292,7 @@ Situation → skill lookup. The model loads a skill on description match; this t
 | Async code, Promise composition, error propagation, timeouts | `async-error-handling` |
 | Multi-statement DB write or read-then-write across tables | `database-transactions` |
 | Function with deep nesting, long if-else chain, or growing branchiness | `cyclomatic-complexity` |
-| Designing a NestJS provider with env-driven or async creation | `nestjs-factory-providers` |
-| Designing a NestJS module with consumer-supplied config | `nestjs-dynamic-modules` |
-| Adding cross-cutting behavior — Guard / Pipe / Interceptor / Middleware | `nestjs-cross-cutting` |
-| Provider needs per-request or per-injection state (multi-tenancy) | `nestjs-provider-scopes` |
-| Parameterized Guard or Interceptor with dependency injection | `nestjs-mixins` |
+| NestJS tactical patterns — providers (factory / dynamic-modules / scopes), cross-cutting (Guard/Pipe/Interceptor/Middleware), mixins | `nestjs-patterns` (index → `patterns/<name>.md` for depth) |
 | Comprehensive NestJS rules (40 rules across architecture, DI, security, perf, testing) | `nestjs-best-practices` |
 | Node.js framework selection, async patterns, security defaults | `nodejs-best-practices` |
 | Advanced TypeScript types — generics, conditional types, mapped types, template literals | `typescript-advanced-types` |
@@ -317,7 +313,7 @@ Common task types and the skill chains they invoke. The Skill Pointers table is 
 | **Refactor (no behavior change)** | `code-simplifier` → `cyclomatic-complexity` → `repo-conventions` → `design-review` → **code-reviewer** |
 | **Performance work** | `rlm-explore` (LOCATE the hot path; don't read whole modules) → `js-performance-patterns` → `failure-mode-analysis` → `tdd-workflow` → `repo-conventions` → `design-review` → **code-reviewer** + **qa-validator** |
 | **Async / external-integration code** | `async-error-handling` → `failure-mode-analysis` (network/partial categories) → `tdd-workflow` → `repo-conventions` → `design-review` → **code-reviewer** |
-| **NestJS module / provider design** | `nestjs-best-practices` (relevant `arch-*`/`di-*` rules) → relevant `nestjs-*` skill → `repo-conventions` → `design-review` → **architect-reviewer** + **code-reviewer** |
+| **NestJS module / provider design** | `nestjs-best-practices` (relevant `arch-*`/`di-*` rules) → `nestjs-patterns` (route to specific pattern file in `patterns/`) → `repo-conventions` → `design-review` → **architect-reviewer** + **code-reviewer** |
 | **Large code review** (>4 files OR >500 LOC) | All review subagents (`architect-reviewer`, `code-reviewer`, `qa-validator`, `security-reviewer`) automatically apply RLM in their step 1. They report a **Working Set** in the verdict — read that section first to see what they actually evaluated. |
 
 After a user correction, see [P7 — Reflexive Lesson Capture](#p7--reflexive-lesson-capture-after-corrections).
