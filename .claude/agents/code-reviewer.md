@@ -24,7 +24,7 @@ Before evaluating any code, MUST Read:
 
 - `CLAUDE.md` — at minimum P3 (Code-Change Defaults, including P3.4 mandatory-skill matrix), P4 (verification matrix), P8 (output contract + P8.1 confidence rubric).
 - `.claude/skills/design-review/SKILL.md` — the MUST principles + calibration anchors.
-- `.claude/skills/repo-conventions/SKILL.md` — what's correct *for this repo* (NestJS exceptions, raw SQL with `WHERE organization_id`, `Logger` per service, no class-validator, no custom error classes; expanded logging discipline).
+- `.claude/skills/repo-conventions/SKILL.md` — what's correct *for this repo* (NestJS exceptions; TypeORM-first with raw-SQL fallback; `where: { organizationId }` or `WHERE organization_id`; `Logger` per service; no class-validator; no custom error classes; expanded logging discipline).
 - `.claude/skills/async-error-handling/SKILL.md` — Promise composition, error propagation, AbortSignal, no-retries, catch-at-the-boundary.
 - `.claude/skills/cyclomatic-complexity/SKILL.md` — early returns, guard clauses, no-`else`-after-`return`, the rough metric.
 
@@ -74,7 +74,8 @@ Specific to this repo (from `repo-conventions` skill):
 
 - **Errors:** does the code throw NestJS exceptions (`ForbiddenException`, `BadRequestException`, `NotFoundException`, `HttpException`)? Plain `throw new Error(...)` from a service is a **HIGH** finding — it becomes a 500 with no useful context.
 - **RBAC:** every org-scoped query includes `WHERE organization_id = $1`? Cross-org guard tested? Use of `resolveOrgScope()` for routes that opt into `scope=all`?
-- **Repository pattern:** raw SQL with parameterized placeholders (`$1`, `$2`)? No string interpolation into SQL? No use of `@InjectRepository` or TypeORM entity classes (despite TypeORM being a dependency)?
+- **Repository pattern (NEW modules):** TypeORM-first per `repo-conventions` § 4. New modules should use `@nestjs/typeorm` (`@InjectRepository`, entity classes, `TypeOrmModule.forFeature`). If raw SQL is used in a new module, is there a stated reason in a comment (TypeORM can't satisfy the query / measured perf issue / materially safer or more auditable)? Unjustified raw SQL in a new module = MED.
+- **Repository pattern (EXISTING raw-SQL modules — projects, chat, admin/users, etc.):** the convention is forward-looking; don't flag these as needing migration. DO verify: parameterized placeholders (`$1`, `$2`) — never string interpolation; org-scoped queries include `WHERE organization_id`; multi-statement work uses `DatabaseService.transaction(...)`.
 - **DTOs:** TypeScript interfaces, not classes? No `class-validator` decorators? Manual shape checks at the controller boundary for user input?
 - **Logger:** per-class `private readonly logger = new Logger(MyService.name)`? No pino, no structured logger, no request-id middleware? Sensitive fields manually redacted before logging?
 - **Module load order:** if a new module with migrations was added, was `app.module.ts` import order checked (e.g., `ProjectsModule` before `ChatModule`)?
@@ -148,7 +149,7 @@ Tests: <ran / passed / failed / not run + reason>
 ### Repo-conventions review
 - Errors (NestJS exceptions, no plain Error):     pass / fail — <note>
 - RBAC scope + org_id in queries:                 pass / fail / N/A
-- Repository pattern (raw SQL, parameterized):    pass / fail / N/A
+- Repository pattern (TypeORM-first; raw SQL only with stated justification): pass / fail / N/A
 - DTOs (TS interface, no class-validator):        pass / fail / N/A
 - Logger (NestJS Logger, redaction):              pass / fail / N/A
 - Module load order (if migrations added):        pass / fail / N/A

@@ -6,7 +6,7 @@ Lower-numbered priorities OVERRIDE higher-numbered ones. When sections seem to c
 
 - **[P0. Safety & Permissions](#p0--safety--permissions-non-negotiable)** — hard gates, approval-required operations, pre-action protocol. NON-NEGOTIABLE; overrides everything else.
 - **[P1. Identity & Role](#p1--identity--role)** — who you are, language, baseline experience.
-- **[P2. Repo-Core Conventions](#p2--repo-core-conventions-always-applicable)** — load-bearing facts about how *this* codebase works (RBAC, raw SQL, errors, logging).
+- **[P2. Repo-Core Conventions](#p2--repo-core-conventions-always-applicable)** — load-bearing facts about how *this* codebase works (RBAC, persistence: TypeORM-first with raw-SQL fallback, errors, logging).
 - **[P3. Code-Change Defaults](#p3--code-change-defaults)** — TDD applies, design-review applies, valid waiver phrases, forbidden bypasses.
 - **[P4. Mandatory Verification](#p4--mandatory-verification-review-subagents)** — which review subagents fire when, how to act on their verdicts.
 - **[P5. Operating Mindset](#p5--operating-mindset-always-on-disciplines)** — always-on disciplines: scope, surgery, root-cause, fail-fast, plan-mode default.
@@ -64,12 +64,12 @@ You operate as an **RLM (Recursive Language Model)**: treat user-supplied materi
 
 ## P2 — REPO-CORE CONVENTIONS (always-applicable)
 
-This codebase is **NestJS + raw SQL via `DatabaseService` (no TypeORM ORM) + Postgres + Jest**. Full convention set is in the `repo-conventions` skill; the load-bearing slice is restated here because it applies on most code changes.
+This codebase is **NestJS + Postgres + Jest**. **For new modules, prefer TypeORM** (`@nestjs/typeorm`, `@InjectRepository`, entity classes — see RBAC's [src/modules/admin/rbac/infrastructure/persistence/](src/modules/admin/rbac/infrastructure/persistence/) for the canonical example). **Drop to raw SQL via `DatabaseService` only with stated justification** (TypeORM can't satisfy the query, measured perf issue, or materially safer/more auditable as parameterized raw SQL). Several existing modules (projects, chat, admin/users) use raw SQL — that's their established pattern; the new convention is forward-looking and does NOT flag them for migration. Full convention set + decision criteria are in the `repo-conventions` skill; load-bearing slice restated here.
 
 - **MUST honor the RBAC scope contract.** Every protected route uses `@RequirePermissions(...)`. The `PermissionsGuard` enforces it. Scope values: `all` (cross-org, superadmin only — throws **400** for other roles) or per-organization (defaults to `activeOrganizationId`). Guards return **403 ForbiddenException** on permission mismatch. Use `resolveOrgScope()` to derive scope from the request.
-- **MUST scope org queries by `organization_id`.** All org-scoped queries include `WHERE organization_id = $1` in raw SQL — even when the route is scope-guarded. Belt + suspenders against IDOR.
-- **MUST throw NestJS exceptions, not plain `Error`.** Services throw `ForbiddenException`, `BadRequestException`, `NotFoundException`, `HttpException`. NestJS auto-maps to HTTP. **No custom `AppError`, no global exception filter** — use the built-ins.
-- **MUST use NestJS built-in `Logger`** per service: `private readonly logger = new Logger(MyService.name)`. **No pino, no structured logging, no request-id middleware** — manually redact sensitive fields before logging.
+- **MUST scope org queries by `organization_id`.** All org-scoped queries include `where: { organizationId }` (TypeORM) or `WHERE organization_id = $1` (raw SQL) — even when the route is scope-guarded. Belt + suspenders against IDOR.
+- **PREFER NestJS built-in exceptions over plain `Error` for HTTP-facing flows.** In controllers and request-lifecycle services, default to `ForbiddenException`, `BadRequestException`, `NotFoundException`, `HttpException`. NestJS auto-maps to HTTP. **No custom `AppError`, no global exception filter.** Existing code may not yet follow this everywhere (chat services, admin-user repo, and a few others throw plain `Error`); treat the rule as the direction for new and modified code.
+- **PREFER NestJS built-in `Logger` for application services:** `private readonly logger = new Logger(MyService.name)`. **No pino, no structured logging, no request-id middleware** — manually redact sensitive fields before logging. Existing code mixes `Logger` with `console.log` / `console.error` (chat-agent service, airweave service, migration scripts); when adding or normalizing a logger, default to `Logger`.
 
 For module structure, raw-SQL repository patterns, projects/chat data-source domain, DTO conventions, naming, migrations, and source-file citations: see `repo-conventions`.
 
@@ -279,5 +279,10 @@ Situation → skill lookup. The model loads a skill on description match; this t
 | Adding cross-cutting behavior — Guard / Pipe / Interceptor / Middleware | `nestjs-cross-cutting` |
 | Provider needs per-request or per-injection state (multi-tenancy) | `nestjs-provider-scopes` |
 | Parameterized Guard or Interceptor with dependency injection | `nestjs-mixins` |
+| Comprehensive NestJS rules (40 rules across architecture, DI, security, perf, testing) | `nestjs-best-practices` |
+| Node.js framework selection, async patterns, security defaults | `nodejs-best-practices` |
+| Advanced TypeScript types — generics, conditional types, mapped types, template literals | `typescript-advanced-types` |
+| Optimizing measured hot paths — tight loops, large datasets, high-frequency events | `js-performance-patterns` |
+| Cleanup pass on recently modified code (clarity, consistency, no behavior change) | `code-simplifier` |
 
 After a user correction, see [P7 — Reflexive Lesson Capture](#p7--reflexive-lesson-capture-after-corrections).

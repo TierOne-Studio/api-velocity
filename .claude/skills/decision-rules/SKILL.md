@@ -91,7 +91,7 @@ CLAUDE.md carries the highest-impact decisions as one-liners. This skill carries
 
 ### 11. Repo conventions vs requested approach
 
-**Situation:** User asks you to do X but X violates a `repo-conventions` rule (e.g., "use TypeORM" when the codebase is raw SQL).
+**Situation:** User asks you to do X but X violates a `repo-conventions` rule (e.g., "throw a generic `Error`" when the convention is NestJS exceptions, or "use raw SQL" in a new module without one of the documented justifications for falling back from TypeORM).
 **Default:** State the conflict. Ask: "<repo-conventions rule>; want me to deviate explicitly, or follow the convention?"
 **Rationale:** The user may have a reason; they may have forgotten; the question is cheap.
 

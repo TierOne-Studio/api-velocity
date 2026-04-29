@@ -5,7 +5,7 @@ description: Use when implementing or reviewing multi-statement database operati
 
 # Database Transactions
 
-This codebase uses raw SQL via `DatabaseService` — there is no ORM hiding transactions for you. Multi-statement business operations need explicit transaction wrapping, or partial-write states will leak into production. LLMs reliably forget this when the code "looks like it works in tests."
+This codebase uses two persistence APIs (per `repo-conventions` § 4): TypeORM (default for new modules, established in RBAC) and raw SQL via `DatabaseService` (existing modules and justified TypeORM-can't cases). Each has its own transaction API. Neither auto-wraps multi-statement business operations for you — you must reach for the matching transaction helper. LLMs reliably forget this when the code "looks like it works in tests."
 
 ## When this fires
 
@@ -19,10 +19,58 @@ This codebase uses raw SQL via `DatabaseService` — there is no ORM hiding tran
 
 - A single `INSERT`, `UPDATE`, or `DELETE` against one row. The DB handles atomicity.
 - A single `SELECT` (read-only).
-- Migration code (the migration framework wraps each migration in its own transaction).
 - Operations where each step is independently consistent (e.g., audit log writes that are best-effort).
 
-## The repo's transaction API
+## Migration code: NOT auto-wrapped — verify before assuming atomicity
+
+**Important correction:** the migration runner in this repo (`DatabaseService.runMigrations()` and the per-domain `*.migration.ts` files driven by `OnModuleInit`) does **NOT** wrap each migration in a transaction. Each migration calls `this.query(...)` (or `this.db.query(...)`) directly, then separately records itself via `recordMigration(name)`. If the schema change succeeds but `recordMigration` fails (or vice versa), you get an inconsistent state.
+
+When writing a new migration:
+
+- If the migration runs multiple statements that must be atomic (multiple `CREATE TABLE` / `ALTER` / data-backfill steps), **wrap them yourself** using `db.transaction(async (query) => { ... })`.
+- If the migration is a single statement, atomicity is handled by the DB and an explicit transaction is unnecessary.
+- Be aware that the migration record itself (`INSERT INTO _migrations`) is a separate query outside any transaction you write — a partial-success window exists. For most schema-creation migrations this is acceptable (a re-run will detect the existing table); for data-backfill migrations, design idempotently.
+
+## Two transaction APIs (match the repository style)
+
+Per `repo-conventions`, TypeORM is the default for new modules and raw SQL via `DatabaseService` is the fallback for existing modules and justified TypeORM-can't cases. Each has its own transaction API; use the one that matches the repository style of the code you're writing.
+
+### TypeORM transactions (default for new modules)
+
+For TypeORM-based repositories, use `manager.transaction(...)` via the `DataSource` or via an entity repository's `manager`:
+
+```ts
+// Inside a service that owns the transaction boundary
+constructor(
+  @InjectDataSource() private readonly dataSource: DataSource,
+) {}
+
+async createWithSetup(input: CreateInput, organizationId: string): Promise<Role> {
+  return await this.dataSource.transaction(async (manager) => {
+    const roleRepo = manager.getRepository(RoleTypeOrmEntity)
+    const role = await roleRepo.save({
+      ...input,
+      organizationId,            // belt + suspenders, even inside the transaction
+    })
+
+    const permRepo = manager.getRepository(PermissionTypeOrmEntity)
+    await permRepo.save(
+      input.permissions.map(p => ({ ...p, roleId: role.id, organizationId })),
+    )
+
+    return toDomain(role)
+  })
+}
+```
+
+The `manager` parameter is a transactional `EntityManager`. **Use it for all queries inside the callback** — calls on the original `@InjectRepository` repository go to a non-transactional connection. Same pitfall as the raw-SQL `this.db.query` mistake below.
+
+You can also reach `manager` via an injected repository:
+```ts
+return await this.roleRepo.manager.transaction(async (manager) => { ... })
+```
+
+### Raw-SQL transactions (existing modules + justified fallback)
 
 `DatabaseService.transaction<T>(callback)` is defined at [database.module.ts:60-85](src/shared/infrastructure/database/database.module.ts:60). It does the right thing: `BEGIN`, runs the callback with a transactional `query` function, `COMMIT` on success, `ROLLBACK` on throw, releases the client in `finally`.
 
@@ -112,21 +160,27 @@ await this.db.transaction(async (query) => {
 
 ## Common LLM mistakes (catch these in `code-reviewer`)
 
-1. **No transaction at all** — multi-step write without `db.transaction(...)`. This is the #1 mistake.
-2. **Using `this.db.query` inside the callback** — bypasses the transaction entirely.
-3. **External HTTP/queue call inside the callback** — locks a pool connection during external I/O.
-4. **Catching errors inside the callback** — defeats the rollback.
-5. **Missing `WHERE organization_id`** — RBAC scoping doesn't disappear inside a transaction.
-6. **Reading before writing without explicit locking** — `SELECT` then `UPDATE` without `FOR UPDATE` is a classic race condition.
-7. **Returning the result of a `RETURNING` clause but typing it loosely** — `query<Project>(...)` should be the typed row shape.
-8. **Wrapping a single statement in a transaction** — over-engineering. The DB already makes single statements atomic.
+These apply to **both** TypeORM and raw-SQL transactions unless noted.
+
+1. **No transaction at all** — multi-step write without wrapping. This is the #1 mistake, regardless of API.
+2. **Using the non-transactional handle inside the callback:**
+   - Raw SQL: `this.db.query(...)` inside `db.transaction(async (query) => { ... })` bypasses the transaction.
+   - TypeORM: `this.roleRepo.save(...)` inside `dataSource.transaction(async (manager) => { ... })` bypasses the transaction. Use `manager.getRepository(...)` instead.
+3. **External HTTP/queue call inside the callback** — locks a pool connection during external I/O. Same hard rule for both APIs.
+4. **Catching errors inside the callback** — defeats the rollback. Both APIs depend on the callback throwing for rollback to fire.
+5. **Missing `where: { organizationId }` (TypeORM) or `WHERE organization_id` (raw SQL)** — RBAC scoping doesn't disappear inside a transaction.
+6. **Reading before writing without explicit locking:**
+   - TypeORM: use `manager.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } })`.
+   - Raw SQL: use `SELECT ... FOR UPDATE`.
+7. **Mixing the two APIs in the same callback** — a TypeORM transaction's `manager` and the raw-SQL `query` parameter are not interchangeable. Pick one API per transaction.
+8. **Wrapping a single statement in a transaction** — over-engineering. The DB makes single statements atomic.
 
 ## Repo-fit examples
 
-- **Project + data-source creation** (`ProjectsService.create`) — should be transactional: insert into `projects`, then insert into `project_data_sources`. A failure on the second insert today (without transaction) would leave an orphan project.
-- **RBAC permission grant** — if granting a role involves writing to multiple junction tables, that's transactional.
-- **Status transitions with side-effects in the DB** — e.g., marking a project source `ready` AND updating the project's overall status. Atomic.
-- **Migrations** — already wrapped by the migration runner. Don't wrap again.
+- **RBAC role + permissions creation** (TypeORM module) — `dataSource.transaction(async (manager) => { ... })` to insert role + permission rows atomically.
+- **Project + data-source creation** (`ProjectsService.create`, raw-SQL module) — `db.transaction(async (query) => { ... })` to insert into `projects` then `project_data_sources`. A failure on the second insert without a transaction would leave an orphan project.
+- **Status transitions with side-effects in the DB** — e.g., marking a project source `ready` AND updating the project's overall status. Atomic, raw-SQL.
+- **Migrations** — NOT auto-wrapped (see "Migration code" section above). For multi-statement migrations, wrap explicitly using whichever API matches the migration's style.
 
 ## Cross-references
 

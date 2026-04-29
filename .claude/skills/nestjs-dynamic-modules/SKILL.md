@@ -117,7 +117,23 @@ The async variant is what you almost always want when config comes from env. It 
 
 ### 4. `forFeature` — per-feature registration
 
-When a module exposes a generic capability that gets registered multiple times for different domains. Classic example: TypeORM's `forFeature([Entity])`. In *this* repo (raw SQL via `DatabaseService`, not TypeORM ORM), we don't have a typical `forFeature` use case — but if you ever introduce one (e.g., a generic `RateLimiterModule.forFeature({ name: 'auth-routes', limit: 5 })`), this is the shape.
+When a module exposes a generic capability that gets registered multiple times for different domains. **This repo already uses `forFeature` in RBAC** via TypeORM:
+
+```ts
+// src/modules/admin/rbac/rbac.module.ts
+@Module({
+  imports: [TypeOrmModule.forFeature([RoleTypeOrmEntity, PermissionTypeOrmEntity])],
+  providers: [
+    { provide: 'IRoleRepository',       useClass: RoleTypeOrmRepository },
+    { provide: 'IPermissionRepository', useClass: PermissionTypeOrmRepository },
+  ],
+})
+export class RbacModule {}
+```
+
+`TypeOrmModule.forFeature([Entity])` registers the entities scoped to *this* module — `@InjectRepository(Entity)` then resolves to that registration. New modules following the TypeORM-first convention (per `repo-conventions`) will use this pattern.
+
+The same shape applies to any custom module that exposes a generic capability registered per-feature (e.g., a hypothetical `RateLimiterModule.forFeature({ name: 'auth-routes', limit: 5 })`). The pattern is: `forRoot` once, `forFeature` per consumer.
 
 ### 5. `@Global()` — when (rarely) and when not
 

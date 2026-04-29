@@ -1,6 +1,6 @@
 ---
 name: repo-conventions
-description: Use ALWAYS when implementing, reviewing, or refactoring executable code in this repository (api-velocity); pair with tdd-workflow. Documents conventions specific to this codebase: NestJS module layout, raw-SQL repository pattern, RBAC scope contract, projects/chat data-source model, error handling, logging, DTO style, naming. NOT for non-code work, generic NestJS questions (use nestjs-best-practices instead), or read-only investigations.
+description: Use ALWAYS when implementing, reviewing, or refactoring executable code in this repository (api-velocity); pair with tdd-workflow. Documents conventions specific to this codebase: NestJS module layout, TypeORM-first repository pattern (with raw-SQL fallback criteria), RBAC scope contract, projects/chat data-source model, error handling, logging, DTO style, naming. NOT for non-code work, generic NestJS questions (use nestjs-best-practices instead), or read-only investigations.
 ---
 
 # Repo Conventions — api-velocity
@@ -10,7 +10,10 @@ The conventions a senior engineer joining this codebase needs in their head. Pai
 ## 1. Stack at a glance
 
 - **Framework:** NestJS 11 (see `package.json` for exact versions)
-- **Database:** Postgres via a custom **`DatabaseService`** (raw SQL, parameterized queries) — **NOT TypeORM ORM**, despite `typeorm` being in dependencies. Do not use `@InjectRepository` or entity classes.
+- **Database:** Postgres. **Hybrid persistence (TypeORM-first for new modules):**
+  - **Default for new modules: TypeORM** (`@nestjs/typeorm` with `@InjectRepository` and entity classes — see [role.typeorm-repository.ts](src/modules/admin/rbac/infrastructure/persistence/repositories/role.typeorm-repository.ts) for the canonical example).
+  - **Drop to raw SQL via `DatabaseService`** only with explicit justification (criteria in § 4).
+  - **Existing raw-SQL modules** (projects, chat, admin/users, etc.) are NOT flagged for migration. The convention is forward-looking. When making significant changes to an existing raw-SQL module, evaluate whether the scope is large enough to migrate to TypeORM at the same time — but routine maintenance does not require migration.
 - **Tests:** Jest with `ts-jest`. **NOT Vitest.** Config is in `package.json` (`jest` key); E2E config at [test/jest-e2e.json](test/jest-e2e.json).
 - **Auth:** session-based (Better Auth); `session` is attached to the request by middleware and read via helpers like `getActiveOrganizationId(session)`.
 - **Frontend:** React (separate, not addressed in this skill).
@@ -23,7 +26,7 @@ Domain modules live under `src/modules/<domain>/` with this clean-architecture-s
 src/modules/<domain>/
 ├── api/
 │   ├── controllers/<domain>.controller.ts
-│   └── dto/<entity>.dto.ts            ← TypeScript types only, NO class-validator
+│   └── dto/<entity>.dto.ts            ← Request/response shapes (types or classes), no class-validator / ValidationPipe
 ├── application/
 │   ├── services/<domain>.service.ts
 │   └── providers/<thing>.provider.ts  ← optional pluggable strategies
@@ -75,23 +78,77 @@ NEVER return 404 to hide a permission failure — the codebase chose 403 deliber
 2. In the service/repository, scope every query by `organizationId` derived from the resolved scope.
 3. Add a test that asserts a user from a different org gets 403 (for `scope=org` resources).
 
-## 4. Repository pattern (raw SQL, not TypeORM)
+## 4. Repository pattern (TypeORM-first for new modules)
 
-### Interface + implementation
+**Two patterns coexist in this repo.** TypeORM is the default for new modules. Raw SQL via `DatabaseService` is the **fallback** when TypeORM can't satisfy a specific requirement. Existing raw-SQL modules (projects, chat, admin/users, etc.) are NOT flagged for migration — the convention is forward-looking.
 
-Each domain defines an interface in `domain/repositories/`:
+### Default: TypeORM (canonical example: RBAC)
+
+Define a domain interface in `domain/repositories/`, then implement with TypeORM in `infrastructure/persistence/repositories/`. Define entity classes alongside in `infrastructure/persistence/entities/`.
 
 ```ts
-// src/modules/projects/domain/repositories/projects.repository.interface.ts
-export interface IProjectsRepository {
-  findById(id: string, organizationId: string): Promise<ProjectDetail | null>;
+// src/modules/admin/rbac/domain/repositories/role.repository.interface.ts
+export interface IRoleRepository {
+  findById(id: string, organizationId: string): Promise<Role | null>;
   // ...
 }
 ```
 
-The implementation lives in `infrastructure/persistence/repositories/`:
+```ts
+// src/modules/admin/rbac/infrastructure/persistence/repositories/role.typeorm-repository.ts
+@Injectable()
+export class RoleTypeOrmRepository implements IRoleRepository {
+  constructor(
+    @InjectRepository(RoleTypeOrmEntity)
+    private readonly roleRepo: Repository<RoleTypeOrmEntity>,
+  ) {}
+
+  async findById(id: string, organizationId: string): Promise<Role | null> {
+    const entity = await this.roleRepo.findOne({
+      where: { id, organizationId },
+    });
+    return entity ? toDomain(entity) : null;
+  }
+}
+```
+
+Module wiring:
 
 ```ts
+@Module({
+  imports: [TypeOrmModule.forFeature([RoleTypeOrmEntity, PermissionTypeOrmEntity])],
+  providers: [{ provide: 'IRoleRepository', useClass: RoleTypeOrmRepository }],
+})
+export class RbacModule {}
+```
+
+### TypeORM rules
+
+- **Always include `where: { organizationId }`** for org-scoped queries, even when the route is scope-guarded. Defense in depth.
+- **Use the interface in service code**, not the concrete class — wire via `useClass:` in the module's providers.
+- **No base repository class.** Each repo implements its own interface.
+- **Define entity classes** in `infrastructure/persistence/entities/` with `@Entity()` and `@Column()` decorators.
+- **For multi-statement work**, use TypeORM's `manager.transaction(...)` (see `database-transactions` skill).
+- **Map at the boundary** — entities (DB shape) and domain objects (service shape) are not the same type. Convert in the repository.
+
+### When to drop to raw SQL (the fallback)
+
+State the reason in a code comment when you fall back. Valid reasons:
+
+1. **TypeORM can't express the query.** Window functions, recursive CTEs, complex JSON operations (`jsonb_path_query`, `jsonb_set`), full-text search (`tsvector`), `LATERAL` joins, custom aggregates.
+2. **Measured performance issue.** TypeORM's QueryBuilder generates pathological SQL for the specific case — verify with `EXPLAIN ANALYZE`, not assume.
+3. **Material auditability or safety win.** A complex query with subtle correctness requirements (security, financial calculations) is genuinely more reviewable as parameterized raw SQL than as ORM-builder code.
+4. **Bulk operations** where the ORM's per-row overhead is the bottleneck (measured, not assumed).
+5. **Schema migrations** that need fine DDL control beyond what TypeORM migrations expose.
+
+If none of those apply, use TypeORM.
+
+### Fallback: raw SQL via DatabaseService
+
+Same domain interface; different implementation:
+
+```ts
+// Established pattern in existing modules — projects, chat, admin/users
 // src/modules/projects/infrastructure/persistence/repositories/projects.database-repository.ts
 @Injectable()
 export class ProjectsDatabaseRepository implements IProjectsRepository {
@@ -107,13 +164,14 @@ export class ProjectsDatabaseRepository implements IProjectsRepository {
 }
 ```
 
-### Rules
+### Raw-SQL rules
 
 - **Always parameterize.** No string interpolation into SQL. Ever.
-- **Always include `organization_id` in the WHERE clause** for org-scoped tables, even if the route is guarded. Defense in depth.
-- **Use the interface in service code**, not the concrete class — wire via `useClass:` in the module's providers.
-- **No base repository class.** Each repo implements its own interface.
-- **No raw `EntityManager`** unless transactions are required (and then use `DatabaseService` transaction helpers).
+- **Always include `WHERE organization_id = $N`** for org-scoped tables. Same defense-in-depth principle as TypeORM.
+- **Use the interface in service code**, not the concrete class.
+- **No base repository class.**
+- **For multi-statement work**, use `DatabaseService.transaction<T>(callback)` (see `database-transactions` skill).
+- **Add a comment** explaining why TypeORM wasn't viable for this query (cite the specific reason from the criteria above).
 
 ### Migrations
 
@@ -172,9 +230,9 @@ Cross-project chat is forbidden — the org-scoped repository ensures project ac
 
 ## 6. Error handling
 
-### Use NestJS built-in exceptions
+### Use NestJS built-in exceptions (preferred direction)
 
-There is **no custom `AppError` class** and **no global exception filter**. Standard pattern:
+There is **no custom `AppError` class** and **no global exception filter**. Standard pattern for new code:
 
 ```ts
 if (!user) throw new NotFoundException('User not found');
@@ -184,9 +242,17 @@ if (!isValid(input)) throw new BadRequestException('Invalid input');
 
 NestJS auto-maps these to the right HTTP code.
 
-### Anti-pattern: don't throw plain `Error` from a service
+### Reality check: existing code is not fully aligned
 
-Plain `throw new Error(...)` becomes a 500 with no useful context. Use the typed exceptions.
+Several existing services and repositories throw plain `Error(...)`:
+
+- `chat.database-repository.ts` — "Failed to create conversation", "Failed to create message"
+- `chat-agent.service.ts` — "Agent produced no assistant content"
+- `airweave-collection.provider.ts`
+- `admin-user.database-repository.ts`
+- `verification.utils.ts`
+
+These are pre-existing. **Don't grandfather them as the convention.** When you touch one of these files, prefer migrating to a NestJS exception. When you write new code, use NestJS exceptions from the start. A plain `Error` from a service becomes a 500 with no useful context — that's a regression for any HTTP-facing flow.
 
 ### Bootstrap-time errors
 
@@ -194,7 +260,7 @@ Plain `throw new Error(...)` is fine in `ConfigService`, app bootstrap, or anywh
 
 ## 7. Logger
 
-NestJS's built-in `Logger`, one instance per class:
+**Preferred direction: NestJS's built-in `Logger`, one instance per class** (existing code is mixed; see "Reality check" below):
 
 ```ts
 @Injectable()
@@ -208,6 +274,17 @@ export class MyService {
   }
 }
 ```
+
+### Reality check: existing code mixes `Logger` with `console.*`
+
+Several files use `console.log` / `console.warn` / `console.error` in non-bootstrap code:
+
+- `chat-agent.service.ts` — multiple `console.error`/`console.warn` calls
+- `chat-agent-tools.ts` — `console.warn`
+- `airweave.service.ts` — `console.error`
+- Migration files (`chat.migration.ts`, `projects.migration.ts`) — `console.log`/`console.warn` for migration progress (these are bootstrap-time; acceptable)
+
+**For new code: use the NestJS `Logger` per class.** When you touch existing `console.*` calls in non-bootstrap code, migrate them to the class's `Logger`. Migration scripts using `console.log` for progress output are fine to leave alone.
 
 ### What's NOT in place today
 
@@ -284,24 +361,27 @@ Since this repo has no request-id middleware, you cannot correlate logs across s
 
 ## 8. DTOs and validation
 
-DTOs are **TypeScript types**, not classes:
+DTOs are **either TypeScript types or classes** — both patterns coexist:
 
-```ts
-// src/modules/projects/api/dto/project.dto.ts
-export interface CreateProjectInput {
-  name: string;
-  description?: string;
-  // ...
-}
-```
+- **Types/interfaces** (most common): `src/modules/projects/api/dto/project.dto.ts` exports interfaces.
+  ```ts
+  export interface CreateProjectInput {
+    name: string;
+    description?: string;
+  }
+  ```
+- **Classes** (used in `admin/rbac/api/dto/`, `admin/organizations/api/dto/`): exported as plain class declarations without `class-validator` decorators.
 
-There is **no class-validator** decorator usage. **There is no runtime validation** of incoming request bodies — controllers trust the type signature.
+**There is no `class-validator` decorator usage and no centralized `ValidationPipe`.** Runtime validation, when present, is done **manually** in controllers and services rather than auto-enforced by Nest.
 
-This is a known weakness. When you add a new endpoint:
+When you add a new endpoint:
 
-- Use `interface` (or `type`) for inputs, NOT `class`.
-- Do basic shape checks manually if the input is user-controlled (e.g., `if (!input?.name) throw new BadRequestException('name required')`).
-- Separate request types from response types (e.g., `CreateProjectInput` vs `ProjectSummary`/`ProjectDetail`).
+- Prefer `interface` or `type` for inputs unless an existing pattern in the same module uses classes.
+- Perform manual runtime validation for user-controlled input:
+  ```ts
+  if (!input?.name) throw new BadRequestException('name required');
+  ```
+- Separate request shapes from response shapes (e.g., `CreateProjectInput` vs `ProjectSummary`/`ProjectDetail`).
 
 ## 9. Tests
 

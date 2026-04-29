@@ -41,9 +41,12 @@
       "Bash(pg_restore:*)",
       "Bash(sqlite3 * DELETE *)",
       "Bash(sqlite3 * DROP *)",
+      "Bash(sqlite3 * TRUNCATE *)",
       "Bash(sqlite3 * UPDATE *)",
       "Bash(sqlite3 * INSERT *)",
-      "Bash(sqlite3 * ALTER *)"
+      "Bash(sqlite3 * ALTER *)",
+      "Bash(sqlite3 * CREATE *)",
+      "Bash(sqlite3 * REPLACE *)"
     ]
   }
 }

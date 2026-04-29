@@ -5,7 +5,14 @@ description: Use when ANY database write is required — INSERT, UPDATE, DELETE,
 
 # Database Write Protocol
 
-DB writes need explicit user approval. Catastrophic destructive SQL (`DELETE`, `DROP`, `TRUNCATE`, `UPDATE`, `INSERT`, `ALTER`, `CREATE`, `REPLACE`, `GRANT`, `REVOKE`, `RENAME` via `mysql`/`psql`/`sqlite3`) is also denied at the tool boundary by `.claude/settings.json` `permissions.deny`. This skill is the workflow on top of those gates.
+DB writes need explicit user approval. **Some** catastrophic destructive SQL patterns are also denied at the tool boundary by `.claude/settings.json` `permissions.deny` — but coverage is not exhaustive across every keyword and every client. Treat `permissions.deny` as a safety net for the obvious cases, not as a complete fence. This skill is the workflow on top of those gates.
+
+The deny list as of this commit covers (broadly):
+- `mysql` / `psql`: `DELETE`, `DROP`, `TRUNCATE`, `UPDATE`, `INSERT`, `ALTER`, `CREATE`, `REPLACE` (mysql only), `GRANT`, `REVOKE`, `RENAME` (mysql only)
+- `sqlite3`: `DELETE`, `DROP`, `TRUNCATE`, `UPDATE`, `INSERT`, `ALTER`, `CREATE`, `REPLACE`
+- `mysqldump`, `pg_restore` blocked entirely.
+
+Don't rely on this list to catch every destructive command — some clients (`pgcli`, `mycli`, ORM CLIs) and some keyword variants will slip through. The approval workflow below is the load-bearing safety.
 
 ## Three-step protocol (mandatory)
 

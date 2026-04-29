@@ -8,6 +8,16 @@ set -uo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$PROJECT_DIR"
 
+# Preflight: required CLI tools. The script uses bash, grep, awk, sed, find, wc — all POSIX-standard.
+# jq is needed for JSON-parsing assertions (Python sometimes used as fallback elsewhere; not here).
+for tool in bash grep awk sed find wc; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "PRE-FAIL: required tool '$tool' not found on PATH" >&2
+    echo "  install via your package manager (e.g., 'brew install coreutils' on macOS, or your distro's gnu-coreutils)" >&2
+    exit 2
+  fi
+done
+
 PASS=0
 FAIL=0
 FAILED_TESTS=""
@@ -252,11 +262,11 @@ echo
 echo "=== T38: repo-conventions skill has key sections ==="
 assert_true "T38: 'Module layout' section"            "grep -qi 'Module layout' .claude/skills/repo-conventions/SKILL.md"
 assert_true "T38: 'RBAC scope contract'"              "grep -qi 'RBAC scope contract' .claude/skills/repo-conventions/SKILL.md"
-assert_true "T38: 'Repository pattern (raw SQL'"      "grep -qi 'Repository pattern (raw SQL' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T38: 'Repository pattern' section"       "grep -qi 'Repository pattern' .claude/skills/repo-conventions/SKILL.md"
 assert_true "T38: 'Projects + multi-source chat'"     "grep -qi 'multi-source chat' .claude/skills/repo-conventions/SKILL.md"
 assert_true "T38: 'Repo-specific anti-patterns'"      "grep -qi 'Repo-specific anti-patterns' .claude/skills/repo-conventions/SKILL.md"
 assert_true "T38: NestJS Logger (not pino) noted"    "grep -qi 'NestJS.*Logger' .claude/skills/repo-conventions/SKILL.md"
-assert_true "T38: NOT TypeORM noted"                 "grep -qi 'NOT TypeORM' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T38: hybrid persistence noted (raw SQL + TypeORM in RBAC)" "grep -qiE 'TypeORM in RBAC|TypeORM.*RBAC|RBAC.*TypeORM|Hybrid persistence' .claude/skills/repo-conventions/SKILL.md"
 
 echo
 echo "=== T39: decision-rules skill has full table content ==="
@@ -468,6 +478,43 @@ assert_true "T56: qa-validator references async-error-handling for network/parti
 assert_true "T56: qa-validator references database-transactions for rollback testing" "grep -q 'database-transactions' .claude/agents/qa-validator.md"
 assert_true "T56: security-reviewer references database-transactions"  "grep -q 'database-transactions' .claude/agents/security-reviewer.md"
 assert_true "T56: security-reviewer references async-error-handling"   "grep -q 'async-error-handling' .claude/agents/security-reviewer.md"
+
+echo
+echo "=== T57: PR-review accuracy corrections (round 2-3 feedback) ==="
+# CLAUDE.md P2 reflects hybrid persistence and softens MUST -> PREFER framing.
+assert_true "T57: CLAUDE.md P2 establishes TypeORM-first for new modules" "grep -qiE 'prefer TypeORM|TypeORM.first|For new modules.*TypeORM' CLAUDE.md"
+assert_true "T57: CLAUDE.md P2 names raw SQL as fallback with stated justification" "grep -qiE 'fallback|with stated justification|with explicit justification|only with' CLAUDE.md"
+assert_true "T57: CLAUDE.md P2 uses PREFER for NestJS exceptions" "grep -qE 'PREFER NestJS.*exception|PREFER NestJS built-in exceptions' CLAUDE.md"
+assert_true "T57: CLAUDE.md P2 uses PREFER for Logger"            "grep -qE 'PREFER NestJS built-in .Logger|PREFER.*Logger' CLAUDE.md"
+
+# repo-conventions reflects reality.
+assert_true "T57: repo-conventions Stack establishes TypeORM-first"          "grep -qiE 'TypeORM-first|Default for new modules: TypeORM' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T57: repo-conventions Repository pattern leads with TypeORM"    "grep -qE 'Default: TypeORM|TypeORM-first for new modules' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T57: repo-conventions has 'When to drop to raw SQL' criteria"   "grep -q 'When to drop to raw SQL' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T57: repo-conventions notes existing modules NOT flagged"       "grep -qiE 'NOT flagged|forward-looking' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T57: repo-conventions Error handling has Reality check"         "grep -q 'Reality check' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T57: repo-conventions DTO section accepts types OR classes"     "grep -qE 'types or classes|either TypeScript types or classes' .claude/skills/repo-conventions/SKILL.md"
+
+# database-transactions migration claim corrected.
+assert_true "T57: database-transactions notes migration runner does NOT auto-wrap" "grep -qiE 'NOT auto-wrapped|does \\*\\*NOT\\*\\* wrap|does NOT wrap each migration' .claude/skills/database-transactions/SKILL.md"
+assert_true "T57: database-transactions covers TypeORM transaction API"            "grep -qE 'manager\\.transaction|dataSource\\.transaction|TypeORM transactions' .claude/skills/database-transactions/SKILL.md"
+assert_true "T57: database-transactions covers raw-SQL transaction API"            "grep -q 'DatabaseService.transaction' .claude/skills/database-transactions/SKILL.md"
+
+# db-write-protocol overclaim softened.
+assert_true "T57: db-write-protocol uses 'Some catastrophic' framing"        "grep -qiE 'Some.*catastrophic|coverage is not exhaustive|Treat .permissions.deny. as a safety net' .claude/skills/db-write-protocol/SKILL.md"
+
+# settings.json sqlite3 deny patterns expanded.
+assert_true "T57: settings.json denies sqlite3 CREATE"   "grep -q 'sqlite3 \\* CREATE' .claude/settings.json"
+assert_true "T57: settings.json denies sqlite3 REPLACE"  "grep -q 'sqlite3 \\* REPLACE' .claude/settings.json"
+assert_true "T57: settings.json denies sqlite3 TRUNCATE" "grep -q 'sqlite3 \\* TRUNCATE' .claude/settings.json"
+
+# Acceptance script preflight check.
+assert_true "T57: acceptance script preflights required CLI tools" "grep -q 'required tool' .claude/tests/run-acceptance.sh"
+
+# Force-added ruler-managed skills are tracked in git.
+for skill in code-simplifier js-performance-patterns nestjs-best-practices nodejs-best-practices typescript-advanced-types; do
+  assert_true "T57: ruler-managed skill '$skill' is git-tracked" "git ls-files --error-unmatch .claude/skills/$skill/SKILL.md > /dev/null 2>&1"
+done
 
 echo
 echo "==========================="
