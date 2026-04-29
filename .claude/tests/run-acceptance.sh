@@ -365,6 +365,111 @@ assert_true "T48: lessons-curator checks for duplicate feedback"  "grep -qi 'nea
 assert_true "T48: lessons-curator survey order — memory first"    "[ \$(grep -nE 'MEMORY.md|CLAUDE.md.*top-level rules' .claude/agents/lessons-curator.md | head -2 | sort -n | head -1 | grep -c MEMORY) -eq 1 ]"
 
 echo
+echo "=== T49: 11 GoF pattern skills are removed (replaced by NestJS-aware adaptations) ==="
+for gof in command-pattern factory-pattern flyweight-pattern mediator-pattern mixin-pattern module-pattern observer-pattern prototype-pattern provider-pattern proxy-pattern singleton-pattern; do
+  assert_true "T49: $gof skill removed" "! test -d .claude/skills/$gof"
+done
+
+echo
+echo "=== T50: 5 NestJS-aware adaptation skills present and well-formed ==="
+for skill in nestjs-factory-providers nestjs-dynamic-modules nestjs-cross-cutting nestjs-provider-scopes nestjs-mixins; do
+  assert_true "T50: $skill SKILL.md exists"             "test -f .claude/skills/$skill/SKILL.md"
+  assert_true "T50: $skill has frontmatter description" "grep -q '^description:' .claude/skills/$skill/SKILL.md"
+  assert_true "T50: $skill has at least one '## When ...' section" "grep -qE '^## When ' .claude/skills/$skill/SKILL.md"
+  assert_true "T50: $skill has 'NOT for' / 'When this does NOT fire' guidance" "grep -qiE 'NOT for|When this does NOT fire|When NOT|When this does not fire' .claude/skills/$skill/SKILL.md"
+  assert_true "T50: $skill has 'Common LLM mistakes' or 'mistakes' section" "grep -qiE 'LLM mistakes|Common mistakes' .claude/skills/$skill/SKILL.md"
+  assert_true "T50: $skill cross-references repo-conventions or CLAUDE.md" "grep -qE 'repo-conventions|CLAUDE.md' .claude/skills/$skill/SKILL.md"
+done
+
+echo
+echo "=== T51: NestJS adaptation descriptions don't collide with GoF terminology ==="
+# 'provider-pattern' was the React Context skill — its description used 'sharing data across component trees'.
+# Make sure none of the new skills accidentally inherit that React-y framing.
+assert_true "T51: nestjs-factory-providers names NestJS, not generic 'factory'"   "grep -q 'NestJS' .claude/skills/nestjs-factory-providers/SKILL.md"
+assert_true "T51: nestjs-dynamic-modules names forRoot/forRootAsync"             "grep -qE 'forRoot|forRootAsync' .claude/skills/nestjs-dynamic-modules/SKILL.md"
+assert_true "T51: nestjs-cross-cutting names Guard/Pipe/Interceptor"             "grep -qE 'Guard.*Pipe.*Interceptor|Guards, Pipes, Interceptors' .claude/skills/nestjs-cross-cutting/SKILL.md"
+assert_true "T51: nestjs-provider-scopes names Scope.REQUEST"                    "grep -q 'Scope.REQUEST' .claude/skills/nestjs-provider-scopes/SKILL.md"
+assert_true "T51: nestjs-mixins references mixin() helper from @nestjs/common"   "grep -q '@nestjs/common' .claude/skills/nestjs-mixins/SKILL.md"
+
+echo
+echo "=== T52: NestJS adaptation skills cite real repo files (repo-fit verification) ==="
+assert_true "T52: nestjs-cross-cutting cites permissions.guard.ts"               "grep -q 'permissions.guard.ts' .claude/skills/nestjs-cross-cutting/SKILL.md"
+assert_true "T52: nestjs-cross-cutting cites permissions.decorator.ts"           "grep -q 'permissions.decorator.ts' .claude/skills/nestjs-cross-cutting/SKILL.md"
+assert_true "T52: nestjs-mixins references the existing PermissionsGuard pattern" "grep -q 'PermissionsGuard' .claude/skills/nestjs-mixins/SKILL.md"
+assert_true "T52: nestjs-provider-scopes references DatabaseService"             "grep -q 'DatabaseService' .claude/skills/nestjs-provider-scopes/SKILL.md"
+assert_true "T52: nestjs-dynamic-modules references actual repo modules"         "grep -qE 'DatabaseModule|ProjectsModule|ChatModule' .claude/skills/nestjs-dynamic-modules/SKILL.md"
+assert_true "T52: nestjs-factory-providers references ConfigService"             "grep -q 'ConfigService' .claude/skills/nestjs-factory-providers/SKILL.md"
+
+echo
+echo "=== T53: Node.js reliability skills present and well-formed ==="
+for skill in async-error-handling database-transactions cyclomatic-complexity; do
+  assert_true "T53: $skill SKILL.md exists"               "test -f .claude/skills/$skill/SKILL.md"
+  assert_true "T53: $skill has frontmatter description"   "grep -q '^description:' .claude/skills/$skill/SKILL.md"
+  assert_true "T53: $skill has 'When this fires' or 'When' section" "grep -qE '^## When ' .claude/skills/$skill/SKILL.md"
+  assert_true "T53: $skill has 'NOT for' / 'When this does NOT' guidance" "grep -qiE 'NOT for|When this does NOT|When NOT' .claude/skills/$skill/SKILL.md"
+  assert_true "T53: $skill has 'Common LLM mistakes' section" "grep -qiE 'Common LLM mistakes|Common mistakes' .claude/skills/$skill/SKILL.md"
+  assert_true "T53: $skill cross-references repo-conventions or CLAUDE.md" "grep -qE 'repo-conventions|CLAUDE.md' .claude/skills/$skill/SKILL.md"
+done
+
+echo
+echo "=== T54: skills teach the right specifics (content depth check) ==="
+# async-error-handling
+assert_true "T54: async-error-handling teaches Promise.allSettled vs all"  "grep -q 'Promise.allSettled' .claude/skills/async-error-handling/SKILL.md"
+assert_true "T54: async-error-handling teaches AbortSignal"                "grep -q 'AbortSignal' .claude/skills/async-error-handling/SKILL.md"
+assert_true "T54: async-error-handling forbids retries (per CLAUDE.md P5)" "grep -qi 'no retries\\|MUST NOT.*retr\\|retries.*forbidden\\|Forbidden.*retr' .claude/skills/async-error-handling/SKILL.md"
+assert_true "T54: async-error-handling catches catch-and-ignore antipattern" "grep -qiE 'catch-and-ignore|swallow' .claude/skills/async-error-handling/SKILL.md"
+
+# database-transactions
+assert_true "T54: database-transactions cites DatabaseService.transaction API" "grep -q 'DatabaseService.transaction\\|db.transaction' .claude/skills/database-transactions/SKILL.md"
+assert_true "T54: database-transactions warns against this.db.query inside callback" "grep -qE 'this\\.db\\.query|outside the transaction' .claude/skills/database-transactions/SKILL.md"
+assert_true "T54: database-transactions forbids HTTP inside transaction"  "grep -qi 'external.*HTTP\\|HTTP.*inside.*transaction\\|external I/O' .claude/skills/database-transactions/SKILL.md"
+assert_true "T54: database-transactions covers isolation levels"          "grep -qiE 'isolation level|SERIALIZABLE|READ COMMITTED|REPEATABLE READ' .claude/skills/database-transactions/SKILL.md"
+
+# cyclomatic-complexity
+assert_true "T54: cyclomatic-complexity teaches early returns"            "grep -qi 'early return' .claude/skills/cyclomatic-complexity/SKILL.md"
+assert_true "T54: cyclomatic-complexity teaches guard clauses"            "grep -qi 'guard clause' .claude/skills/cyclomatic-complexity/SKILL.md"
+assert_true "T54: cyclomatic-complexity teaches extract method"           "grep -qi 'extract method' .claude/skills/cyclomatic-complexity/SKILL.md"
+assert_true "T54: cyclomatic-complexity forbids 'else' after return"      "grep -qiE 'else after.*return|Eliminate .*else.*return|pointless else|dead syntax' .claude/skills/cyclomatic-complexity/SKILL.md"
+assert_true "T54: cyclomatic-complexity has rough metric guidance"        "grep -qiE 'cyclomatic complexity|metric|11\\+|complexity 5' .claude/skills/cyclomatic-complexity/SKILL.md"
+
+echo
+echo "=== T55: repo-conventions logging section expanded ==="
+assert_true "T55: log-level discipline table"                "grep -q 'Log-level discipline' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T55: explicit redaction list (passwords, tokens)" "grep -qE 'Passwords.*password.*tokens|password reset tokens|JWT bearer' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T55: 'What NEVER to log' section"               "grep -q 'What NEVER to log' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T55: correlation-without-middleware guidance"   "grep -qi 'correlation in the absence\\|no request-id middleware' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T55: audit vs operational logging distinction"  "grep -qi 'audit log' .claude/skills/repo-conventions/SKILL.md"
+
+echo
+echo "=== T56: CLAUDE.md and subagents are aligned to new skills (no orphans) ==="
+# CLAUDE.md P3.4 mandatory matrix includes the always-fire reliability skills.
+assert_true "T56: P3.4 names async-error-handling as MUST-fire"     "grep -q '| \`async-error-handling\` |' CLAUDE.md"
+assert_true "T56: P3.4 names database-transactions as MUST-fire"    "grep -q '| \`database-transactions\` |' CLAUDE.md"
+
+# CLAUDE.md Skill Pointers references all 9 new skills.
+for new_skill in async-error-handling database-transactions cyclomatic-complexity nestjs-factory-providers nestjs-dynamic-modules nestjs-cross-cutting nestjs-provider-scopes nestjs-mixins; do
+  assert_true "T56: Skill Pointers row for $new_skill" "grep -q '\`$new_skill\`' CLAUDE.md"
+done
+
+# code-reviewer Required Reading covers the always-read reliability skills.
+assert_true "T56: code-reviewer always-reads async-error-handling"  "grep -q 'async-error-handling/SKILL.md' .claude/agents/code-reviewer.md"
+assert_true "T56: code-reviewer always-reads cyclomatic-complexity" "grep -q 'cyclomatic-complexity/SKILL.md' .claude/agents/code-reviewer.md"
+assert_true "T56: code-reviewer reads database-transactions conditionally" "grep -q 'database-transactions/SKILL.md' .claude/agents/code-reviewer.md"
+assert_true "T56: code-reviewer audits Promise.all/allSettled patterns"   "grep -qE 'Promise.all.*allSettled|allSettled' .claude/agents/code-reviewer.md"
+assert_true "T56: code-reviewer audits transaction-wrap presence"   "grep -qE 'db.transaction|transaction.*callback|missing.*db.transaction' .claude/agents/code-reviewer.md"
+assert_true "T56: code-reviewer audits no-else-after-return"        "grep -qiE 'else after.*return|nested validation pyramid' .claude/agents/code-reviewer.md"
+
+# architect-reviewer mentions the new skills in conditional reading.
+assert_true "T56: architect-reviewer mentions async-error-handling" "grep -q 'async-error-handling' .claude/agents/architect-reviewer.md"
+assert_true "T56: architect-reviewer mentions database-transactions" "grep -q 'database-transactions' .claude/agents/architect-reviewer.md"
+
+# qa-validator and security-reviewer reference the relevant new skills.
+assert_true "T56: qa-validator references async-error-handling for network/partial" "grep -q 'async-error-handling' .claude/agents/qa-validator.md"
+assert_true "T56: qa-validator references database-transactions for rollback testing" "grep -q 'database-transactions' .claude/agents/qa-validator.md"
+assert_true "T56: security-reviewer references database-transactions"  "grep -q 'database-transactions' .claude/agents/security-reviewer.md"
+assert_true "T56: security-reviewer references async-error-handling"   "grep -q 'async-error-handling' .claude/agents/security-reviewer.md"
+
+echo
 echo "==========================="
 echo "Results: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then

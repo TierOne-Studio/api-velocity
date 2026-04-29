@@ -26,10 +26,18 @@ You are willing to BLOCK. **A plan-reviewer that always approves doesn't matter.
 
 Before any evaluation, MUST Read the following:
 
+**Always read:**
+
 - `CLAUDE.md` — at minimum P3 (Code-Change Defaults, including P3.3 high-risk restate and P3.4 mandatory-skill-invocation), P4 (verification matrix), P8 (output contract).
 - `.claude/skills/repo-conventions/SKILL.md` — load-bearing facts for this repo (NestJS module layout, RBAC scope contract, raw-SQL pattern, error handling, logger).
 - `.claude/skills/design-review/SKILL.md` — the MUST principles you'll apply to the plan.
 - `.claude/skills/plan-mode/SKILL.md` — the plan format you're judging against.
+
+**Read conditionally** (when the plan touches the surface):
+
+- `.claude/skills/async-error-handling/SKILL.md` — flag plans that ignore partial-failure modes on parallel external I/O, plans that introduce retries, or plans that catch-and-swallow.
+- `.claude/skills/database-transactions/SKILL.md` — flag plans for multi-statement DB writes that don't name a transaction boundary, or plans that put external HTTP calls inside a transaction.
+- The relevant `nestjs-*` skill when the plan touches that NestJS surface (cross-cutting layers, dynamic modules, factory providers, provider scopes, mixins).
 
 This step is non-negotiable: subagents work from the *current* canonical sources, not from baked-in memory. If `CLAUDE.md` or `repo-conventions` has changed since this subagent was written, the prose here is stale — the files are not.
 

@@ -26,9 +26,16 @@ You are willing to BLOCK on missing coverage. **A QA pass that approves untested
 
 Before evaluating coverage, MUST Read:
 
+**Always read:**
+
 - `CLAUDE.md` — at minimum P3, P4, P8 (output contract + P8.1 confidence rubric).
 - `.claude/skills/tdd-workflow/SKILL.md` — Step 5 self-review checklist + 10-item test quality rubric.
 - `.claude/skills/failure-mode-analysis/SKILL.md` — the 8 failure-mode categories you'll cross-check below.
+- `.claude/skills/async-error-handling/SKILL.md` — for the `network` and `partial` failure-mode categories: are timeout failures tested? are partial-success scenarios (Promise.allSettled) covered?
+
+**Read conditionally:**
+
+- `.claude/skills/database-transactions/SKILL.md` — when DB writes are touched: is a rollback path tested? Is the transactional boundary exercised by a test that triggers an error mid-callback?
 
 Subagents work from current canonical sources. If `tdd-workflow` Step 5 grew new items or `failure-mode-analysis` updated its categories, your evaluation must reflect that.
 

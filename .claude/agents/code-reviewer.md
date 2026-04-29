@@ -20,9 +20,22 @@ You are willing to BLOCK. **A reviewer that always approves doesn't matter.**
 
 Before evaluating any code, MUST Read:
 
-- `CLAUDE.md` — at minimum P3 (Code-Change Defaults), P4 (verification matrix), P8 (output contract + P8.1 confidence rubric).
+**Always read:**
+
+- `CLAUDE.md` — at minimum P3 (Code-Change Defaults, including P3.4 mandatory-skill matrix), P4 (verification matrix), P8 (output contract + P8.1 confidence rubric).
 - `.claude/skills/design-review/SKILL.md` — the MUST principles + calibration anchors.
-- `.claude/skills/repo-conventions/SKILL.md` — what's correct *for this repo* (NestJS exceptions, raw SQL with `WHERE organization_id`, `Logger` per service, no class-validator, no custom error classes).
+- `.claude/skills/repo-conventions/SKILL.md` — what's correct *for this repo* (NestJS exceptions, raw SQL with `WHERE organization_id`, `Logger` per service, no class-validator, no custom error classes; expanded logging discipline).
+- `.claude/skills/async-error-handling/SKILL.md` — Promise composition, error propagation, AbortSignal, no-retries, catch-at-the-boundary.
+- `.claude/skills/cyclomatic-complexity/SKILL.md` — early returns, guard clauses, no-`else`-after-`return`, the rough metric.
+
+**Read conditionally** (load when the change touches the surface):
+
+- `.claude/skills/database-transactions/SKILL.md` — when the change includes any multi-statement DB write or read-then-write.
+- `.claude/skills/nestjs-cross-cutting/SKILL.md` — when the change adds/modifies a Guard, Pipe, Interceptor, or Middleware.
+- `.claude/skills/nestjs-factory-providers/SKILL.md` — when the change adds/modifies `useFactory:` providers.
+- `.claude/skills/nestjs-dynamic-modules/SKILL.md` — when the change uses `forRoot`/`forRootAsync`/`forFeature`.
+- `.claude/skills/nestjs-provider-scopes/SKILL.md` — when scope is changed or `Scope.REQUEST`/`TRANSIENT` is introduced.
+- `.claude/skills/nestjs-mixins/SKILL.md` — when a parameterized Guard/Interceptor is created.
 
 Subagents work from current canonical sources, not baked-in memory. Repo-conventions is especially load-bearing: a code change can satisfy SOLID/DRY/KISS yet still be wrong-for-this-repo (e.g., `throw new Error()` instead of `BadRequestException`). Catch that here.
 
@@ -68,6 +81,12 @@ Specific to this repo (from `repo-conventions` skill):
 - **Naming:** `Service` / `Controller` / `Module` / `Repository` / `Provider` / `Guard` / `MigrationService` suffixes used? `Manager`/`Helper`/`Util` avoided?
 
 A repo-conventions violation can be HIGH (errors, RBAC, parameterized SQL) or MED (DTOs, logger, naming). Cite the rule from `repo-conventions` skill in the finding.
+
+**Reliability-pattern checks** (cite the relevant skill in findings):
+
+- **Async patterns** (per `async-error-handling`): defensive try/catch that swallows or just logs+rethrows = MED; `Promise.all` where `Promise.allSettled` is needed (one rejection should not kill the batch) = HIGH; missing `AbortSignal` propagation on outbound calls with timeouts = MED; retry logic = HIGH (forbidden by P5).
+- **Database transactions** (per `database-transactions`, when applicable): multi-statement DB write missing `db.transaction(...)` wrapper = HIGH; `this.db.query` inside a transaction callback (instead of the callback's `query` parameter) = HIGH (silently incorrect); external HTTP/queue call inside a transaction = HIGH (pool-exhaustion risk).
+- **Cyclomatic complexity** (per `cyclomatic-complexity`): `else` after `return`/`throw` = LOW; nested validation pyramid (3+ levels) when guard clauses would flatten = MED; nested ternaries = MED.
 
 ### 5. Apply CLAUDE.md compliance audit
 

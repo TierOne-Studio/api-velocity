@@ -114,6 +114,8 @@ Skills load on description match — that's a heuristic, not a guarantee. For ex
 | `repo-conventions` | Any code change in `api-velocity` | Plausible-but-wrong-for-this-repo code (custom errors, wrong logger, missing org_id scope) |
 | `design-review` | Before declaring complete | No principle grid, no `Design review:` block, no Confidence rubric output |
 | `plan-mode` | 3+ steps OR multi-file OR architectural OR risky | Silent interpretation of ambiguous request, no `verify:` clauses |
+| `async-error-handling` | Any change adding/modifying async code (`await`, `Promise.*`, external I/O) | Defensive try/catch that swallows errors, `Promise.all` where `allSettled` is needed, retries that violate fail-fast |
+| `database-transactions` | Any multi-statement DB write (across rows or tables) | Partial-write states leak to prod; `this.db.query` accidentally outside the transaction callback |
 
 If a listed skill genuinely doesn't apply (e.g., `plan-mode` for a single-line typo), state which one and why in the response. Do NOT silently skip.
 
@@ -269,5 +271,13 @@ Situation → skill lookup. The model loads a skill on description match; this t
 | Implementing or reviewing code in this repo | `repo-conventions` (always-pair) |
 | Ambiguous request, scope unclear, default decision needed | `decision-rules` |
 | About to push back on user (simpler alt / scope creep / risk / framing) | `pushback-templates` |
+| Async code, Promise composition, error propagation, timeouts | `async-error-handling` |
+| Multi-statement DB write or read-then-write across tables | `database-transactions` |
+| Function with deep nesting, long if-else chain, or growing branchiness | `cyclomatic-complexity` |
+| Designing a NestJS provider with env-driven or async creation | `nestjs-factory-providers` |
+| Designing a NestJS module with consumer-supplied config | `nestjs-dynamic-modules` |
+| Adding cross-cutting behavior — Guard / Pipe / Interceptor / Middleware | `nestjs-cross-cutting` |
+| Provider needs per-request or per-injection state (multi-tenancy) | `nestjs-provider-scopes` |
+| Parameterized Guard or Interceptor with dependency injection | `nestjs-mixins` |
 
 After a user correction, see [P7 — Reflexive Lesson Capture](#p7--reflexive-lesson-capture-after-corrections).

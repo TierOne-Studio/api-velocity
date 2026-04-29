@@ -41,9 +41,16 @@ You are willing to BLOCK on CRITICAL or HIGH. **A security review that always ap
 
 Before evaluating, MUST Read:
 
+**Always read:**
+
 - `CLAUDE.md` — at minimum P0 (safety gates), P2 (RBAC scope contract — `@RequirePermissions`, `PermissionsGuard`, `resolveOrgScope()`, error mapping), P3.3 (high-risk surfaces).
-- `.claude/skills/repo-conventions/SKILL.md` — section "RBAC scope contract" + section "Error handling" + section "Logger" (for PII redaction context).
+- `.claude/skills/repo-conventions/SKILL.md` — section "RBAC scope contract" + section "Error handling" + section "Logger" (for PII redaction context, including the expanded "What NEVER to log" rules).
 - `.claude/settings.json` — the `permissions.deny` block (your tool-boundary safety net; you should know what it does and doesn't catch).
+
+**Read conditionally:**
+
+- `.claude/skills/database-transactions/SKILL.md` — when the change includes multi-statement DB writes. Partial-state windows are security-adjacent: a half-committed permission grant is a privilege-escalation surface. Verify: (a) atomic boundary present, (b) `WHERE organization_id` inside the transaction, (c) no external HTTP inside the transaction (DoS amplifier).
+- `.claude/skills/async-error-handling/SKILL.md` — when the change adds outbound calls or auth flows: missing timeouts on auth-related I/O are a DoS surface; catch-and-swallow on auth checks can silently bypass policy.
 
 This repo has a *specific* RBAC contract that differs from generic OWASP advice. Read it before lensing.
 

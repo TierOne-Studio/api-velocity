@@ -217,6 +217,71 @@ export class MyService {
 
 If you log sensitive data (PII, secrets, tokens), you are leaking it. Manually redact before logging, or just don't log it.
 
+### Log-level discipline
+
+| Level | When | Example |
+|---|---|---|
+| `debug` | Dev-time only; verbose flow tracing | `logger.debug('resolved scope', { mode: scope.mode })` |
+| `log` (info) | Normal-flow milestones worth keeping in prod | `logger.log('project created', { projectId, organizationId })` |
+| `warn` | Degraded but recoverable; partial failure; deprecated-path use | `logger.warn('source timed out, continuing with remaining sources', { sourceId })` |
+| `error` | Exception about to propagate or something genuinely failed | `logger.error('migration failed', error.stack)` |
+
+Anti-pattern: logging at `error` for things that aren't errors. Drowns alerts. If it's expected (e.g., user supplied invalid input), it's `warn` at most.
+
+### What to log (context fields)
+
+Always include enough context to debug from the log alone:
+
+- **Identifiers** — entity IDs (`projectId`, `userId`, `organizationId`).
+- **Operation name** — what was being attempted (`'project.create'`, `'chat.search'`).
+- **Outcome** — success/failure markers, counts, durations where relevant.
+- **Caller scope** — which org / role context the operation ran under.
+
+```ts
+this.logger.log('project created', {
+  projectId: project.id,
+  organizationId: scope.organizationId,
+  sourceCount: input.sources.length,
+})
+```
+
+### What NEVER to log
+
+- **Passwords**, password hashes, password reset tokens.
+- **Session tokens**, JWT bearer tokens, API keys.
+- **Email bodies**, SMS bodies (PII + content).
+- **Billing data** — card numbers, CVVs, full IBANs.
+- **Request bodies** wholesale (they may contain any of the above). Log specific fields, not the whole object.
+- **`session` objects** — they often contain user PII; extract just `userId` and `organizationId`.
+
+### Manual redaction patterns
+
+When you genuinely need to log a structure that may contain sensitive fields, redact at the call site (no middleware does it for you):
+
+```ts
+const redacted = {
+  ...input,
+  password: input.password ? '[REDACTED]' : undefined,
+  token: input.token ? '[REDACTED]' : undefined,
+}
+this.logger.log('login attempt', { email: redacted.email })  // not even redacted, just don't log it
+```
+
+A helper `redact(obj, fields)` in `src/shared/utils/` would be a reasonable addition; today there isn't one.
+
+### Correlation in the absence of request-id middleware
+
+Since this repo has no request-id middleware, you cannot correlate logs across services in the usual way. What to do:
+
+- **Within a single request**: log the same set of identifiers (`userId`, `organizationId`, `projectId`) on every log line in the call chain. Reconstruct the trace from those.
+- **Across requests**: you cannot, today. If correlation across requests becomes a real need, add request-id middleware (its own change with its own design review).
+- **Don't fake it** by generating an ID at log time that has no relationship to anything else — it just adds noise.
+
+### Audit logging vs operational logging
+
+- **Operational logs** — for engineers, ephemeral, debug/info/warn/error. The `Logger` covers this.
+- **Audit logs** — for compliance, durable, security-relevant events (permission grants, scope=all access, role changes). These belong in a separate table or a dedicated audit destination, **not** mixed into the operational logger. This codebase doesn't have a dedicated audit log today; if a feature needs one, design it as a new table + service rather than relying on grepping `error.log`.
+
 ## 8. DTOs and validation
 
 DTOs are **TypeScript types**, not classes:
