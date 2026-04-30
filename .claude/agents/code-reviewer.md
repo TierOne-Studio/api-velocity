@@ -29,6 +29,8 @@ Before evaluating any code, MUST Read:
 - `.claude/skills/cyclomatic-complexity/SKILL.md` — early returns, guard clauses, no-`else`-after-`return`, the rough metric.
 - `.claude/skills/nestjs-best-practices/SKILL.md` — 40-rule index. The `di-*`, `error-*`, `security-*`, `perf-*`, `api-*` rules cross-validate the design review. Read individual `rules/*.md` files when a specific rule is relevant.
 
+**Skill-vs-repo conflict resolution (per `CLAUDE.md` P3.5):** when `nestjs-best-practices` recommends a pattern that conflicts with `CLAUDE.md` or `repo-conventions`, **default to the skill** unless applying it would require structural refactor (new dep, cross-cutting infra the repo lacks, app-wide bootstrap changes, or refactoring unrelated modules). For structural cases, **the repo wins for this PR** — but flag it as an Optional Improvement: "Future task — adopt `<practice>` per `<skill>` § `<rule>`. Current PR follows existing repo convention to keep scope minimal." If you find the change implements a generic rule that would have been a structural refactor and the agent didn't flag it as a future task, that's a MED finding.
+
 **Read conditionally** (load when the change touches the surface):
 
 - `.claude/skills/database-transactions/SKILL.md` — when the change includes any multi-statement DB write or read-then-write.

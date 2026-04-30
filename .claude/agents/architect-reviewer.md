@@ -34,6 +34,8 @@ Before any evaluation, MUST Read the following:
 - `.claude/skills/plan-mode/SKILL.md` — the plan format you're judging against.
 - `.claude/skills/nestjs-best-practices/SKILL.md` — 40-rule index; the `arch-*` rules (`arch-avoid-circular-deps`, `arch-feature-modules`, `arch-module-sharing`, `arch-single-responsibility`, `arch-use-repository-pattern`, `arch-use-events`) and `di-*` rules map directly to architectural plan critique. Read individual `rules/*.md` files in this skill when a specific rule is relevant.
 
+**Skill-vs-repo conflict resolution (per `CLAUDE.md` P3.5):** when a plan applies `nestjs-best-practices` in a way that conflicts with `CLAUDE.md` / `repo-conventions`, **default to the skill** unless the plan would require structural refactor (new dep, cross-cutting infra the repo lacks, app-wide bootstrap changes, or refactoring unrelated modules). For structural cases, **the plan should follow the repo convention for this PR** and recommend the refactor as a separate task. A plan that smuggles structural changes into unrelated scope is a HIGH finding (scope creep).
+
 **Read conditionally** (when the plan touches the surface):
 
 - `.claude/skills/async-error-handling/SKILL.md` — flag plans that ignore partial-failure modes on parallel external I/O, plans that introduce retries, or plans that catch-and-swallow.

@@ -11,6 +11,31 @@ metadata:
 
 Comprehensive best practices guide for NestJS applications. Contains 40 rules across 10 categories, prioritized by impact to guide automated refactoring and code generation.
 
+## How rules in this skill are structured (api-velocity adaptation)
+
+Rules in this skill **never silently force a new dependency.** Each best practice expresses an **outcome** (the engineering goal) and asks the user before implementing.
+
+- **Where a custom abstraction is possible** (Tier 1 + Tier 2): the rule presents BOTH "Approach A — Custom abstraction (no new deps)" AND "Approach B — Library (requires installing `<pkg>`)". The agent **MUST ask the user which approach to use** before writing code.
+- **Where no clean abstraction exists** (Tier 3, e.g., `micro-use-queues`): the rule presents only the library approach but **MUST ask the user before adding the dep**.
+
+The dep is one way to achieve the outcome — not the outcome itself.
+
+**9 rules currently follow this asks-first structure:**
+
+| Tier | Rule | Library | Custom abstraction available? |
+|---|---|---|---|
+| 1 | `devops-use-logging` | `nestjs-pino`, `nestjs-cls` | ✅ `LoggerService` wrapper + `AsyncLocalStorage` |
+| 1 | `security-validate-all-input` | `class-validator`, `class-transformer` | ✅ validator helper functions |
+| 1 | `arch-use-events` | `@nestjs/event-emitter` | ✅ Node's built-in `EventEmitter` wrapped in a service |
+| 1 | `di-scope-awareness` | `nestjs-cls` (in the "best" example) | ✅ `AsyncLocalStorage` from `node:async_hooks` |
+| 1 | `devops-use-config-module` | `@nestjs/config`, `joi` | ✅ already in repo: `src/shared/config/config.service.ts` |
+| 2 | `db-avoid-n-plus-one` | `dataloader` | ✅ custom per-request `Loader<K, V>` over Map cache |
+| 2 | `micro-use-health-checks` | `@nestjs/terminus` | ✅ manual `@Get('/health')` endpoint |
+| 2 | `security-sanitize-output` | `helmet`, `sanitize-html`, `class-transformer` | ⚠️ partial — manual headers + escape helpers; HTML sanitization stays library-only |
+| 3 | `micro-use-queues` | `@nestjs/bullmq`, `@bull-board/*` | ❌ no clean abstraction — ask before adopting |
+
+Future rules that prescribe new deps should follow the same shape. The principle: **ask the user, present alternatives where possible, never silently install.**
+
 ## When to Apply
 
 Reference these guidelines when:

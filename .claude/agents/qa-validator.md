@@ -38,6 +38,8 @@ Before evaluating coverage, MUST Read:
 - `.claude/skills/database-transactions/SKILL.md` — when DB writes are touched: is a rollback path tested? Is the transactional boundary exercised by a test that triggers an error mid-callback?
 - `.claude/skills/nestjs-best-practices/SKILL.md` § test rules — when reviewing tests, cross-check against `rules/test-use-testing-module.md`, `rules/test-mock-external-services.md`, `rules/test-e2e-supertest.md` for NestJS-aware testing patterns.
 
+**Skill-vs-repo conflict resolution (per `CLAUDE.md` P3.5):** when a test pattern from `nestjs-best-practices` conflicts with `repo-conventions` (e.g., e2e setup expecting class-validator-decorated DTOs when the repo uses interface DTOs), **default to the skill** unless adopting it would force structural changes to test infrastructure unrelated to the current change. For structural cases, follow the repo's existing test pattern and flag a future task.
+
 ### 0.5 Discovery (when Required Reading doesn't cover the surface)
 
 If the change touches a domain not in your Required Reading list, list `.claude/skills/` and identify any skill whose description matches. Read it before evaluating coverage. **Required Reading is the floor, not the ceiling** — when a relevant skill exists, use it.

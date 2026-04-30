@@ -10,7 +10,7 @@ cd "$PROJECT_DIR"
 
 # Preflight: required CLI tools. The script uses bash, grep, awk, sed, find, wc — all POSIX-standard.
 # jq is needed for JSON-parsing assertions (Python sometimes used as fallback elsewhere; not here).
-for tool in bash grep awk sed find wc; do
+for tool in bash grep awk sed find wc jq; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "PRE-FAIL: required tool '$tool' not found on PATH" >&2
     echo "  install via your package manager (e.g., 'brew install coreutils' on macOS, or your distro's gnu-coreutils)" >&2
@@ -67,12 +67,12 @@ assert_true "T1: .claude/hooks/ is removed" "! test -d .claude/hooks"
 assert_true "T1: .claude/.state/ is removed" "! test -d .claude/.state"
 
 echo
-echo "=== T13: CLAUDE.md size <= 3500 words (priority-structured mode — index + P0..P9 + MUST/SHOULD/MAY + inline rubric for parity) ==="
+echo "=== T13: CLAUDE.md size <= 3800 words (priority-structured mode — index + P0..P9 + MUST/SHOULD/MAY + inline rubric + P3.5 skill-vs-repo conflict resolution) ==="
 WORDS=$(wc -w < CLAUDE.md | tr -d '[:space:]')
-if [ "$WORDS" -le 3500 ]; then
-  echo "PASS: T13 (CLAUDE.md is $WORDS words; gate is 3500 to accommodate the inline confidence rubric and high-risk restate rule)"; PASS=$((PASS+1))
+if [ "$WORDS" -le 3800 ]; then
+  echo "PASS: T13 (CLAUDE.md is $WORDS words; gate is 3800 to accommodate inline confidence rubric, high-risk restate, and P3.5 conflict-resolution rule)"; PASS=$((PASS+1))
 else
-  echo "FAIL: T13 (CLAUDE.md is $WORDS words, expected <= 3500)"
+  echo "FAIL: T13 (CLAUDE.md is $WORDS words, expected <= 3800)"
   FAIL=$((FAIL+1)); FAILED_TESTS="$FAILED_TESTS T13"
 fi
 
@@ -595,6 +595,58 @@ assert_true "T60: workflow chain — New feature unfamiliar uses rlm-explore"   
 # lessons-curator uses LOCATE/EXTRACT instead of loading all skills.
 assert_true "T60: lessons-curator survey uses LOCATE/EXTRACT pattern"           "grep -qE 'LOCATE.*EXTRACT|LOCATE — find candidates|grep the correction' .claude/agents/lessons-curator.md"
 assert_true "T60: lessons-curator forbids loading all 25 skills by default"     "grep -qiE 'do not load every skill|anti-RLM and wasteful|not.*load.*25' .claude/agents/lessons-curator.md"
+
+echo
+echo "=== T61: nestjs-best-practices rules use ASKS-FIRST structure (no silent dep installs) ==="
+# Skill index documents the asks-first convention.
+assert_true "T61: SKILL.md prelude documents 'How rules are structured'"      "grep -q 'How rules in this skill are structured' .claude/skills/nestjs-best-practices/SKILL.md"
+assert_true "T61: SKILL.md describes Approach A vs Approach B framing"        "grep -qiE 'Approach A.*Approach B|Custom abstraction.*Library|Approach gate' .claude/skills/nestjs-best-practices/SKILL.md"
+assert_true "T61: SKILL.md lists 9 asks-first rules"                          "grep -qiE '9 rules currently follow|Tier' .claude/skills/nestjs-best-practices/SKILL.md"
+
+# Each of 9 rules has the asks-first structure.
+ASKS_FIRST_RULES="devops-use-logging security-validate-all-input arch-use-events di-scope-awareness devops-use-config-module db-avoid-n-plus-one micro-use-health-checks security-sanitize-output micro-use-queues"
+for rule in $ASKS_FIRST_RULES; do
+  f=".claude/skills/nestjs-best-practices/rules/$rule.md"
+  assert_true "T61: $rule has 'Approach gate' callout"                  "grep -q 'Approach gate' $f"
+  assert_true "T61: $rule asks user 'Before writing any code, ASK'"     "grep -qiE 'ASK the user|Before writing any code, ASK|Before adopting|ASK the user' $f"
+  assert_true "T61: $rule has 'Outcome' section"                        "grep -q '^## Outcome' $f"
+  assert_true "T61: $rule names 'Adoption-gated' on the dep section OR ask-only framing" "grep -qiE 'Adoption-gated|Approach B|Tier 3|adoption-gated|adopting.*requires' $f"
+done
+
+# Tiers 1+2 (non-queues) have an Approach A — Custom abstraction (no new deps) section.
+TIER12_RULES="devops-use-logging security-validate-all-input arch-use-events di-scope-awareness devops-use-config-module db-avoid-n-plus-one micro-use-health-checks security-sanitize-output"
+for rule in $TIER12_RULES; do
+  f=".claude/skills/nestjs-best-practices/rules/$rule.md"
+  assert_true "T61: $rule offers Approach A (no new deps)"              "grep -qE 'Approach A.*[Cc]ustom abstraction|no new deps' $f"
+done
+
+# Tier 3 (queues) explicitly says no clean abstraction exists.
+assert_true "T61: micro-use-queues marks Tier 3 (no clean abstraction)" "grep -qiE 'Tier 3|no clean abstraction|no abstraction' .claude/skills/nestjs-best-practices/rules/micro-use-queues.md"
+
+# T0 preflight includes jq (defensive fix).
+assert_true "T61: T0 preflight includes jq"                             "grep -q 'for tool in.*jq' .claude/tests/run-acceptance.sh"
+
+echo
+echo "=== T62: skill-vs-repo conflict resolution rule (P3.5) wired in main + subagents + non-dep rule ==="
+# CLAUDE.md P3.5 present
+assert_true "T62: CLAUDE.md P3.5 section header present"               "grep -q 'P3.5 Skill-vs-repo conflict resolution' CLAUDE.md"
+assert_true "T62: P3.5 names default-to-skill"                         "grep -qE 'Default: follow the skill recommendation' CLAUDE.md"
+assert_true "T62: P3.5 names structural-refactor exception"            "grep -qE 'structural refactor|cross-cutting infra the repo lacks' CLAUDE.md"
+assert_true "T62: P3.5 instructs to recommend a future task"           "grep -qE 'Future task|recommend a future task|recommend.*future task' CLAUDE.md"
+assert_true "T62: P3.5 lists examples of NOT structural"               "grep -qiE 'What is NOT structural|best practice wins, no exception' CLAUDE.md"
+
+# Each of 4 review subagents has the conflict-resolution line referencing P3.5
+for agent in code-reviewer architect-reviewer qa-validator security-reviewer; do
+  assert_true "T62: $agent references P3.5 conflict-resolution rule" "grep -q 'CLAUDE.md.*P3.5\\|P3.5.*conflict' .claude/agents/$agent.md"
+  assert_true "T62: $agent says structural -> repo wins for current PR" "grep -qiE 'repo wins|follow the repo|repo convention.*PR' .claude/agents/$agent.md"
+done
+
+# error-use-exception-filters.md restructured under the meta-rule
+assert_true "T62: error-use-exception-filters references P3.5"         "grep -q 'P3.5' .claude/skills/nestjs-best-practices/rules/error-use-exception-filters.md"
+assert_true "T62: error-use-exception-filters has Outcome section"     "grep -q '^## Outcome' .claude/skills/nestjs-best-practices/rules/error-use-exception-filters.md"
+assert_true "T62: error-use-exception-filters has Approach A (no global filter)" "grep -qE 'Approach A.*no global filter|Approach A.*Throw NestJS' .claude/skills/nestjs-best-practices/rules/error-use-exception-filters.md"
+assert_true "T62: error-use-exception-filters marks Approach B as Structural refactor" "grep -qE 'Structural refactor|structural change to the repo' .claude/skills/nestjs-best-practices/rules/error-use-exception-filters.md"
+assert_true "T62: error-use-exception-filters tells agent to ASK user" "grep -qiE 'ASK the user|Wait for explicit response' .claude/skills/nestjs-best-practices/rules/error-use-exception-filters.md"
 
 echo
 echo "==========================="

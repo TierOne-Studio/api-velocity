@@ -119,6 +119,30 @@ Skills load on description match — that's a heuristic, not a guarantee. For ex
 
 If a listed skill genuinely doesn't apply (e.g., `plan-mode` for a single-line typo), state which one and why in the response. Do NOT silently skip.
 
+### P3.5 Skill-vs-repo conflict resolution
+
+When a skill (e.g., `nestjs-best-practices`) recommends a pattern that conflicts with `CLAUDE.md` or `repo-conventions`:
+
+**Default: follow the skill recommendation.** Skills are the team's best-practice catalog.
+
+**Exception — structural refactor:** if applying the skill would require ANY of:
+- Installing a new dependency (already gated by skills' asks-first sections where present).
+- Adding cross-cutting infrastructure the repo lacks (e.g., global exception filter, global `ValidationPipe`, app-wide logger swap, request-id middleware, CLS).
+- Modifying app-wide bootstrap or `main.ts` configuration affecting other modules.
+- Refactoring established patterns in modules unrelated to the current change.
+
+Then **follow `repo-conventions` / `CLAUDE.md` for the current PR. Do NOT smuggle structural changes into unrelated work.**
+
+**When deferring, recommend a future task.** Add to the response's "Optional improvements" section (per P8 item 10): `Future task — adopt <practice> per <skill> § <rule>. Current PR follows existing repo convention to keep scope minimal. Structural change estimated: <one-line scope>.`
+
+**What is NOT structural** (best practice wins, no exception):
+- Throwing `NotFoundException` / `ForbiddenException` instead of plain `Error` in NEW service code.
+- Wrapping a multi-statement DB write in `db.transaction(...)` for the current change.
+- Choosing the right Guard vs Pipe vs Interceptor for a NEW cross-cutting concern.
+- Using `useFactory:` for a NEW provider with env-driven creation.
+
+**The test:** would applying this best practice change code outside the current PR's scope? If yes → structural → repo wins, recommend future task. If no → skill wins, apply now.
+
 ---
 
 ## P4 — MANDATORY VERIFICATION (review subagents)

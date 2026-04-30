@@ -7,36 +7,115 @@ tags: devops, configuration, environment, validation
 
 ## Use ConfigModule for Environment Configuration
 
-Use `@nestjs/config` for environment-based configuration. Validate configuration at startup to fail fast on misconfigurations. Use namespaced configuration for organization and type safety.
+Environment configuration is centralized, validated at startup, and accessed via a typed service rather than raw `process.env` reads scattered through the codebase.
 
-**Incorrect (accessing process.env directly):**
+> ⚠️ **Approach gate (per `nestjs-best-practices/SKILL.md` "How rules are structured"):** This rule has two valid implementations. **Before writing any code, ASK the user which approach they prefer:**
+>
+> > "Environment configuration can be implemented two ways:
+> > - **Approach A — Custom abstraction (no new deps; ALREADY in this repo):** A custom `ConfigService` (`src/shared/config/config.service.ts`) that reads `process.env` once at construction and exposes typed getters with validation that throws on missing required vars.
+> > - **Approach B — Library:** install `@nestjs/config` + `joi` for `ConfigModule.forRoot({ validationSchema })`, namespaced configs via `registerAs`, and `ConfigService.get()`.
+> >
+> > Which approach should I use?"
+>
+> Wait for explicit response. Do NOT silently choose. **In this repo, Approach A already exists** — the typical answer is "use the existing `ConfigService`."
 
-```typescript
-// Access process.env directly
+## Outcome
+
+- All env-var reads go through a single typed accessor; no `process.env` scattered through services.
+- Required env vars are validated at startup; the app fails fast on misconfiguration.
+- Type-safe access from consumers (no `string | undefined` bleeding through).
+- Per-environment files supported (`.env`, `.env.test`, etc.).
+
+## Approach A — Custom abstraction (already exists in this repo)
+
+This repo's `ConfigService` (`src/shared/config/config.service.ts`) is the established pattern. Use it.
+
+```ts
+// src/shared/config/config.service.ts (already exists)
 @Injectable()
-export class DatabaseService {
+export class ConfigService {
+  private readonly authSecret: string;
+  private readonly databaseUrl: string;
+  // ...
+
   constructor() {
-    // No validation, can fail at runtime
-    this.connection = new Pool({
-      host: process.env.DB_HOST,
-      port: parseInt(process.env.DB_PORT), // NaN if missing
-      password: process.env.DB_PASSWORD, // undefined if missing
-    });
+    this.authSecret = this.requireEnv('AUTH_SECRET');
+    this.databaseUrl = this.requireEnv('DATABASE_URL');
+    // ...
   }
-}
 
-// Scattered env access
+  private requireEnv(name: string): string {
+    const value = process.env[name];
+    if (!value) {
+      throw new Error(`${name} environment variable is required`);
+    }
+    return value;
+  }
+
+  getAuthSecret(): string { return this.authSecret; }
+  getDatabaseUrl(): string { return this.databaseUrl; }
+  // ...
+}
+```
+
+Consumers:
+
+```ts
 @Injectable()
-export class EmailService {
-  sendEmail() {
-    // Different services access env differently
-    const apiKey = process.env.SENDGRID_API_KEY || 'default';
-    // Typos go unnoticed: process.env.SENDGRID_API_KY
+export class DatabaseModuleProvider {
+  constructor(private readonly cfg: ConfigService) {}
+
+  createPool(): Pool {
+    return new Pool({ connectionString: this.cfg.getDatabaseUrl() });
   }
 }
 ```
 
-**Correct (use @nestjs/config with validation):**
+**Pros:**
+- Zero new deps
+- Validation logic is plain TypeScript — easy to read
+- Throws on first missing env var at startup (fail-fast)
+- Compatible with existing repo patterns (follows the established convention)
+
+**To add a new env var:**
+1. Add a `requireEnv(...)` line in the constructor
+2. Add a typed getter
+3. Add the var to `.env.example`
+
+For optional env vars with defaults:
+
+```ts
+private optionalEnv(name: string, fallback: string): string {
+  return process.env[name] ?? fallback;
+}
+
+constructor() {
+  this.port = parseInt(this.optionalEnv('PORT', '3000'), 10);
+}
+```
+
+**Anti-patterns regardless of approach:**
+
+```ts
+// ❌ process.env scattered through services
+@Injectable()
+export class DatabaseService {
+  constructor() {
+    this.connection = new Pool({
+      host: process.env.DB_HOST,                  // No validation
+      port: parseInt(process.env.DB_PORT),        // NaN if missing
+      password: process.env.DB_PASSWORD,          // undefined if missing
+    });
+  }
+}
+
+// ❌ Typo silently fails
+const apiKey = process.env.SENDGRID_API_KY || 'default'; // Misspelled, fallback to 'default' in prod
+```
+
+## Approach B — Library: `@nestjs/config` + `joi` ⚠️ Adoption-gated
+
+> ⚠️ Adopting this approach adds `@nestjs/config` AND `joi` to `package.json`. **Do NOT implement this section without explicit user approval naming both packages.** This repo already has a working custom `ConfigService` — Approach B is only worth adopting if you need namespaced configs, complex schema validation, or multi-file env loading.
 
 ```typescript
 // Setup validated configuration
@@ -123,7 +202,6 @@ export class AppService {
   constructor(private config: ConfigService) {}
 
   getPort(): number {
-    // Type-safe with generic
     return this.config.get<number>('app.port');
   }
 
@@ -139,7 +217,6 @@ export class DatabaseService {
     @Inject(databaseConfig.KEY)
     private dbConfig: ConfigType<typeof databaseConfig>,
   ) {
-    // Full type inference!
     const host = this.dbConfig.host; // string
     const port = this.dbConfig.port; // number
   }
@@ -154,14 +231,6 @@ ConfigModule.forRoot({
     '.env',
   ],
 });
-
-// .env.development
-// DB_HOST=localhost
-// DB_PORT=5432
-
-// .env.production
-// DB_HOST=prod-db.example.com
-// DB_PORT=5432
 ```
 
 Reference: [NestJS Configuration](https://docs.nestjs.com/techniques/configuration)
