@@ -11,6 +11,21 @@ Find the root cause, prove it with a failing test, fix via TDD, and verify with 
 
 Before proposing a fix, you MUST be able to answer: **"Why did this bug appear NOW?"** If you can't, you don't have the root cause yet — keep investigating.
 
+## Stop-the-Line Rule
+
+When anything unexpected happens — failing test, broken build, runtime error, behavior mismatch:
+
+```
+1. STOP    — adding features or making unrelated changes.
+2. PRESERVE — error output, logs, repro steps, environment details.
+3. DIAGNOSE — work the steps below.
+4. FIX     — root cause, not symptom.
+5. GUARD   — regression test or monitor that will catch this class of bug.
+6. RESUME  — only after verification passes.
+```
+
+**Don't push past a failing test or broken build to work on the next feature.** Errors compound: a bug in step 3 that goes unfixed makes steps 4–10 wrong.
+
 ## Step 1 — Build a feedback loop, then reproduce
 
 **The single highest-leverage activity in debugging is constructing a fast, deterministic, agent-runnable pass/fail signal for the bug.** Once you have one, bisection / hypothesis-testing / instrumentation all just consume it. Without one, no amount of code-reading will save you. **Spend disproportionate effort here.**
@@ -36,9 +51,58 @@ Before proposing a fix, you MUST be able to answer: **"Why did this bug appear N
 
 A 30-second flaky loop is barely better than no loop. A 2-second deterministic loop is a debugging superpower.
 
-### Non-deterministic bugs
+### Non-deterministic bugs — categorize before chasing
 
 The goal is not a clean repro but a **higher reproduction rate**. Loop the trigger 100×, parallelise, add stress, narrow timing windows, inject sleeps. A 50%-flake bug is debuggable; 1% is not — keep raising the rate.
+
+When you can't reproduce on demand, classify the bug first — the right next step depends on the category:
+
+```
+Cannot reproduce on demand:
+├── Timing-dependent
+│   ├── Add timestamps to logs around the suspected area
+│   ├── Try with artificial delays (await new Promise(r => setTimeout(r, N))) to widen race windows
+│   └── Run under load or concurrency to increase collision probability
+├── Environment-dependent
+│   ├── Compare Node versions, OS, env vars between repro and non-repro environments
+│   ├── Check data differences (empty vs populated org, different RBAC scope)
+│   └── Try reproducing in CI where the environment is clean
+├── State-dependent
+│   ├── Check for leaked state between tests or requests (DB rows from prior test, in-memory caches)
+│   ├── Look for global variables, singletons, shared caches
+│   └── Run the failing scenario in isolation vs after other operations
+└── Truly random (no pattern after the above)
+    ├── Add defensive logging at the suspected location
+    ├── Set up an alert for the specific error signature
+    └── Document the conditions observed and revisit when it recurs
+```
+
+### Localize the layer (decision tree)
+
+When the symptom is unclear about which layer is failing:
+
+```
+Where does the failure surface?
+├── HTTP / controller / public API  → check request log, response body, route guard
+├── Service / domain logic          → check service-method inputs, intermediate values
+├── Repository / database           → check the executed SQL, parameters, transaction boundary
+├── Build / tooling / CI            → check config, dependencies, env vars, runner version
+├── External service                → check connectivity, rate limits, contract-compliance, recent vendor changes
+└── The test itself                 → false negative: is the test actually correct? (See `tdd-workflow` rubric item 1 — rename test diagnostic.)
+```
+
+### Bisect for regressions
+
+If the bug appeared between two known states (a deploy, a dataset version, a dependency bump), automate the check and let `git bisect run` find the introducing commit:
+
+```bash
+git bisect start
+git bisect bad                      # current HEAD is broken
+git bisect good <known-good-sha>    # this commit worked
+git bisect run npm test -- --testPathPattern="failing-spec"
+```
+
+The script's exit code drives the search (`0` = good, non-zero = bad). Keep the failing check fast — bisection runs it ~log₂(N) times.
 
 ### When you genuinely cannot build a loop
 

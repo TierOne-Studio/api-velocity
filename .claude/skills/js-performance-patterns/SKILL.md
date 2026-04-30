@@ -33,6 +33,40 @@ Reference these patterns when:
 - Optimizing build-time or server-side scripts
 - Reviewing code for performance in critical paths
 
+## When NOT to use
+
+Don't optimize before you have evidence of a problem. Premature optimization adds complexity that costs more than the performance it gains. **No measurement → no optimization.** If you can't show a profile / benchmark / SLA violation, the right answer is "not yet".
+
+## The 5-step optimization workflow
+
+Apply these in order. Skipping a step usually means optimizing the wrong thing.
+
+```
+1. MEASURE   → Establish a baseline with real data. Profile, benchmark, or capture timing.
+2. IDENTIFY  → Find the actual bottleneck. Don't guess from intuition; let the profile point.
+3. FIX       → Address the specific bottleneck. One change at a time so attribution is clean.
+4. VERIFY    → Re-measure. Confirm the fix moved the metric you targeted.
+5. GUARD     → Add a benchmark, regression test, or monitor that will catch a future regression.
+```
+
+**Common failure modes**: skipping MEASURE ("I think this loop is slow") → optimizing the wrong code; skipping VERIFY ("the change should be faster") → no evidence the fix landed; skipping GUARD → the optimization erodes silently the next time someone refactors nearby code.
+
+## Where to start measuring (decision tree)
+
+Use the symptom to pick the first measurement target:
+
+```
+What is slow?
+├── Single API endpoint              → measure DB query time + service-method timing (`console.time`)
+│   ├── DB query slow?               → check the explained query, indexes, N+1 patterns
+│   ├── Service method slow?         → profile CPU; look for synchronous heavy work, regex backtracking
+│   └── Waterfall of awaited calls?  → check `async-error-handling` § Promise composition (parallelize where safe)
+├── All endpoints slow               → check connection pool size, GC pauses, memory pressure (heap snapshots)
+├── Intermittent slowness            → check lock contention, GC pauses, downstream timeouts
+├── Hot in-process loop / data-heavy → apply the patterns below (Set/Map lookups, batched updates, caching)
+└── Background job / queue consumer  → measure per-message timing; look for unbounded fetches, retry storms
+```
+
 ## Instructions
 
 - Apply these patterns only in **measured hot paths** — code that runs frequently or processes large datasets. Don't apply them to cold code paths where readability is more important than nanosecond gains.

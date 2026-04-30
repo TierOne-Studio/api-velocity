@@ -964,6 +964,75 @@ assert_true "T69: glossary defines Project + Source"                           "
 assert_true "T69: glossary disambiguates 'Agent' (chat vs code)"               "grep -qE 'chat agent.*code agent|code agent' $RC"
 
 echo
+echo "=== T70: complementary additions inspired by addyosmani/agent-skills ==="
+
+# code-simplifier — When-NOT + Chesterton's Fence + over-simplification traps
+CSI=".claude/skills/code-simplifier/SKILL.md"
+assert_true "T70: code-simplifier adds 'When NOT to use' section"          "grep -q '^## When NOT to use' $CSI"
+assert_true "T70: code-simplifier has Chesterton's Fence pre-touch checklist" "grep -q \"Chesterton's Fence\" $CSI"
+assert_true "T70: code-simplifier names over-simplification traps"          "grep -q 'Over-simplification traps' $CSI"
+assert_true "T70: code-simplifier names 'Inlining too aggressively' trap"   "grep -q 'Inlining too aggressively' $CSI"
+assert_true "T70: code-simplifier cites design-review deletion test"        "grep -q 'deletion test' $CSI"
+
+# code-reviewer — change sizing + perfect-is-enemy + splitting strategies + description anti-patterns
+CR=".claude/agents/code-reviewer.md"
+assert_true "T70: code-reviewer has Step 5.5 change-sizing audit"           "grep -q '5.5 Apply change-sizing audit' $CR"
+assert_true "T70: code-reviewer names 100/300/1000 LOC thresholds"          "grep -q '~100 LOC' $CR && grep -q '~300 LOC' $CR && grep -q '~1000 LOC' $CR"
+assert_true "T70: code-reviewer lists 4 splitting strategies"               "grep -q 'Stack' $CR && grep -q 'By file group' $CR && grep -q 'Horizontal' $CR && grep -q 'Vertical' $CR"
+assert_true "T70: code-reviewer has Step 5.6 change-description audit"      "grep -q '5.6 Apply change-description audit' $CR"
+assert_true "T70: code-reviewer names description anti-patterns"            "grep -qE 'Phase 1|Add convenience functions|First line is non-imperative' $CR"
+assert_true "T70: code-reviewer has approval guardrail (anti over-blocking)" "grep -qE 'Approval guardrail.*anti over-blocking|definitely improves overall code health' $CR"
+
+# bug-investigation — STOP-the-Line + non-reproducible taxonomy + layer tree + git bisect run
+BI=".claude/skills/bug-investigation/SKILL.md"
+assert_true "T70: bug-investigation has Stop-the-Line Rule"                 "grep -q '## Stop-the-Line Rule' $BI"
+assert_true "T70: Stop-the-Line lists STOP/PRESERVE/DIAGNOSE/FIX/GUARD/RESUME" \
+  "grep -q 'STOP' $BI && grep -q 'PRESERVE' $BI && grep -q 'DIAGNOSE' $BI && grep -q 'GUARD' $BI && grep -q 'RESUME' $BI"
+assert_true "T70: non-reproducible taxonomy (timing/env/state/random)"      "grep -q 'Timing-dependent' $BI && grep -q 'Environment-dependent' $BI && grep -q 'State-dependent' $BI && grep -qE 'Truly random' $BI"
+assert_true "T70: bug-investigation has 'Localize the layer' decision tree" "grep -q 'Localize the layer' $BI"
+assert_true "T70: bug-investigation references 'git bisect run'"            "grep -q 'git bisect run' $BI"
+
+# security-reviewer — Three-Tier Boundary System
+SR=".claude/agents/security-reviewer.md"
+assert_true "T70: security-reviewer Step 2.7 Three-Tier Boundary System"    "grep -q '2.7 Apply Three-Tier Boundary System' $SR"
+assert_true "T70: security-reviewer has 'Always Do' tier"                   "grep -q '\\*\\*Always Do' $SR"
+assert_true "T70: security-reviewer has 'Ask First' tier mapped to P3.3"    "grep -qE 'Ask First.*P3.3|P3.3 high-risk' $SR"
+assert_true "T70: security-reviewer has 'Never Do' tier"                    "grep -q '\\*\\*Never Do' $SR"
+assert_true "T70: Three-Tier names auth flow change as 'Ask First'"         "grep -q 'Adding new authentication flows' $SR"
+
+# js-performance-patterns — When-NOT + 5-step workflow + symptom decision tree
+JSP=".claude/skills/js-performance-patterns/SKILL.md"
+assert_true "T70: js-performance-patterns adds 'When NOT to use' section"   "grep -q '^## When NOT to use' $JSP"
+assert_true "T70: js-performance-patterns has '5-step optimization workflow'" \
+  "grep -q '5-step optimization workflow' $JSP"
+assert_true "T70: js-performance-patterns names MEASURE→IDENTIFY→FIX→VERIFY→GUARD" \
+  "grep -q 'MEASURE' $JSP && grep -q 'IDENTIFY' $JSP && grep -q '^4. VERIFY' $JSP && grep -q '^5. GUARD' $JSP"
+assert_true "T70: js-performance-patterns has 'Where to start measuring' decision tree" \
+  "grep -q 'Where to start measuring' $JSP"
+
+# plan-mode — assumptions framing + dependency graph + risk-first/contract-first slicing
+PM=".claude/skills/plan-mode/SKILL.md"
+assert_true "T70: plan-mode 'Assumptions — surface immediately' framing"    "grep -q 'Assumptions — surface immediately' $PM"
+assert_true "T70: plan-mode includes 'Correct me now' anti-silent-assumption" "grep -q 'Correct me now' $PM"
+assert_true "T70: plan-mode has 'Identify the dependency graph' step"       "grep -q 'Identify the dependency graph' $PM"
+assert_true "T70: plan-mode names risk-first slicing"                       "grep -qE 'Risk-first|risk-first' $PM"
+assert_true "T70: plan-mode names contract-first slicing"                   "grep -qE 'Contract-first|contract-first' $PM"
+assert_true "T70: plan-mode requires stating slicing choice in plan"        "grep -qE 'State the choice|Slicing:' $PM"
+
+# Reviewer-side enforcement of new plan-mode requirements
+AR=".claude/agents/architect-reviewer.md"
+assert_true "T70: architect-reviewer audits dependency-graph identification" \
+  "grep -q 'Dependency graph identified' $AR"
+assert_true "T70: architect-reviewer audits slicing-strategy statement" \
+  "grep -q 'Slicing strategy stated explicitly' $AR"
+assert_true "T70: architect-reviewer flags slicing/risk-profile mismatch as HIGH" \
+  "grep -qE 'choice doesn.t match the risk profile|HIGH if the choice doesn' $AR"
+assert_true "T70: architect-reviewer audits 'ASSUMPTIONS I\\'M MAKING' labeled block" \
+  "grep -q 'Assumptions surfaced as labeled block' $AR"
+assert_true "T70: architect-reviewer audits 'slice:' field per step (~100 LOC)" \
+  "grep -qE 'slice:.*field|>~100 LOC without explicit justification' $AR"
+
+echo
 echo "==========================="
 echo "Results: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then

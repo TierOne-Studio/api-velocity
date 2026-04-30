@@ -113,6 +113,41 @@ Steps:
 
 5. **Record findings under OWASP A06 Vulnerable Components** AND in the verdict's dedicated `### Dependency gate audit` section (see Output format below).
 
+### 2.7 Apply Three-Tier Boundary System
+
+A concrete checklist that complements the OWASP lens. Treat every external input as hostile, every secret as sacred, every authorization check as mandatory.
+
+**Always Do (no exceptions — flag missing items as HIGH):**
+
+- Validate all external input at the system boundary (API routes, queue consumers, webhook handlers)
+- Parameterize all database queries — never concatenate user input into SQL (raw-SQL repos use `$1, $2` per `repo-conventions` § 4)
+- Encode output to prevent XSS (rely on framework auto-escaping; don't bypass it)
+- HTTPS for all external communication
+- Hash passwords with bcrypt/scrypt/argon2 (Better Auth handles this; never store plaintext)
+- Set security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options)
+- Use httpOnly, secure, sameSite cookies for sessions
+- Run `npm audit` before any release (and verify `Step 2.5` dep-gate audit passed)
+
+**Ask First (these touch P3.3 high-risk surfaces — flag a missing P3.3 restate as HIGH per `CLAUDE.md` P3.3):**
+
+- Adding new authentication flows or changing auth logic
+- Storing new categories of sensitive data (PII, payment info, tokens)
+- Adding new external service integrations (new vendor SDK, new webhook receiver)
+- Changing CORS configuration
+- Adding file upload handlers
+- Modifying rate limiting or throttling
+- Granting elevated permissions or new RBAC roles
+
+**Never Do (each occurrence is HIGH or CRITICAL):**
+
+- Commit secrets to version control (API keys, passwords, tokens, `.env` files)
+- Log sensitive data (passwords, tokens, full credit card numbers, PII per `repo-conventions` § Logger "What NEVER to log")
+- Trust client-side validation as a security boundary
+- Disable security headers for convenience
+- Use `eval()` or `innerHTML`-equivalents with user-provided data
+- Store sessions in client-accessible storage (localStorage for auth tokens)
+- Expose stack traces or internal error details to users (NestJS production-mode handles this; verify `NODE_ENV=production`)
+
 ### 3. Apply OWASP top-10 lens
 
 | Category | What to check |

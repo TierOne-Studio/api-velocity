@@ -12,7 +12,7 @@ Plan before code. Reduces ambiguity, surfaces risk, prevents scope drift.
 Output explicitly:
 - **Requirements + acceptance criteria** — falsifiable, not "make it work".
 - **Non-goals / out of scope** — what we are *not* doing.
-- **Assumptions** — only the ones that affect behavior, architecture, or delivery risk.
+- **Assumptions — surface immediately.** Output them as a labeled block: `ASSUMPTIONS I'M MAKING:` followed by a numbered list, then `→ Correct me now or I'll proceed with these.` Only list assumptions that affect behavior, architecture, or delivery risk. Silent assumptions are the most dangerous form of misunderstanding — name them so the user can override before any code is written.
 - **Multiple interpretations** — if more than one reasonable reading exists, list them. Do **not** choose silently.
 - **Anticipated failure modes** — for non-trivial changes, name the top 2–3 failure modes the design must handle (per `failure-mode-analysis` categories: null, empty, large, race, partial, network, malformed, boundary). Surfacing these during planning prevents brittle API shapes that lock in bad assumptions before tests are written. Detailed per-test enumeration still happens in `failure-mode-analysis` before TDD Step 1.
 - **Blocking questions** — max 3, only if truly blocking.
@@ -52,6 +52,34 @@ Success criteria MUST be explicit and falsifiable.
 ### When the plan introduces a structural decision
 
 If any plan step introduces a load-bearing engineering decision (new persistence layer, new auth library, new public-API contract, app-wide bootstrap change — anything that will be cited from `CLAUDE.md` / `repo-conventions` / a skill), the plan MUST include an explicit step to write the corresponding ADR in `docs/decisions/ADR-NNN-<title>.md`. The ADR step lives alongside the implementation steps with its own `verify:` clause (the file exists, has all required sections, and the index in `docs/decisions/README.md` is updated). See `documentation-and-adrs` for the ADR format.
+
+### Identify the dependency graph BEFORE slicing
+
+Before writing the per-step plan, sketch what depends on what. The dependency graph dictates implementation order — foundations first, consumers last:
+
+```
+Database / entity / migration
+    │
+    ├── Repository (TypeORM or raw-SQL per ADR-001)
+    │       │
+    │       └── Service / domain logic
+    │               │
+    │               ├── Controller / DTO
+    │               │       │
+    │               │       └── Tests (e2e through the controller)
+    │               │
+    │               └── Internal callers in other modules
+```
+
+Plan steps follow the graph bottom-up. Two consequences: (a) early steps unblock multiple later ones; (b) a step that touches both top and bottom of the graph is too wide — split it.
+
+### Slicing strategies (pick one explicitly)
+
+- **Vertical (default — tracer bullet).** Each slice cuts through every layer end-to-end (entity + repo + service + controller + test) for ONE narrow path. Pairs with the ~100-LOC cap. Best when the layer-stack is well-understood and the risk is in the integration.
+- **Risk-first.** When there's irreducible technical risk (new external integration, novel concurrency pattern, unproven library), make the first slice prove just the risky piece. If it fails, you discover it before sinking effort into Slices 2..N. Subsequent slices build on the proven path.
+- **Contract-first.** When a public API or module boundary is being introduced, **Slice 0 = define the contract** (types / interface / OpenAPI surface). Then Slice 1+ implements behind the contract; consumers can develop in parallel against the same shape. Best fit for new NestJS controllers exposing a route the frontend or another service will consume.
+
+State the choice in the plan output (e.g., `Slicing: contract-first — Slice 0 defines the DTOs and controller signatures; Slice 1 implements the service`). The reviewer (`architect-reviewer`) checks whether the choice matches the actual risk profile.
 
 ### Step sizing — tracer-bullet vertical slices (~100 LOC cap)
 
