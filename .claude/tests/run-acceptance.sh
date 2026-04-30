@@ -67,12 +67,12 @@ assert_true "T1: .claude/hooks/ is removed" "! test -d .claude/hooks"
 assert_true "T1: .claude/.state/ is removed" "! test -d .claude/.state"
 
 echo
-echo "=== T13: CLAUDE.md size <= 3800 words (priority-structured mode — index + P0..P9 + MUST/SHOULD/MAY + inline rubric + P3.5 skill-vs-repo conflict resolution) ==="
+echo "=== T13: CLAUDE.md size <= 3850 words (priority-structured mode — index + P0..P9 + MUST/SHOULD/MAY + inline rubric + P3.5 skill-vs-repo conflict resolution) ==="
 WORDS=$(wc -w < CLAUDE.md | tr -d '[:space:]')
-if [ "$WORDS" -le 3800 ]; then
-  echo "PASS: T13 (CLAUDE.md is $WORDS words; gate is 3800 to accommodate inline confidence rubric, high-risk restate, and P3.5 conflict-resolution rule)"; PASS=$((PASS+1))
+if [ "$WORDS" -le 3850 ]; then
+  echo "PASS: T13 (CLAUDE.md is $WORDS words; gate is 3850 to accommodate inline confidence rubric, high-risk restate, and P3.5 conflict-resolution rule)"; PASS=$((PASS+1))
 else
-  echo "FAIL: T13 (CLAUDE.md is $WORDS words, expected <= 3800)"
+  echo "FAIL: T13 (CLAUDE.md is $WORDS words, expected <= 3850)"
   FAIL=$((FAIL+1)); FAILED_TESTS="$FAILED_TESTS T13"
 fi
 
@@ -1031,6 +1031,99 @@ assert_true "T70: architect-reviewer audits 'ASSUMPTIONS I\\'M MAKING' labeled b
   "grep -q 'Assumptions surfaced as labeled block' $AR"
 assert_true "T70: architect-reviewer audits 'slice:' field per step (~100 LOC)" \
   "grep -qE 'slice:.*field|>~100 LOC without explicit justification' $AR"
+
+echo
+echo "=== T71: ADR-009 + nestjs-clean-architecture skill + reviewer dependency-rule audit ==="
+
+# ADR-009 file structure
+ADR9="docs/decisions/ADR-009-clean-architecture-layering-for-modules.md"
+assert_true "T71: ADR-009 file exists"                                "test -f $ADR9"
+assert_true "T71: ADR-009 status is Accepted"                         "grep -qE '\\*\\*Status:\\*\\*[[:space:]]+Accepted' $ADR9"
+assert_true "T71: ADR-009 has all required sections"                  "grep -q '^## Context' $ADR9 && grep -q '^## Decision' $ADR9 && grep -q '^## Alternatives considered' $ADR9 && grep -q '^## Consequences' $ADR9 && grep -q '^## References' $ADR9"
+assert_true "T71: ADR-009 names the 4-layer structure"                "grep -qE 'Presentation' $ADR9 && grep -qE 'Application' $ADR9 && grep -qE 'Domain' $ADR9 && grep -qE 'Infrastructure' $ADR9"
+assert_true "T71: ADR-009 cites RBAC as canonical"                    "grep -q 'admin/rbac' $ADR9"
+assert_true "T71: ADR-009 names the 'no business invariants' exemption" "grep -q 'no business invariants' $ADR9"
+assert_true "T71: ADR-009 specifies HIGH/MED/LOW reviewer calibration" "grep -qE 'HIGH.*MED.*LOW|HIGH\\*\\* finding|MED\\*\\*' $ADR9"
+
+# README index includes ADR-009
+assert_true "T71: docs/decisions/README.md indexes ADR-009"           "grep -q 'ADR-009' docs/decisions/README.md"
+
+# ADR-001 cross-references ADR-009
+assert_true "T71: ADR-001 cross-references ADR-009"                   "grep -q 'ADR-009' docs/decisions/ADR-001-typeorm-first-persistence.md"
+
+# nestjs-clean-architecture skill
+NCA=".claude/skills/nestjs-clean-architecture/SKILL.md"
+assert_true "T71: nestjs-clean-architecture skill exists"             "test -f $NCA"
+assert_true "T71: skill has YAML frontmatter"                         "head -1 $NCA | grep -q '^---$'"
+assert_true "T71: skill description starts with 'Use when'"           "grep -m1 '^description:' $NCA | grep -q 'Use when'"
+assert_true "T71: skill description has 'NOT for' clause"             "grep -m1 '^description:' $NCA | grep -q 'NOT for'"
+assert_true "T71: skill names ADR-009 as authority"                   "grep -q 'ADR-009' $NCA"
+assert_true "T71: skill documents 4-layer structure"                  "grep -q '## The 4-layer structure' $NCA"
+assert_true "T71: skill has dependency-rule table"                    "grep -q '## The dependency rule' $NCA"
+assert_true "T71: skill defines repository-port pattern"              "grep -qE 'Repository port|Pattern 3.*Repository port' $NCA"
+assert_true "T71: skill defines TypeORM-adapter pattern with mapper"  "grep -qE 'Repository adapter|toDomain|toPersistence' $NCA"
+assert_true "T71: skill defines application-service pattern"          "grep -qE 'Application service|Pattern 5' $NCA"
+assert_true "T71: skill cites ADR-001/003/005"                        "grep -q 'ADR-001' $NCA && grep -q 'ADR-003' $NCA && grep -q 'ADR-005' $NCA"
+assert_true "T71: skill documents Symbol-token DI wiring"             "grep -qE 'Symbol\\(.*REPOSITORY|provide:.*useClass:' $NCA"
+assert_true "T71: skill has anti-patterns section"                    "grep -q '## Anti-patterns' $NCA"
+assert_true "T71: skill names @nestjs/cqrs as out-of-scope"           "grep -q '@nestjs/cqrs' $NCA"
+
+# repo-conventions wiring
+RC=".claude/skills/repo-conventions/SKILL.md"
+assert_true "T71: repo-conventions ADR table includes ADR-009"        "grep -q 'ADR-009' $RC"
+assert_true "T71: repo-conventions § 2 cites nestjs-clean-architecture" \
+  "grep -q 'nestjs-clean-architecture' $RC"
+
+# CLAUDE.md wiring
+assert_true "T71: CLAUDE.md Skill Pointers row for nestjs-clean-architecture" \
+  "grep -q 'nestjs-clean-architecture' CLAUDE.md"
+assert_true "T71: CLAUDE.md Workflow chains has 'New domain module' row" \
+  "grep -qE '\\*\\*New domain module\\*\\*' CLAUDE.md"
+
+# architect-reviewer wiring
+AR=".claude/agents/architect-reviewer.md"
+assert_true "T71: architect-reviewer Required Reading lists nestjs-clean-architecture" \
+  "grep -q 'nestjs-clean-architecture' $AR"
+assert_true "T71: architect-reviewer references ADR-009 in compliance audit" \
+  "grep -q 'ADR-009' $AR"
+assert_true "T71: architect-reviewer audits 4-layer structure planned"    "grep -q '4-layer structure planned' $AR"
+assert_true "T71: architect-reviewer audits dependency rule"              "grep -qE 'Dependency rule|dependency-rule violation' $AR"
+assert_true "T71: architect-reviewer audits repository ports defined"     "grep -q 'Repository ports defined' $AR"
+assert_true "T71: architect-reviewer flags simple-CRUD exemption check"   "grep -q 'Simple-CRUD exemption' $AR"
+
+# code-reviewer wiring
+CR=".claude/agents/code-reviewer.md"
+assert_true "T71: code-reviewer Required Reading lists nestjs-clean-architecture" \
+  "grep -q 'nestjs-clean-architecture' $CR"
+assert_true "T71: code-reviewer has Dependency-rule audit section"   "grep -q 'Dependency-rule audit' $CR"
+assert_true "T71: code-reviewer flags @nestjs/typeorm import in domain as HIGH" \
+  "grep -qE \"@nestjs/typeorm.*HIGH|HIGH.*domain depends on infrastructure\" $CR"
+assert_true "T71: code-reviewer flags @Injectable in domain as HIGH"  "grep -qE '@Injectable.*HIGH|HIGH.*runtime-couples' $CR"
+assert_true "T71: code-reviewer flags concrete-repo injection bypass as HIGH" \
+  "grep -qE 'bypasses the port|injecting a concrete TypeORM' $CR"
+assert_true "T71: code-reviewer flags missing repo port on invariant-bearing module as MED" \
+  "grep -qE 'no .domain/repositories/.*port file|port-less module' $CR"
+
+# qa-validator alignment with ADR-009 (per-layer test shapes)
+QV=".claude/agents/qa-validator.md"
+assert_true "T71: qa-validator Required Reading lists nestjs-clean-architecture" \
+  "grep -q 'nestjs-clean-architecture' $QV"
+assert_true "T71: qa-validator has 'Per-layer test-shape calibration' section" \
+  "grep -q 'Per-layer test-shape calibration' $QV"
+assert_true "T71: qa-validator names domain entity test as 'Pure unit test'"  "grep -qE 'Pure unit test' $QV"
+assert_true "T71: qa-validator names application service test as 'Port-mocked'" \
+  "grep -qE 'Port-mocked unit test' $QV"
+assert_true "T71: qa-validator names adapter test as 'Integration test'"      "grep -qE 'Integration test' $QV"
+assert_true "T71: qa-validator flags service test importing concrete adapter as HIGH" \
+  "grep -qE 'imports .*typeorm-repository.*directly|HIGH if the test file imports' $QV"
+
+# nestjs-best-practices prelude cross-link
+NBP=".claude/skills/nestjs-best-practices/SKILL.md"
+assert_true "T71: nestjs-best-practices prelude has Repo-specific cross-references" \
+  "grep -q 'Repo-specific cross-references' $NBP"
+assert_true "T71: prelude maps arch-feature-modules to ADR-009"               "grep -qE 'arch-feature-modules.*ADR-009|ADR-009.*arch-feature-modules' $NBP"
+assert_true "T71: prelude maps arch-use-repository-pattern to ADR-009"        "grep -qE 'arch-use-repository-pattern.*ADR-009|ADR-009.*arch-use-repository' $NBP"
+assert_true "T71: prelude states binding form wins on conflict"               "grep -qE 'binding form wins' $NBP"
 
 echo
 echo "==========================="

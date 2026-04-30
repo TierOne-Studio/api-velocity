@@ -32,3 +32,4 @@ A clear forward-looking convention is needed so new modules don't pick the wrong
 - [src/shared/database/database.service.ts](../../src/shared/database/database.service.ts) — raw-SQL fallback.
 - `CLAUDE.md` § P2 — forward-looking convention statement.
 - `.claude/skills/repo-conventions/SKILL.md` § "Stack" + § "Repository pattern" — enforcement detail.
+- [`ADR-009`](./ADR-009-clean-architecture-layering-for-modules.md) — extends this ADR by mandating where the TypeORM repository lives in the layered module structure (`infrastructure/persistence/repositories/<aggregate>.typeorm-repository.ts` implementing a port defined in `domain/repositories/<aggregate>.repository.interface.ts`).

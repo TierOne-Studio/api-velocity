@@ -18,6 +18,7 @@ Several conventions in this skill are load-bearing — changing them requires a 
 | No global exception filter — throw NestJS built-ins | [ADR-003](../../../docs/decisions/ADR-003-no-global-exception-filter.md) | § 6 |
 | NestJS Logger (no pino, no structured logging, no request-id) | [ADR-004](../../../docs/decisions/ADR-004-nestjs-logger-no-pino.md) | § 7 |
 | No `class-validator` / no global `ValidationPipe` | [ADR-005](../../../docs/decisions/ADR-005-no-class-validator-no-validation-pipe.md) | § 8 |
+| Clean architecture / hexagonal layering for new modules (4-layer split + dependency rule) | [ADR-009](../../../docs/decisions/ADR-009-clean-architecture-layering-for-modules.md) | § 2, § 4 |
 
 If you're about to add a paragraph explaining *why* one of these conventions exists, stop — that paragraph belongs in the ADR. This skill captures *how to follow the convention today*; the ADR captures *why this is the rule and what was rejected*. See `documentation-and-adrs` for the full discipline.
 
@@ -55,7 +56,9 @@ Terms NOT in this glossary are not load-bearing — for module-local concepts, n
 
 ## 2. Module layout (per domain)
 
-Domain modules live under `src/modules/<domain>/` with this clean-architecture-style split:
+Domain modules live under `src/modules/<domain>/` with the clean-architecture / hexagonal split codified in [`ADR-009`](../../../docs/decisions/ADR-009-clean-architecture-layering-for-modules.md). For the full pattern (domain entity, repository port, TypeORM adapter, application service, controller wiring, dependency rule, anti-patterns), see the **`nestjs-clean-architecture`** skill — fires when designing or reviewing a new module. This section gives the layout summary; the skill gives the implementation patterns.
+
+The 4-layer split:
 
 ```
 src/modules/<domain>/

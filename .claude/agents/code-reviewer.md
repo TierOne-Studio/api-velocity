@@ -29,6 +29,7 @@ Before evaluating any code, MUST Read:
 - `.claude/skills/cyclomatic-complexity/SKILL.md` — early returns, guard clauses, no-`else`-after-`return`, the rough metric.
 - `.claude/skills/nestjs-best-practices/SKILL.md` — 40-rule index. The `di-*`, `error-*`, `security-*`, `perf-*`, `api-*` rules cross-validate the design review. Read individual `rules/*.md` files when a specific rule is relevant.
 - `.claude/skills/documentation-and-adrs/SKILL.md` — when the diff introduces a structural change (new persistence layer, new auth/cache/queue infrastructure, app-wide bootstrap modification, new public-API contract). Verify a corresponding `docs/decisions/ADR-NNN-*.md` file is part of the same PR. Run `ls docs/decisions/` so you know which ADRs already exist and can flag a change that contradicts an Accepted ADR without superseding it.
+- `.claude/skills/nestjs-clean-architecture/SKILL.md` + `docs/decisions/ADR-009-clean-architecture-layering-for-modules.md` — when the diff adds files under `src/modules/<domain>/domain/`, `src/modules/<domain>/application/`, or `src/modules/<domain>/infrastructure/`. Apply the dependency-rule check from `repo-conventions` § 2.
 
 **Skill-vs-repo conflict resolution (per `CLAUDE.md` P3.5):** when `nestjs-best-practices` recommends a pattern that conflicts with `CLAUDE.md` or `repo-conventions`, **default to the skill** unless applying it would require structural refactor (new dep, cross-cutting infra the repo lacks, app-wide bootstrap changes, or refactoring unrelated modules). For structural cases, **the repo wins for this PR** — but flag it as an Optional Improvement: "Future task — adopt `<practice>` per `<skill>` § `<rule>`. Current PR follows existing repo convention to keep scope minimal." If you find the change implements a generic rule that would have been a structural refactor and the agent didn't flag it as a future task, that's a MED finding.
 
@@ -115,6 +116,13 @@ The implementation must comply with `CLAUDE.md`'s output contract — not just b
 - **High-risk restate (P3.3):** if change touches auth/sessions/RBAC/payments/secrets/PII/public API/migrations, was the requirements restate done before the code? Missing = HIGH.
 - **Forbidden waiver phrases (P3.2):** does the response contain "small change", "obvious fix", "trivial", "just a refactor"? Each occurrence = MED.
 - **ADR audit (per `documentation-and-adrs`):** if the diff introduces a structural change — a new persistence layer, new auth library / global guard, app-wide bootstrap modification, new public-API contract, or anything cited from `CLAUDE.md`/`repo-conventions`/skills — there MUST be a corresponding `docs/decisions/ADR-NNN-*.md` file in the same PR. Missing ADR for a structural change = **HIGH**. Additionally, if the diff contradicts an existing Accepted ADR (`ls docs/decisions/` to enumerate) without a superseding ADR, that is **HIGH** regardless of code quality — the rationale on file is now wrong.
+- **Dependency-rule audit (per `ADR-009` + `nestjs-clean-architecture`):** for any file under `src/modules/<domain>/domain/`, run a quick import-scan. Each occurrence is its own finding:
+  - `import` from `@nestjs/typeorm`, `typeorm`, or `infrastructure/` path inside a `domain/*.ts` file → **HIGH** (domain depends on infrastructure).
+  - `@Injectable()` decorator on a class inside `domain/` → **HIGH** (domain runtime-couples to NestJS DI).
+  - `import` from `application/` or `api/` inside a `domain/*.ts` file → **HIGH** (inverted dependency).
+  - Application service constructor injecting a concrete TypeORM repository class instead of the port via `@Inject(TOKEN)` → **HIGH** (bypasses the port; defeats the abstraction).
+  - Module with business invariants (entities with state-transition rules) but no `domain/repositories/<aggregate>.repository.interface.ts` port file → **MED** (port-less module; the convention exists for exactly this case).
+  - File-naming inconsistency (e.g., `role.entity.ts` co-existing with `role-entity.ts` in the same module's `domain/entities/`) → **LOW** (per ADR-009 calibration).
 
 ### 5.5 Apply change-sizing audit
 

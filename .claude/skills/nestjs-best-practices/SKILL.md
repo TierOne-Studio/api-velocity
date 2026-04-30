@@ -11,6 +11,21 @@ metadata:
 
 Comprehensive best practices guide for NestJS applications. Contains 40 rules across 10 categories, prioritized by impact to guide automated refactoring and code generation.
 
+## Repo-specific cross-references (where the abstract principles meet api-velocity's binding rules)
+
+Several rules in this skill are abstract principles. In api-velocity they're codified concretely as ADRs and as the `nestjs-clean-architecture` skill. When a rule below has a repo-specific binding form, follow the binding form, not just the abstract principle:
+
+| Rule in this skill | Binding form in api-velocity |
+|---|---|
+| `arch-feature-modules`, `arch-single-responsibility` | The 4-layer module structure (`api/`, `application/`, `domain/`, `infrastructure/`) per [`ADR-009`](../../../docs/decisions/ADR-009-clean-architecture-layering-for-modules.md) — see `nestjs-clean-architecture` skill for patterns. |
+| `arch-use-repository-pattern` | Repository ports as TypeScript interfaces in `domain/repositories/`, TypeORM adapters in `infrastructure/persistence/repositories/` per `ADR-009` + [`ADR-001`](../../../docs/decisions/ADR-001-typeorm-first-persistence.md). Wired via Symbol-token DI. |
+| `di-interface-segregation` | Each port has methods scoped to one aggregate root, with `organizationId` in the signature for tenant-scoped queries (per [`ADR-002`](../../../docs/decisions/ADR-002-rbac-scope-all-returns-400.md) + `repo-conventions` § 3). |
+| `error-use-exception-filters` | No global filter — throw NestJS built-ins per [`ADR-003`](../../../docs/decisions/ADR-003-no-global-exception-filter.md). Domain throws plain `Error`; application layer maps to NestJS built-ins. |
+| `devops-use-logging` | NestJS built-in `Logger`, no pino, no request-id correlation per [`ADR-004`](../../../docs/decisions/ADR-004-nestjs-logger-no-pino.md). |
+| `security-validate-all-input` + `api-document-with-openapi` | DTOs are plain TypeScript types, validated by helper functions at the controller boundary per [`ADR-005`](../../../docs/decisions/ADR-005-no-class-validator-no-validation-pipe.md). |
+
+When this skill's example code conflicts with the binding form (e.g., shows `class-validator` decorators on a DTO, or shows `APP_GUARD` global registration), the binding form wins — see `CLAUDE.md` P3.5 and the `Approach gate` in dep-prescribing rules.
+
 ## How rules in this skill are structured (api-velocity adaptation)
 
 This skill is intended to **avoid silently introducing new dependencies.** Each best practice expresses an **outcome** (the engineering goal), and rules that recommend third-party libraries should ask the user before adopting them.

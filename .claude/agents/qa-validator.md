@@ -37,6 +37,7 @@ Before evaluating coverage, MUST Read:
 
 - `.claude/skills/database-transactions/SKILL.md` — when DB writes are touched: is a rollback path tested? Is the transactional boundary exercised by a test that triggers an error mid-callback?
 - `.claude/skills/nestjs-best-practices/SKILL.md` § test rules — when reviewing tests, cross-check against `rules/test-use-testing-module.md`, `rules/test-mock-external-services.md`, `rules/test-e2e-supertest.md` for NestJS-aware testing patterns.
+- `.claude/skills/nestjs-clean-architecture/SKILL.md` + `docs/decisions/ADR-009-clean-architecture-layering-for-modules.md` — when the diff adds files under a `src/modules/<domain>/` module that follows the layered structure (presence of `domain/repositories/*.repository.interface.ts` is the marker). Per-layer test-shape calibration applies; see § 3 below.
 
 **Skill-vs-repo conflict resolution (per `CLAUDE.md` P3.5):** when a test pattern from `nestjs-best-practices` conflicts with `repo-conventions` (e.g., e2e setup expecting class-validator-decorated DTOs when the repo uses interface DTOs), **default to the skill** unless adopting it would force structural changes to test infrastructure unrelated to the current change. For structural cases, follow the repo's existing test pattern and flag a future task.
 
@@ -73,6 +74,20 @@ Walk the modified code path:
 - For each external call (DB, HTTP, IPC): is a failure mode tested?
 
 Cite specific files:lines where coverage is missing.
+
+#### Per-layer test-shape calibration (ADR-009 modules)
+
+If the diff adds/modifies files in a module that follows the layered structure (per `nestjs-clean-architecture` skill + `ADR-009`), the expected test shape differs by layer. A coverage gap is the **wrong test shape** for that layer, not just absence of tests:
+
+| Layer | Expected test shape | MED finding when missing |
+|---|---|---|
+| `domain/entities/*.entity.ts` | **Pure unit test** — `new Entity(...)` with no NestJS testing module, no mocks. Asserts invariants, state-transition rules, and value semantics. | Domain entity has business invariants but no `*.entity.spec.ts`, OR the test wraps it in `Test.createTestingModule(...)` (overkill — flag as LOW design noise but still passing). |
+| `domain/repositories/*.repository.interface.ts` | **No test required** (it's an interface). | N/A — interfaces don't get tests. |
+| `application/services/*.service.ts` | **Port-mocked unit test** — inject a hand-rolled mock conforming to the port (`{ findById: jest.fn(), save: jest.fn() }`). DO NOT instantiate the TypeORM adapter; DO NOT use `Test.createTestingModule(...)` with `TypeOrmModule.forRoot()`. | Service test pulls in real TypeORM or instantiates the concrete adapter (defeats the port; coupled to infrastructure). HIGH if the test file imports `*.typeorm-repository.ts` directly. |
+| `infrastructure/persistence/repositories/*.typeorm-repository.ts` | **Integration test** against a real Postgres (testcontainer or shared test DB) with the actual TypeORM `Repository`. Asserts the mapper (`toDomain`/`toPersistence`) round-trips correctly AND the `WHERE organization_id` belt-and-suspenders scoping works. | Adapter has only mocked-TypeORM unit tests (proves nothing about the SQL). MED. |
+| `api/controllers/*.controller.ts` | **e2e via supertest** OR controller-only unit test with the application service mocked. Asserts routing, guard wiring, response shape, and HTTP status codes (per `ADR-002` for RBAC routes). | Controller has no test that exercises the route end-to-end OR no negative-case test for guard rejection (e.g., 403 for cross-org access). MED. |
+
+The "module follows ADR-009" marker: presence of `domain/repositories/*.repository.interface.ts` files. If the module is flat (per ADR-009 simple-CRUD exemption, e.g., `admin/dashboard`), the calibration above does NOT apply — fall back to the standard rubric.
 
 ### 4. Edge-case analysis
 
