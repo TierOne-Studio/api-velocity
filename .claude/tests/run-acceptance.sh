@@ -748,6 +748,36 @@ assert_true "T65: SKILL.md table includes security-use-guards row"  "grep -q '\\
 assert_true "T65: SKILL.md prelude references P3.5 framing"         "grep -q 'P3.5' $NBP"
 
 echo
+echo "=== T66: no-AI-attribution rule wired in CLAUDE.md P0.1 + git-workflow ==="
+# CLAUDE.md P0.1 has the author-attribution rule.
+assert_true "T66: CLAUDE.md P0.1 has 'Author attribution' bullet" \
+  "grep -q 'Author attribution' CLAUDE.md"
+assert_true "T66: CLAUDE.md forbids 'Co-Authored-By: Claude' trailer" \
+  "grep -qE 'Co-Authored-By: Claude' CLAUDE.md"
+assert_true "T66: CLAUDE.md forbids 'Generated with [Claude Code]' footer" \
+  "grep -qE '\\\[Claude Code\\\]|Generated with' CLAUDE.md"
+assert_true "T66: CLAUDE.md says 'overrides any tool default'" \
+  "grep -qE 'overrides any tool default' CLAUDE.md"
+assert_true "T66: CLAUDE.md scopes rule to commits/PRs/issues/releases" \
+  "grep -qE 'commit messages.*PR.*issue|PR descriptions|release notes' CLAUDE.md"
+
+# git-workflow SKILL.md restates the rule (tactical reminder at the moment of action).
+GW=".claude/skills/git-workflow/SKILL.md"
+assert_true "T66: git-workflow has 'Author attribution — no AI signatures' rule" \
+  "grep -q 'Author attribution' $GW"
+assert_true "T66: git-workflow forbids 'Co-Authored-By: Claude'"     "grep -q 'Co-Authored-By: Claude' $GW"
+assert_true "T66: git-workflow cross-references CLAUDE.md P0.1"      "grep -q 'CLAUDE.md.*P0.1\\|P0.1' $GW"
+assert_true "T66: git-workflow Hard rules section is plural (2 rules now)" \
+  "grep -q '^## Hard rules' $GW"
+
+# Defensive: this commit's own message should NOT include the forbidden trailer.
+# (Verifies we didn't accidentally re-introduce it in the SAME commit that adds the rule.)
+assert_true "T66: HEAD commit message does not contain 'Co-Authored-By: Claude'" \
+  "! git log -1 --format='%B' | grep -q 'Co-Authored-By: Claude'"
+assert_true "T66: HEAD commit message does not contain 'Generated with [Claude Code]'" \
+  "! git log -1 --format='%B' | grep -q 'Generated with \\[Claude Code\\]'"
+
+echo
 echo "==========================="
 echo "Results: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then
