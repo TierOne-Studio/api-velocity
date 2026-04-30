@@ -21,6 +21,18 @@ If blocking ambiguity exists → STOP and ask. Do not proceed.
 
 If the change is high-risk (public API, auth, payments, data migration, security-sensitive behavior) → restate requirements explicitly before any plan.
 
+### Grill-me mode (escape hatch)
+
+The 3-question cap above is the default. **When the user says "grill me" / "let's grill this" / "stress-test this plan" OR ambiguity is irreducibly deep (multiple unresolved branches in the design tree), switch to grilling mode:**
+
+- Ask **one question at a time, waiting for the user's answer before continuing.** No batched lists.
+- For each question, **provide your recommended answer** so the user can react instead of starting from blank.
+- Walk down each branch of the design tree, resolving dependencies one-by-one. Don't skip ahead.
+- If a question can be answered by exploring the codebase, **explore the codebase instead of asking** — only ask when the code can't tell you.
+- Sharpen fuzzy language: when the user uses overloaded terms ("account", "user", "order"), propose a precise canonical term and confirm. Reference `repo-conventions` § Domain glossary if it covers the term.
+- Cross-reference with code: when the user states how something works, check whether the code agrees. Surface contradictions: "your code does X, but you just said Y — which is correct?"
+- When the design tree is fully walked, return to Step 1 and write the plan with all branches resolved.
+
 ## Step 1 — The plan
 
 3–8 steps. For each step:
@@ -41,9 +53,9 @@ Success criteria MUST be explicit and falsifiable.
 
 If any plan step introduces a load-bearing engineering decision (new persistence layer, new auth library, new public-API contract, app-wide bootstrap change — anything that will be cited from `CLAUDE.md` / `repo-conventions` / a skill), the plan MUST include an explicit step to write the corresponding ADR in `docs/decisions/ADR-NNN-<title>.md`. The ADR step lives alongside the implementation steps with its own `verify:` clause (the file exists, has all required sections, and the index in `docs/decisions/README.md` is updated). See `documentation-and-adrs` for the ADR format.
 
-### Step sizing — thin vertical slices (~100 LOC cap)
+### Step sizing — tracer-bullet vertical slices (~100 LOC cap)
 
-Each step is a **thin vertical slice**: implementable, testable, and committable on its own. Target ≤ ~100 LOC of executable code per step (tests excluded from the count). If a step's implementation crosses ~100 LOC mid-execution, **STOP, commit what's working, and split the rest into a new step.** Don't push through.
+Each step is a **tracer-bullet vertical slice**: a thin path that cuts through every layer (schema → service → controller → test) end-to-end, NOT a horizontal slice of one layer. A completed slice is demoable or verifiable on its own. Implementable, testable, and committable on its own. Target ≤ ~100 LOC of executable code per step (tests excluded from the count). If a step's implementation crosses ~100 LOC mid-execution, **STOP, commit what's working, and split the rest into a new step.** Don't push through.
 
 The cap is a discipline mechanism, not a hard rule — a 130-LOC step that's genuinely cohesive is fine; a 250-LOC step that's "just three small things" is the failure mode. The split-and-commit reflex catches big-bang implementations that drift from the plan and produce un-reviewable diffs.
 

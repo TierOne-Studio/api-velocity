@@ -840,8 +840,8 @@ assert_true "T67: repo-conventions cites ADR-005"               "grep -q 'ADR-00
 
 # plan-mode slice cap
 PM=".claude/skills/plan-mode/SKILL.md"
-assert_true "T67: plan-mode has 'Step sizing — thin vertical slices' header" \
-  "grep -q 'Step sizing.*thin vertical slices' $PM"
+assert_true "T67: plan-mode has 'Step sizing' header (renamed to tracer-bullet in T69)" \
+  "grep -qE 'Step sizing.*(thin|tracer-bullet) vertical slices' $PM"
 assert_true "T67: plan-mode names ~100 LOC cap"                 "grep -qE '~100 LOC|≤ ~100 LOC' $PM"
 assert_true "T67: plan-mode has 'STOP, commit, split' rule"     "grep -qiE 'STOP.*commit.*split|stop and commit|commit what.s working' $PM"
 assert_true "T67: plan-mode adds 'slice:' to per-step format"   "grep -q 'slice: <expected LOC' $PM"
@@ -905,6 +905,63 @@ assert_true "T68: tdd-workflow lists 'ADR-only change' waiver"          "grep -q
 # CLAUDE.md P3.1 valid-reasons list updated
 assert_true "T68: CLAUDE.md P3.1 valid-reasons list includes 'ADR-only change'" \
   "grep -q '\`ADR-only change\`' CLAUDE.md"
+
+echo
+echo "=== T69: complementary additions inspired by mattpocock/skills ==="
+
+# tdd-workflow — horizontal-vs-vertical anti-pattern + rename diagnostic + SDK-style mocking + tracer-bullet framing + 4-waiver count
+TW=".claude/skills/tdd-workflow/SKILL.md"
+assert_true "T69: tdd-workflow names horizontal-slicing anti-pattern" \
+  "grep -qE 'Anti-pattern: horizontal slicing|DO NOT write all tests first' $TW"
+assert_true "T69: tdd-workflow includes the WRONG vs RIGHT diagram"            "grep -q 'WRONG (horizontal)' $TW && grep -q 'RIGHT (vertical' $TW"
+assert_true "T69: tdd-workflow rubric item 1 includes rename-test diagnostic"  "grep -q 'rename test' $TW"
+assert_true "T69: tdd-workflow rubric item 7 has 'Mock at system boundaries only' rule" \
+  "grep -q 'Mock at system boundaries only' $TW"
+assert_true "T69: tdd-workflow rubric item 7 has 'SDK-style interfaces' guidance" \
+  "grep -q 'SDK-style interfaces' $TW"
+assert_true "T69: tdd-workflow Step 1 says 'You can.t test everything'"        "grep -qE \"You can.t test everything\" $TW"
+assert_true "T69: tdd-workflow Step 1 renamed to 'tracer bullet'"              "grep -qE 'Step 1 — Failing test FIRST .tracer bullet|tracer bullet.' $TW"
+
+# bug-investigation — Phase 1 feedback-loop catalog + Phase 3 ranked-falsifiable + Phase 3.5 instrument
+BI=".claude/skills/bug-investigation/SKILL.md"
+assert_true "T69: bug-investigation Step 1 renamed to 'Build a feedback loop'" \
+  "grep -q 'Step 1 — Build a feedback loop' $BI"
+assert_true "T69: bug-investigation lists 10 ranked loop construction options" \
+  "grep -q '^10.' $BI"
+assert_true "T69: bug-investigation says 'Treat the loop as a product'"        "grep -q 'treat it as a product' $BI"
+assert_true "T69: bug-investigation Step 3 requires 3-5 ranked hypotheses"     "grep -qE 'ranked hypotheses' $BI"
+assert_true "T69: bug-investigation Step 3 requires falsifiability"            "grep -qE 'falsifiable|falsified' $BI"
+assert_true "T69: bug-investigation Step 3 says 'Show the ranked list to the user'" \
+  "grep -q 'Show the ranked list to the user' $BI"
+assert_true "T69: bug-investigation Step 3.5 requires one-variable-at-a-time"  "grep -q 'Change one variable at a time' $BI"
+
+# design-review — deletion test + adapter rule
+DR=".claude/skills/design-review/SKILL.md"
+assert_true "T69: design-review YAGNI section adds Deletion test"              "grep -q 'Deletion test' $DR"
+assert_true "T69: design-review adds one/two-adapter rule"                     "grep -qE 'One/two-adapter rule|hypothetical seam' $DR"
+
+# plan-mode — grill-me mode + tracer-bullet rename
+PM=".claude/skills/plan-mode/SKILL.md"
+assert_true "T69: plan-mode adds 'Grill-me mode' escape hatch"                 "grep -q 'Grill-me mode' $PM"
+assert_true "T69: plan-mode grill-me requires one-question-at-a-time"          "grep -qE 'one question at a time'  $PM"
+assert_true "T69: plan-mode grill-me provides recommended answer per question" "grep -q 'provide your recommended answer' $PM"
+assert_true "T69: plan-mode renames slice cap to 'tracer-bullet'"              "grep -q 'tracer-bullet vertical slices' $PM"
+
+# meta-skill-hygiene — 500-LOC split rule
+MSH=".claude/skills/meta-skill-hygiene/SKILL.md"
+assert_true "T69: meta-skill-hygiene names ~500-line split threshold"          "grep -q '~500-line split threshold' $MSH"
+assert_true "T69: meta-skill-hygiene shows split layout (REFERENCE/EXAMPLES/patterns)" \
+  "grep -q 'REFERENCE.md' $MSH && grep -q 'EXAMPLES.md' $MSH && grep -q 'patterns/' $MSH"
+assert_true "T69: meta-skill-hygiene cites nestjs-patterns as canonical example" \
+  "grep -q 'nestjs-patterns' $MSH"
+
+# repo-conventions — Domain glossary section
+RC=".claude/skills/repo-conventions/SKILL.md"
+assert_true "T69: repo-conventions has '0. Domain glossary' section"           "grep -q '## 0. Domain glossary' $RC"
+assert_true "T69: glossary defines Organization"                               "grep -qE '\\*\\*Organization\\*\\*' $RC"
+assert_true "T69: glossary defines Scope"                                      "grep -qE '\\*\\*Scope\\*\\*' $RC"
+assert_true "T69: glossary defines Project + Source"                           "grep -qE '\\*\\*Project\\*\\*' $RC && grep -qE '\\*\\*Source\\*\\*' $RC"
+assert_true "T69: glossary disambiguates 'Agent' (chat vs code)"               "grep -qE 'chat agent.*code agent|code agent' $RC"
 
 echo
 echo "==========================="

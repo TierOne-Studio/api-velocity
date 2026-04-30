@@ -61,6 +61,8 @@ If a principle was deliberately traded off, state it explicitly. Conflict resolu
 - No speculative abstractions, future-proofing, or extensibility "just in case".
 - No options/flags/hooks not justified by current requirements.
 - No error handling for unsupported, impossible-by-contract, or unproven scenarios.
+- **Deletion test** (when reviewing an abstraction): mentally delete the module/wrapper/interface. If complexity vanishes, it was a pass-through — DELETE it inline. If complexity reappears across N callers, it was earning its keep — keep it.
+- **One/two-adapter rule** (for seams): one adapter implementing an interface is a hypothetical seam — collapse the abstraction; inline the concrete implementation. Two real adapters = real seam, keep the interface. "We might add another implementation someday" is a YAGNI failure.
 
 ### High Cohesion / Low Coupling
 - Each module focused on one clear purpose.

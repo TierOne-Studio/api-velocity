@@ -21,6 +21,27 @@ Several conventions in this skill are load-bearing — changing them requires a 
 
 If you're about to add a paragraph explaining *why* one of these conventions exists, stop — that paragraph belongs in the ADR. This skill captures *how to follow the convention today*; the ADR captures *why this is the rule and what was rejected*. See `documentation-and-adrs` for the full discipline.
 
+## 0. Domain glossary — terms used throughout the codebase
+
+Anchor terms a contributor needs in their head before touching feature code. Use these terms exactly in code, tests, commits, ADRs, and PR descriptions — drift produces ambiguity that surfaces as bugs ("user vs account vs member"). Add a term here when a new concept becomes load-bearing across modules.
+
+| Term | Definition |
+|---|---|
+| **Organization** (`organization_id`) | Tenant boundary. Every business entity belongs to exactly one organization unless explicitly cross-org. The unit of RBAC scoping. |
+| **User** | Authenticated identity. A user can belong to multiple organizations via membership records, but each request runs in the context of ONE active organization. |
+| **Active organization** (`activeOrganizationId`) | The org the current request is operating within. Default scope for `scope=single` queries. Resolved by `resolveOrgScope()`. |
+| **Superadmin** | A role-level flag (`req.user.isSuperadmin`) that authorizes `scope=all` cross-org queries. Distinct from any organization-level admin role. |
+| **Permission** | A `verb:resource` string (e.g., `read:users`, `delete:projects`) attached to a route via `@RequirePermissions(...)`. Mapped to roles in `RoleService.getUserPermissions()`. |
+| **Role** | A named bundle of permissions. Per-organization (a user can have role X in org A and role Y in org B). |
+| **Scope** | Query-level cross-org control. `scope=single` (default) → operate within `activeOrganizationId`. `scope=all` → operate cross-org (superadmin only — non-superadmin gets 400, see `ADR-002`). |
+| **Project** | A container for content + chat data sources. Belongs to one organization. The unit users author against. |
+| **Source** | A data input attached to a project (file upload, URL, database connection, etc.). Each has a readiness state; the chat agent only consults ready sources. |
+| **Agent** | The chat orchestrator that answers user questions over a project's ready sources. Distinct from "the AI agent writing this code" — when ambiguous, say "chat agent" or "code agent". |
+| **DTO** | Plain TypeScript request/response type. **No** `class-validator` decorators (see `ADR-005`). |
+| **Repository** | TypeORM-backed data-access class for new modules (see `ADR-001`). Existing raw-SQL repositories are NOT renamed. |
+
+Terms NOT in this glossary are not load-bearing — for module-local concepts, name them in the module's own README or in the ADR that introduced them.
+
 ## 1. Stack at a glance
 
 - **Framework:** NestJS 11 (see `package.json` for exact versions)

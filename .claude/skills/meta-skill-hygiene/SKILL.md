@@ -28,6 +28,22 @@ Skill body has grown past ~200 lines or contains content that's actually CLAUDE.
 
 Fix: extract to the right layer.
 
+**~500-line split threshold.** When a SKILL.md exceeds ~500 lines, the skill is too dense to be loaded efficiently — split into a directory with this layout (canonical example: `nestjs-patterns/`):
+
+```
+skill-name/
+├── SKILL.md           ← entry point: description + index of sub-files (≤200 lines)
+├── REFERENCE.md       ← deep-detail reference (loaded on-demand)
+├── EXAMPLES.md        ← worked examples (loaded on-demand)
+├── patterns/          ← named sub-patterns the entry point routes to
+│   ├── pattern-a.md
+│   └── pattern-b.md
+└── rules/             ← when the skill is rule-catalog-shaped (e.g., nestjs-best-practices)
+    └── rule-name.md
+```
+
+The parent SKILL.md tells the agent which sub-file to load for which situation; the model loads only what's relevant. Don't pre-emptively split — apply this when the skill genuinely passes ~500 lines OR when distinct sub-shapes (patterns, rules, references) emerge.
+
 ### 4. Contradictions
 
 Skill rule contradicts CLAUDE.md or another skill.

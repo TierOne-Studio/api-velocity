@@ -5,13 +5,38 @@ description: Use ALWAYS when implementing, modifying, or fixing executable code 
 
 # TDD Workflow
 
-Strict test-driven development. This is a workflow expectation, not a runtime hook: write or update a test first, verify it fails for the right reason, then make the minimal code change to pass it. If a change cannot follow TDD, the response MUST include one of the three valid waiver phrases at the bottom of this file.
+Strict test-driven development. This is a workflow expectation, not a runtime hook: write or update a test first, verify it fails for the right reason, then make the minimal code change to pass it. If a change cannot follow TDD, the response MUST include one of the four valid waiver phrases at the bottom of this file.
 
-## Step 1 — Failing test FIRST
+## Anti-pattern: horizontal slicing (write all tests, then all code)
+
+**DO NOT write all tests first, then all implementation.** That treats RED as "draft every test" and GREEN as "draft every code path", which produces brittle tests:
+
+- Tests written in bulk test *imagined* behavior, not *actual* behavior the code surfaced.
+- They test the *shape* of things (signatures, data structures) instead of user-visible behavior.
+- They become insensitive — they pass when behavior breaks and fail when behavior is fine.
+- You commit to test structure before you understand the implementation.
+
+**Correct: vertical slices via tracer bullets.** One test → one implementation → next test. Each test responds to what the previous cycle taught you.
+
+```
+WRONG (horizontal):
+  RED:   t1, t2, t3, t4, t5
+  GREEN: i1, i2, i3, i4, i5
+
+RIGHT (vertical, tracer-bullet):
+  RED→GREEN: t1→i1
+  RED→GREEN: t2→i2
+  ...
+```
+
+When `qa-validator` sees a PR where all tests landed in one commit before any implementation, it flags this as a HIGH coverage-quality finding.
+
+## Step 1 — Failing test FIRST (tracer bullet)
 
 - Write the test before the implementation. The test MUST fail when run, **for the right reason** (asserts the behavior you intend to add — not a syntax/import error).
 - Verify the failure: run the test before writing implementation code.
 - Cover edge cases and known regression paths in the same step where reasonable.
+- **You can't test everything.** Confirm with the user (or the failure-mode-analysis enumeration) which behaviors are critical paths or complex logic vs which are speculative edge cases. Test the former; don't pad the suite with the latter.
 
 ## Step 2 — Minimal implementation
 
@@ -63,6 +88,7 @@ A test that *passes* is necessary; a test that's *good* is what catches regressi
 1. **Asserts observable behavior, not internals.** Don't assert on private state, mock-call shapes, or implementation steps. Assert on what a caller would see — return values, side effects on shared state, emitted events, persisted data.
    - **Bad:** `expect(service.cache.get('x')).toBe(...)` — internal cache.
    - **Good:** `expect(await service.fetch('x')).toEqual(...)` — observable result.
+   - **Diagnostic — the rename test:** if you rename an internal helper without changing its signature or behavior, every test should still pass. If a test breaks, that test was asserting on implementation, not behavior. Refactor the test before relying on it.
 
 2. **Fails for the right reason.** Run the test BEFORE the implementation. It must fail because the assertion isn't satisfied — not because of an import error, missing mock setup, or syntax error. If the test "fails" before you've written a line of code under test, you have a bad test.
 
@@ -79,6 +105,8 @@ A test that *passes* is necessary; a test that's *good* is what catches regressi
 6. **Minimal setup.** If setup is longer than the assertion, the unit under test probably has too many collaborators. Reconsider the design (this is a `design-review` smell). Setup-heavy tests rot fast.
 
 7. **No mocking the unit under test.** If you have to mock parts of the thing you're testing, the unit's collaborators are misshapen. Refactor before testing.
+   - **Mock at system boundaries only.** External APIs (Stripe, OpenAI, email, third-party HTTP), time/randomness, the file system. NOT your own classes or internal collaborators — those should be exercised through real code paths.
+   - **Prefer SDK-style interfaces over generic fetchers.** A boundary client with one method per operation (`api.getUser(id)`, `api.createOrder(data)`) is independently mockable per call. A single `api.fetch(endpoint, options)` forces conditional logic inside the mock — fragile, slow to debug. When you write code to talk to a boundary, design the SDK shape first.
 
 8. **No conditional logic in the test.** No `if`/`for`/`switch` in test bodies — those make the test a second implementation that itself can be wrong. Use parameterized tests (`it.each(...)`) instead.
 
