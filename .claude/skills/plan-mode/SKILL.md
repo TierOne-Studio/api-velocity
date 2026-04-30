@@ -32,9 +32,22 @@ N. <step>
    API impact: <breaking? backward-compat strategy?>
    tests: <unit / integration / contract>
    risk: <security / perf / behavior notes>
+   slice: <expected LOC for this step — target ≤ ~100 LOC per step>
 ```
 
 Success criteria MUST be explicit and falsifiable.
+
+### When the plan introduces a structural decision
+
+If any plan step introduces a load-bearing engineering decision (new persistence layer, new auth library, new public-API contract, app-wide bootstrap change — anything that will be cited from `CLAUDE.md` / `repo-conventions` / a skill), the plan MUST include an explicit step to write the corresponding ADR in `docs/decisions/ADR-NNN-<title>.md`. The ADR step lives alongside the implementation steps with its own `verify:` clause (the file exists, has all required sections, and the index in `docs/decisions/README.md` is updated). See `documentation-and-adrs` for the ADR format.
+
+### Step sizing — thin vertical slices (~100 LOC cap)
+
+Each step is a **thin vertical slice**: implementable, testable, and committable on its own. Target ≤ ~100 LOC of executable code per step (tests excluded from the count). If a step's implementation crosses ~100 LOC mid-execution, **STOP, commit what's working, and split the rest into a new step.** Don't push through.
+
+The cap is a discipline mechanism, not a hard rule — a 130-LOC step that's genuinely cohesive is fine; a 250-LOC step that's "just three small things" is the failure mode. The split-and-commit reflex catches big-bang implementations that drift from the plan and produce un-reviewable diffs.
+
+When a step legitimately can't be ≤ ~100 LOC (e.g., generated code, large config matrices, copy-paste-y migrations), name it explicitly: `slice: ~250 LOC — generated GraphQL schema, not split-able`. The point is to make the size choice deliberate.
 
 ## Re-plan trigger conditions
 

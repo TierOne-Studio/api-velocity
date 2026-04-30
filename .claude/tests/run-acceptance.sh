@@ -770,12 +770,141 @@ assert_true "T66: git-workflow cross-references CLAUDE.md P0.1"      "grep -q 'C
 assert_true "T66: git-workflow Hard rules section is plural (2 rules now)" \
   "grep -q '^## Hard rules' $GW"
 
-# Defensive: this commit's own message should NOT include the forbidden trailer.
-# (Verifies we didn't accidentally re-introduce it in the SAME commit that adds the rule.)
-assert_true "T66: HEAD commit message does not contain 'Co-Authored-By: Claude'" \
-  "! git log -1 --format='%B' | grep -q 'Co-Authored-By: Claude'"
-assert_true "T66: HEAD commit message does not contain 'Generated with [Claude Code]'" \
-  "! git log -1 --format='%B' | grep -q 'Generated with \\[Claude Code\\]'"
+# Defensive: this commit's own message should NOT include the forbidden TRAILER.
+# Anchor to start-of-line — actual trailers are line-prefixed; quoted mentions
+# of the forbidden strings inside prose (e.g., a commit body explaining the
+# rule) are intentionally allowed.
+assert_true "T66: HEAD commit has no 'Co-Authored-By: Claude' trailer line" \
+  "! git log -1 --format='%B' | grep -qE '^Co-Authored-By:[[:space:]]*Claude'"
+assert_true "T66: HEAD commit has no '🤖 Generated with [Claude Code]' footer line" \
+  "! git log -1 --format='%B' | grep -qE '^🤖 Generated with \\[Claude Code\\]'"
+
+echo
+echo "=== T67: ADR scaffolding + documentation-and-adrs skill + plan-mode slice cap ==="
+
+# ADR directory + index + template
+assert_true "T67: docs/decisions/ directory exists"             "test -d docs/decisions"
+assert_true "T67: docs/decisions/README.md is the index"        "test -f docs/decisions/README.md"
+assert_true "T67: index README has 'Architecture Decision Records' header" \
+  "grep -q 'Architecture Decision Records' docs/decisions/README.md"
+assert_true "T67: index README has the index table"             "grep -q '^| # | Title | Status | Date |' docs/decisions/README.md"
+assert_true "T67: index README has 'How skills/agents reference ADRs' section" \
+  "grep -q 'How skills/agents reference ADRs' docs/decisions/README.md"
+assert_true "T67: docs/decisions/_template.md present"          "test -f docs/decisions/_template.md"
+assert_true "T67: template has all required sections" \
+  "grep -q '^## Context$' docs/decisions/_template.md && grep -q '^## Decision$' docs/decisions/_template.md && grep -q '^## Alternatives considered$' docs/decisions/_template.md && grep -q '^## Consequences$' docs/decisions/_template.md && grep -q '^## References$' docs/decisions/_template.md"
+
+# 8 retrospective ADRs present and well-formed
+ADRS="ADR-001-typeorm-first-persistence ADR-002-rbac-scope-all-returns-400 ADR-003-no-global-exception-filter ADR-004-nestjs-logger-no-pino ADR-005-no-class-validator-no-validation-pipe ADR-006-asks-first-dep-gate ADR-007-skill-vs-repo-conflict-resolution ADR-008-no-ai-attribution"
+for adr in $ADRS; do
+  f="docs/decisions/$adr.md"
+  assert_true "T67: $adr.md exists"                             "test -f $f"
+  assert_true "T67: $adr.md has Status line"                    "grep -qE '^\\*\\*Status:\\*\\*' $f"
+  assert_true "T67: $adr.md has Date line"                      "grep -qE '^\\*\\*Date:\\*\\*' $f"
+  assert_true "T67: $adr.md has Context section"                "grep -q '^## Context$' $f"
+  assert_true "T67: $adr.md has Decision section"               "grep -q '^## Decision$' $f"
+  assert_true "T67: $adr.md has Alternatives considered"        "grep -q '^## Alternatives considered$' $f"
+  assert_true "T67: $adr.md has Consequences section"           "grep -q '^## Consequences$' $f"
+  assert_true "T67: $adr.md has References section"             "grep -q '^## References$' $f"
+done
+
+# Index references each ADR
+for adr in $ADRS; do
+  assert_true "T67: index README links to $adr"                 "grep -q '$adr' docs/decisions/README.md"
+done
+
+# documentation-and-adrs skill
+DA=".claude/skills/documentation-and-adrs/SKILL.md"
+assert_true "T67: documentation-and-adrs skill exists"          "test -f $DA"
+assert_true "T67: skill has YAML frontmatter"                   "head -1 $DA | grep -q '^---$'"
+assert_true "T67: skill description starts with 'Use when'"     "grep -m1 '^description:' $DA | grep -q 'Use when'"
+assert_true "T67: skill description has 'NOT for' clause"       "grep -m1 '^description:' $DA | grep -q 'NOT for'"
+assert_true "T67: skill explains 'When this skill fires'"       "grep -q '## When this skill fires' $DA"
+assert_true "T67: skill explains citation pattern (✅/❌)"        "grep -qE '✅|❌' $DA"
+assert_true "T67: skill links to docs/decisions/ template"      "grep -q '_template.md' $DA"
+assert_true "T67: skill names append-only discipline"           "grep -qi 'append-only' $DA"
+
+# CLAUDE.md wiring
+assert_true "T67: CLAUDE.md Skill Pointers row for documentation-and-adrs" \
+  "grep -q 'documentation-and-adrs' CLAUDE.md"
+assert_true "T67: CLAUDE.md Workflow chains has 'Structural decision' row" \
+  "grep -q 'Structural decision' CLAUDE.md"
+
+# repo-conventions cites ADRs
+RC=".claude/skills/repo-conventions/SKILL.md"
+assert_true "T67: repo-conventions has ADR-backed conventions table" \
+  "grep -q 'ADR-backed conventions' $RC"
+assert_true "T67: repo-conventions cites ADR-001"               "grep -q 'ADR-001' $RC"
+assert_true "T67: repo-conventions cites ADR-003"               "grep -q 'ADR-003' $RC"
+assert_true "T67: repo-conventions cites ADR-005"               "grep -q 'ADR-005' $RC"
+
+# plan-mode slice cap
+PM=".claude/skills/plan-mode/SKILL.md"
+assert_true "T67: plan-mode has 'Step sizing — thin vertical slices' header" \
+  "grep -q 'Step sizing.*thin vertical slices' $PM"
+assert_true "T67: plan-mode names ~100 LOC cap"                 "grep -qE '~100 LOC|≤ ~100 LOC' $PM"
+assert_true "T67: plan-mode has 'STOP, commit, split' rule"     "grep -qiE 'STOP.*commit.*split|stop and commit|commit what.s working' $PM"
+assert_true "T67: plan-mode adds 'slice:' to per-step format"   "grep -q 'slice: <expected LOC' $PM"
+
+echo
+echo "=== T68: ADR enforcement layer (subagents + adoption checklists + decision-rules + plan-mode + tdd-workflow) ==="
+
+# Architect-reviewer ADR awareness
+AR=".claude/agents/architect-reviewer.md"
+assert_true "T68: architect-reviewer Required reading lists documentation-and-adrs" \
+  "grep -q '.claude/skills/documentation-and-adrs/SKILL.md' $AR"
+assert_true "T68: architect-reviewer compliance audit has 'ADR audit' bullet" \
+  "grep -q 'ADR audit' $AR"
+assert_true "T68: architect-reviewer flags missing ADR step as HIGH/MED" \
+  "grep -qE 'Missing ADR step is a \\*\\*HIGH\\*\\*|MED.*load-bearing' $AR"
+assert_true "T68: architect-reviewer flags ADR contradiction as HIGH" \
+  "grep -qE 'silent contradiction is \\*\\*HIGH\\*\\*|contradicts an existing Accepted ADR' $AR"
+
+# Code-reviewer ADR awareness
+CR=".claude/agents/code-reviewer.md"
+assert_true "T68: code-reviewer Required reading lists documentation-and-adrs" \
+  "grep -q '.claude/skills/documentation-and-adrs/SKILL.md' $CR"
+assert_true "T68: code-reviewer compliance audit has 'ADR audit' bullet" \
+  "grep -q 'ADR audit' $CR"
+assert_true "T68: code-reviewer flags missing ADR for structural change as HIGH" \
+  "grep -qE 'Missing ADR for a structural change = \\*\\*HIGH\\*\\*' $CR"
+assert_true "T68: code-reviewer flags ADR contradiction as HIGH" \
+  "grep -qE 'contradicts an existing Accepted ADR' $CR"
+
+# Adoption checklists in 2 P3.5 rules add the ADR step
+EUF=".claude/skills/nestjs-best-practices/rules/error-use-exception-filters.md"
+SUG=".claude/skills/nestjs-best-practices/rules/security-use-guards.md"
+assert_true "T68: error-use-exception-filters adoption step writes ADR" \
+  "grep -qE 'docs/decisions/ADR-NNN-global-exception-filter|Write \\\`docs/decisions/' $EUF"
+assert_true "T68: error-use-exception-filters marks ADR-003 superseded" \
+  "grep -q 'ADR-003.*Superseded by ADR-NNN' $EUF"
+assert_true "T68: security-use-guards adoption step writes ADR" \
+  "grep -qE 'docs/decisions/ADR-NNN-app-guard|Write \\\`docs/decisions/' $SUG"
+assert_true "T68: security-use-guards adoption step references documentation-and-adrs" \
+  "grep -q 'documentation-and-adrs' $SUG"
+
+# decision-rules § 6 ADR coupling
+DR=".claude/skills/decision-rules/SKILL.md"
+assert_true "T68: decision-rules § 6 has 'ADR coupling' bullet" \
+  "grep -q 'ADR coupling' $DR"
+assert_true "T68: decision-rules § 6 names 'write ADR-NNN'"             "grep -qE 'write ADR-NNN|ADR-NNN documenting the rationale' $DR"
+
+# plan-mode introduces structural-decision ADR step
+PM=".claude/skills/plan-mode/SKILL.md"
+assert_true "T68: plan-mode has 'When the plan introduces a structural decision' header" \
+  "grep -q 'When the plan introduces a structural decision' $PM"
+assert_true "T68: plan-mode tells engineer to write ADR step"           "grep -qE 'docs/decisions/ADR-NNN|write the corresponding ADR' $PM"
+assert_true "T68: plan-mode references documentation-and-adrs skill"    "grep -q 'documentation-and-adrs' $PM"
+
+# tdd-workflow waiver list now includes ADR-only
+TW=".claude/skills/tdd-workflow/SKILL.md"
+assert_true "T68: tdd-workflow waiver list says 'four valid' (was three)" \
+  "grep -q 'only four valid' $TW"
+assert_true "T68: tdd-workflow lists 'ADR-only change' waiver"          "grep -q 'TDD waived — ADR-only change' $TW"
+
+# CLAUDE.md P3.1 valid-reasons list updated
+assert_true "T68: CLAUDE.md P3.1 valid-reasons list includes 'ADR-only change'" \
+  "grep -q '\`ADR-only change\`' CLAUDE.md"
 
 echo
 echo "==========================="

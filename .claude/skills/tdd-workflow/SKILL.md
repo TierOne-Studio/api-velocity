@@ -92,7 +92,7 @@ A test that meets all 10 is genuinely useful. A test that fails any is a *liabil
 
 When `qa-validator` reviews your tests, this is the rubric it will apply.
 
-## Waiver phrases (the only three valid)
+## Waiver phrases (the only four valid)
 
 If the change genuinely doesn't require a test, include exactly one of these in the response:
 
@@ -100,6 +100,9 @@ If the change genuinely doesn't require a test, include exactly one of these in 
 TDD waived — non-code change.
 TDD waived — type-only.
 TDD waived — config change with no behavior impact.
+TDD waived — ADR-only change.
 ```
+
+The `ADR-only change` waiver applies when the PR is exclusively `docs/decisions/ADR-NNN-*.md` content (rationale, alternatives, consequences) with no executable-code change. The moment the same PR also touches code, the waiver does not apply — the code part needs tests like any other change.
 
 Forbidden non-waivers: "small change", "obvious fix", "trivial", "just a refactor".

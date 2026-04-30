@@ -60,6 +60,7 @@ CLAUDE.md carries the highest-impact decisions as one-liners. This skill carries
 **Rationale:** Skills express the destination; CLAUDE.md sets the boundary conditions for what counts as in-scope for the current change. Smuggling structural refactors into unrelated work is itself a scope-discipline violation. Within CLAUDE.md, lower P-number wins.
 **Test for "structural":** would applying this best practice change code outside the current PR's scope? If yes → repo wins, recommend future task. If no → skill wins, apply now.
 **Cross-reference:** This rule is the skill-side mirror of CLAUDE.md P3.5. Both must read the same way; a contradiction here is a docs bug — flag it via `lessons-curator`.
+**ADR coupling:** When the structural Approach is eventually adopted (either deferred to a Future task and then implemented, or chosen explicitly in the current PR), the adoption MUST include writing an ADR in `docs/decisions/ADR-NNN-<title>.md`. The Future-task entry in Optional Improvements should name the ADR explicitly: `Future task — adopt <practice> per <skill> § <rule>; write ADR-NNN documenting the rationale.` See `documentation-and-adrs`.
 
 ### 7. Skill description matches but feels wrong
 

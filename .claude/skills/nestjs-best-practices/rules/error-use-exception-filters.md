@@ -220,5 +220,6 @@ export class AppModule {}
 3. Add regression tests covering: 404 (NotFoundException), 403 (ForbiddenException), 400 (BadRequestException), 500 (uncaught Error).
 4. Verify existing test suite still passes — error response shapes may have changed.
 5. Update `CLAUDE.md` P2 + `repo-conventions` § Error handling to reflect the new convention.
+6. **Write `docs/decisions/ADR-NNN-global-exception-filter-adoption.md`** documenting context (what changed since `ADR-003`), decision, alternatives, consequences. Mark `ADR-003` as `Status: Superseded by ADR-NNN`. Update the index in `docs/decisions/README.md`. See `documentation-and-adrs`.
 
 Reference: [NestJS Exception Filters](https://docs.nestjs.com/exception-filters)

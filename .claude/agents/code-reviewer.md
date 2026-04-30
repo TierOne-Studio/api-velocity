@@ -28,6 +28,7 @@ Before evaluating any code, MUST Read:
 - `.claude/skills/async-error-handling/SKILL.md` — Promise composition, error propagation, AbortSignal, no-retries, catch-at-the-boundary.
 - `.claude/skills/cyclomatic-complexity/SKILL.md` — early returns, guard clauses, no-`else`-after-`return`, the rough metric.
 - `.claude/skills/nestjs-best-practices/SKILL.md` — 40-rule index. The `di-*`, `error-*`, `security-*`, `perf-*`, `api-*` rules cross-validate the design review. Read individual `rules/*.md` files when a specific rule is relevant.
+- `.claude/skills/documentation-and-adrs/SKILL.md` — when the diff introduces a structural change (new persistence layer, new auth/cache/queue infrastructure, app-wide bootstrap modification, new public-API contract). Verify a corresponding `docs/decisions/ADR-NNN-*.md` file is part of the same PR. Run `ls docs/decisions/` so you know which ADRs already exist and can flag a change that contradicts an Accepted ADR without superseding it.
 
 **Skill-vs-repo conflict resolution (per `CLAUDE.md` P3.5):** when `nestjs-best-practices` recommends a pattern that conflicts with `CLAUDE.md` or `repo-conventions`, **default to the skill** unless applying it would require structural refactor (new dep, cross-cutting infra the repo lacks, app-wide bootstrap changes, or refactoring unrelated modules). For structural cases, **the repo wins for this PR** — but flag it as an Optional Improvement: "Future task — adopt `<practice>` per `<skill>` § `<rule>`. Current PR follows existing repo convention to keep scope minimal." If you find the change implements a generic rule that would have been a structural refactor and the agent didn't flag it as a future task, that's a MED finding.
 
@@ -113,6 +114,7 @@ The implementation must comply with `CLAUDE.md`'s output contract — not just b
 - **Tests-first ordering (P8 items 5–6):** does the response present tests BEFORE implementation? Reversed order = LOW (the work itself is fine, the deliverable is sloppy).
 - **High-risk restate (P3.3):** if change touches auth/sessions/RBAC/payments/secrets/PII/public API/migrations, was the requirements restate done before the code? Missing = HIGH.
 - **Forbidden waiver phrases (P3.2):** does the response contain "small change", "obvious fix", "trivial", "just a refactor"? Each occurrence = MED.
+- **ADR audit (per `documentation-and-adrs`):** if the diff introduces a structural change — a new persistence layer, new auth library / global guard, app-wide bootstrap modification, new public-API contract, or anything cited from `CLAUDE.md`/`repo-conventions`/skills — there MUST be a corresponding `docs/decisions/ADR-NNN-*.md` file in the same PR. Missing ADR for a structural change = **HIGH**. Additionally, if the diff contradicts an existing Accepted ADR (`ls docs/decisions/` to enumerate) without a superseding ADR, that is **HIGH** regardless of code quality — the rationale on file is now wrong.
 
 ### 6. Verdict
 

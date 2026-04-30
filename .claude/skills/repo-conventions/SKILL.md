@@ -7,6 +7,20 @@ description: Use ALWAYS when implementing, reviewing, or refactoring executable 
 
 The conventions a senior engineer joining this codebase needs in their head. Pair this skill with `tdd-workflow` and `design-review` on any code change. Diverge from these only with explicit reason and explicit user approval.
 
+## ADR-backed conventions (the *why* lives in `docs/decisions/`)
+
+Several conventions in this skill are load-bearing — changing them requires a structural decision, not a routine commit. Those conventions cite ADRs rather than restate rationale inline:
+
+| Convention | ADR | Where in this skill |
+|---|---|---|
+| TypeORM-first persistence (raw-SQL fallback) | [ADR-001](../../../docs/decisions/ADR-001-typeorm-first-persistence.md) | § 1, § 4 |
+| RBAC `scope=all` returns 400 (not 403) | [ADR-002](../../../docs/decisions/ADR-002-rbac-scope-all-returns-400.md) | § 3 |
+| No global exception filter — throw NestJS built-ins | [ADR-003](../../../docs/decisions/ADR-003-no-global-exception-filter.md) | § 6 |
+| NestJS Logger (no pino, no structured logging, no request-id) | [ADR-004](../../../docs/decisions/ADR-004-nestjs-logger-no-pino.md) | § 7 |
+| No `class-validator` / no global `ValidationPipe` | [ADR-005](../../../docs/decisions/ADR-005-no-class-validator-no-validation-pipe.md) | § 8 |
+
+If you're about to add a paragraph explaining *why* one of these conventions exists, stop — that paragraph belongs in the ADR. This skill captures *how to follow the convention today*; the ADR captures *why this is the rule and what was rejected*. See `documentation-and-adrs` for the full discipline.
+
 ## 1. Stack at a glance
 
 - **Framework:** NestJS 11 (see `package.json` for exact versions)

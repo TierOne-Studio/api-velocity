@@ -94,7 +94,7 @@ TDD waived — <reason>.
 design-review waived — <reason>.
 ```
 
-The only valid `<reason>` values are: `non-code change`, `type-only`, `config change with no behavior impact`.
+The only valid `<reason>` values are: `non-code change`, `type-only`, `config change with no behavior impact`, `ADR-only change` (PR is exclusively `docs/decisions/ADR-NNN-*.md` content with no executable code).
 
 ### P3.2 Forbidden non-waiver phrases
 
@@ -323,6 +323,7 @@ Situation → skill lookup. The model loads a skill on description match; this t
 | Advanced TypeScript types — generics, conditional types, mapped types, template literals | `typescript-advanced-types` |
 | Optimizing measured hot paths — tight loops, large datasets, high-frequency events | `js-performance-patterns` |
 | Cleanup pass on recently modified code (clarity, consistency, no behavior change) | `code-simplifier` |
+| Proposing or superseding a load-bearing engineering decision; about to restate an existing rationale inline | `documentation-and-adrs` (cite ADR-NNN; don't restate the why) |
 
 ## Workflow chains
 
@@ -340,5 +341,6 @@ Common task types and the skill chains they invoke. The Skill Pointers table is 
 | **Async / external-integration code** | `async-error-handling` → `failure-mode-analysis` (network/partial categories) → `tdd-workflow` → `repo-conventions` → `design-review` → **code-reviewer** |
 | **NestJS module / provider design** | `nestjs-best-practices` (relevant `arch-*`/`di-*` rules) → `nestjs-patterns` (route to specific pattern file in `patterns/`) → `repo-conventions` → `design-review` → **architect-reviewer** + **code-reviewer** |
 | **Large code review** (>4 files OR >500 LOC) | All review subagents (`architect-reviewer`, `code-reviewer`, `qa-validator`, `security-reviewer`) automatically apply RLM in their step 1. They report a **Working Set** in the verdict — read that section first to see what they actually evaluated. |
+| **Structural decision** (new persistence layer, new auth library, new public-API contract — anything cited from CLAUDE.md or skills) | `plan-mode` (with P3.3 restate) → `documentation-and-adrs` (write the ADR alongside the implementation) → `tdd-workflow` → `repo-conventions` → `design-review` → **architect-reviewer** + **code-reviewer** + **qa-validator** |
 
 After a user correction, see [P7 — Reflexive Lesson Capture](#p7--reflexive-lesson-capture-after-corrections).

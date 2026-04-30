@@ -147,5 +147,6 @@ export class AppModule {}
 3. Add a regression test asserting: a route with no decorator AND no `@Public()` returns 401 / 403 (i.e., the global guard is actually firing).
 4. Update `CLAUDE.md` P2 + `repo-conventions` § "RBAC scope contract" to reflect the new convention.
 5. The PR description must call out the structural change (this is no longer "wire a new route" — it's "change app-wide guard semantics").
+6. **Write `docs/decisions/ADR-NNN-app-guard-global-registration.md`** documenting context (what changed since the route-level convention), decision, alternatives, consequences. If a prior ADR captured the route-level decision, mark it as `Status: Superseded by ADR-NNN`. Update the index in `docs/decisions/README.md`. See `documentation-and-adrs`.
 
 Reference: [NestJS Guards](https://docs.nestjs.com/guards)
