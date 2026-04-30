@@ -67,12 +67,12 @@ assert_true "T1: .claude/hooks/ is removed" "! test -d .claude/hooks"
 assert_true "T1: .claude/.state/ is removed" "! test -d .claude/.state"
 
 echo
-echo "=== T13: CLAUDE.md size <= 3850 words (priority-structured mode — index + P0..P9 + MUST/SHOULD/MAY + inline rubric + P3.5 skill-vs-repo conflict resolution) ==="
+echo "=== T13: CLAUDE.md size <= 3350 words (priority-structured mode — index + P0..P9 + MUST/SHOULD/MAY + inline rubric + P3.5 skill-vs-repo conflict resolution) ==="
 WORDS=$(wc -w < CLAUDE.md | tr -d '[:space:]')
-if [ "$WORDS" -le 3850 ]; then
-  echo "PASS: T13 (CLAUDE.md is $WORDS words; gate is 3850 to accommodate inline confidence rubric, high-risk restate, and P3.5 conflict-resolution rule)"; PASS=$((PASS+1))
+if [ "$WORDS" -le 3350 ]; then
+  echo "PASS: T13 (CLAUDE.md is $WORDS words; gate is 3350 to accommodate inline confidence rubric, high-risk restate, and P3.5 conflict-resolution rule)"; PASS=$((PASS+1))
 else
-  echo "FAIL: T13 (CLAUDE.md is $WORDS words, expected <= 3850)"
+  echo "FAIL: T13 (CLAUDE.md is $WORDS words, expected <= 3350)"
   FAIL=$((FAIL+1)); FAILED_TESTS="$FAILED_TESTS T13"
 fi
 
@@ -251,8 +251,10 @@ assert_true "T36: 'Test quality rubric' in qa-validator" "grep -q 'Test quality 
 echo
 echo "=== T37: CLAUDE.md has repo-core conventions + decision rules + pushback templates ==="
 assert_true "T37: repo-core conventions section"    "grep -qi 'repo-core conventions' CLAUDE.md"
-assert_true "T37: '@RequirePermissions' named"       "grep -q '@RequirePermissions' CLAUDE.md"
-assert_true "T37: 'organization_id' query rule"     "grep -q 'organization_id' CLAUDE.md"
+assert_true "T37: '@RequirePermissions' lives in repo-conventions (per T74 layered-router; CLAUDE.md no longer cites code symbols)" \
+  "grep -q '@RequirePermissions' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T37: 'organization_id' query rule lives in repo-conventions" \
+  "grep -q 'organization_id' .claude/skills/repo-conventions/SKILL.md"
 assert_true "T37: decision rules section"            "grep -qi 'decision rules' CLAUDE.md"
 assert_true "T37: pushback templates section"        "grep -qi 'pushback' CLAUDE.md"
 assert_true "T37: priority order index"              "grep -qi 'priority order' CLAUDE.md"
@@ -490,8 +492,10 @@ echo "=== T57: PR-review accuracy corrections (round 2-3 feedback) ==="
 # CLAUDE.md P2 reflects hybrid persistence and softens MUST -> PREFER framing.
 assert_true "T57: CLAUDE.md P2 establishes TypeORM-first for new modules" "grep -qiE 'prefer TypeORM|TypeORM.first|For new modules.*TypeORM' CLAUDE.md"
 assert_true "T57: CLAUDE.md P2 names raw SQL as fallback with stated justification" "grep -qiE 'fallback|with stated justification|with explicit justification|only with' CLAUDE.md"
-assert_true "T57: CLAUDE.md P2 uses PREFER for NestJS exceptions" "grep -qE 'PREFER NestJS.*exception|PREFER NestJS built-in exceptions' CLAUDE.md"
-assert_true "T57: CLAUDE.md P2 uses PREFER for Logger"            "grep -qE 'PREFER NestJS built-in .Logger|PREFER.*Logger' CLAUDE.md"
+assert_true "T57: NestJS built-in exceptions convention lives in repo-conventions (per T74 layered-router)" \
+  "grep -qE 'NestJS built-in exceptions|NotFoundException' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T57: NestJS Logger convention lives in repo-conventions (per T74 layered-router)" \
+  "grep -qE 'NestJS .Logger|new Logger\\(' .claude/skills/repo-conventions/SKILL.md"
 
 # repo-conventions reflects reality.
 assert_true "T57: repo-conventions Stack establishes TypeORM-first"          "grep -qiE 'TypeORM-first|Default for new modules: TypeORM' .claude/skills/repo-conventions/SKILL.md"
@@ -630,7 +634,7 @@ echo
 echo "=== T62: skill-vs-repo conflict resolution rule (P3.5) wired in main + subagents + non-dep rule ==="
 # CLAUDE.md P3.5 present
 assert_true "T62: CLAUDE.md P3.5 section header present"               "grep -q 'P3.5 Skill-vs-repo conflict resolution' CLAUDE.md"
-assert_true "T62: P3.5 names default-to-skill"                         "grep -qE 'Default: follow the skill recommendation' CLAUDE.md"
+assert_true "T62: P3.5 names default-to-skill"                         "grep -qE 'Default:.*follow the skill recommendation|follow the skill recommendation' CLAUDE.md"
 assert_true "T62: P3.5 names structural-refactor exception"            "grep -qE 'structural refactor|cross-cutting infra the repo lacks' CLAUDE.md"
 assert_true "T62: P3.5 instructs to recommend a future task"           "grep -qE 'Future task|recommend a future task|recommend.*future task' CLAUDE.md"
 assert_true "T62: P3.5 lists examples of NOT structural"               "grep -qiE 'What is NOT structural|best practice wins, no exception' CLAUDE.md"
@@ -1124,6 +1128,190 @@ assert_true "T71: nestjs-best-practices prelude has Repo-specific cross-referenc
 assert_true "T71: prelude maps arch-feature-modules to ADR-009"               "grep -qE 'arch-feature-modules.*ADR-009|ADR-009.*arch-feature-modules' $NBP"
 assert_true "T71: prelude maps arch-use-repository-pattern to ADR-009"        "grep -qE 'arch-use-repository-pattern.*ADR-009|ADR-009.*arch-use-repository' $NBP"
 assert_true "T71: prelude states binding form wins on conflict"               "grep -qE 'binding form wins' $NBP"
+
+echo
+echo "=== T72: CLAUDE.md P2 + P3.5 delegation cleanup (no info loss) ==="
+
+# P2 trimmed but load-bearing claims still present
+assert_true "T72: P2 retains header"                               "grep -qE '^## P2 — REPO-CORE CONVENTIONS' CLAUDE.md"
+assert_true "T72: P2 cites repo-conventions skill"                 "awk '/^## P2/,/^---/' CLAUDE.md | grep -q 'repo-conventions'"
+# Note: post-T74 layered-router principle, P2 does NOT enumerate ADRs or HTTP codes — those live in repo-conventions.
+# See T74 for the inverse assertion (CLAUDE.md MUST NOT cite ADR-NNN, paths, or code symbols).
+assert_true "T72: ADR-backed conventions table in repo-conventions still indexes the 6 convention ADRs (canonical source)" \
+  "grep -q 'ADR-001' .claude/skills/repo-conventions/SKILL.md && grep -q 'ADR-002' .claude/skills/repo-conventions/SKILL.md && grep -q 'ADR-003' .claude/skills/repo-conventions/SKILL.md && grep -q 'ADR-004' .claude/skills/repo-conventions/SKILL.md && grep -q 'ADR-005' .claude/skills/repo-conventions/SKILL.md && grep -q 'ADR-009' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T72: RBAC scope=all 400 contract lives in repo-conventions § 3" \
+  "grep -qE '400' .claude/skills/repo-conventions/SKILL.md"
+assert_true "T72: org-scoping IDOR rule lives in repo-conventions" \
+  "grep -qiE 'organization_id|IDOR' .claude/skills/repo-conventions/SKILL.md"
+
+# P2 actually got shorter (sanity check)
+P2_BLOCK_LINES=$(awk '/^## P2 /{flag=1;next} /^## P3 /{flag=0} flag' CLAUDE.md | wc -l)
+if [ "$P2_BLOCK_LINES" -le 20 ]; then
+  echo "PASS: T72 P2 block trimmed to ≤20 lines (current: $P2_BLOCK_LINES)"; PASS=$((PASS+1))
+else
+  echo "FAIL: T72 P2 block too long ($P2_BLOCK_LINES lines, expected ≤20)"
+  FAIL=$((FAIL+1)); FAILED_TESTS="$FAILED_TESTS T72-P2-size"
+fi
+
+# P3.5 trimmed but load-bearing claims still present
+assert_true "T72: P3.5 keeps 'follow the skill' default"           "awk '/^### P3.5/,/^## P4/' CLAUDE.md | grep -q 'follow the skill recommendation'"
+assert_true "T72: P3.5 keeps structural-refactor exception"        "awk '/^### P3.5/,/^## P4/' CLAUDE.md | grep -qE 'structural refactor'"
+assert_true "T72: P3.5 keeps 'The test' heuristic"                 "awk '/^### P3.5/,/^## P4/' CLAUDE.md | grep -q 'The test:'"
+assert_true "T72: P3.5 cross-references decision-rules § 6"        "awk '/^### P3.5/,/^## P4/' CLAUDE.md | grep -qE 'decision-rules.*6|6.*decision-rules'"
+assert_true "T72: P3.5 names 'docs bug' contradiction handling"    "awk '/^### P3.5/,/^## P4/' CLAUDE.md | grep -q 'docs bug'"
+
+# P3.5 actually got shorter
+P35_BLOCK_LINES=$(awk '/^### P3.5/{flag=1;next} /^## P4/{flag=0} flag' CLAUDE.md | wc -l)
+if [ "$P35_BLOCK_LINES" -le 16 ]; then
+  echo "PASS: T72 P3.5 block trimmed to ≤16 lines (current: $P35_BLOCK_LINES)"; PASS=$((PASS+1))
+else
+  echo "FAIL: T72 P3.5 block too long ($P35_BLOCK_LINES lines, expected ≤16)"
+  FAIL=$((FAIL+1)); FAILED_TESTS="$FAILED_TESTS T72-P3.5-size"
+fi
+
+# Moved content lives in decision-rules § 6 (no info loss)
+DR=".claude/skills/decision-rules/SKILL.md"
+assert_true "T72: decision-rules § 6 has 'What is NOT structural' examples" \
+  "grep -q 'What is NOT structural' $DR"
+assert_true "T72: § 6 'NOT structural' includes NotFoundException example" \
+  "awk '/^### 6\\./,/^### 7\\./' $DR | grep -q 'NotFoundException'"
+assert_true "T72: § 6 'NOT structural' includes db.transaction example" \
+  "awk '/^### 6\\./,/^### 7\\./' $DR | grep -q 'db.transaction'"
+assert_true "T72: § 6 'NOT structural' includes Guard/Pipe/Interceptor example" \
+  "awk '/^### 6\\./,/^### 7\\./' $DR | grep -qE 'Guard.*Pipe.*Interceptor'"
+assert_true "T72: § 6 'NOT structural' includes 4-layer module example (ADR-009)" \
+  "awk '/^### 6\\./,/^### 7\\./' $DR | grep -qE 'ADR-009.*4-layer|4-layer.*ADR-009'"
+
+# Moved content (RBAC scope contract, error/logger conventions) still in repo-conventions
+RC=".claude/skills/repo-conventions/SKILL.md"
+assert_true "T72: repo-conventions § 3 still has RBAC scope contract" "grep -q '## 3. RBAC scope contract' $RC"
+assert_true "T72: repo-conventions § 6 still has Error handling"      "grep -q '## 6. Error handling' $RC"
+assert_true "T72: repo-conventions § 7 still has Logger"              "grep -q '## 7. Logger' $RC"
+
+# Word budget ratchets back down
+assert_true "T72: T13 budget ratcheted back to 3350 (post-trim)"      "grep -q '<= 3350 words' .claude/tests/run-acceptance.sh"
+
+echo
+echo "=== T73: CLAUDE.md prose-tightening (A+B+C+D) preserves load-bearing claims ==="
+
+# A — P3.4 mandatory matrix retains all 7 skills + the override-the-heuristic rule
+P34_BLOCK=$(awk '/^### P3.4/,/^### P3.5/' CLAUDE.md)
+assert_true "T73-A: P3.4 retains 'override description-trigger' framing" \
+  "echo \"\$P34_BLOCK\" | grep -qE 'override description-trigger|override the description-trigger|override description'"
+assert_true "T73-A: P3.4 retains tdd-workflow row"            "echo \"\$P34_BLOCK\" | grep -q '\\\`tdd-workflow\\\`'"
+assert_true "T73-A: P3.4 retains failure-mode-analysis row"   "echo \"\$P34_BLOCK\" | grep -q '\\\`failure-mode-analysis\\\`'"
+assert_true "T73-A: P3.4 retains repo-conventions row"        "echo \"\$P34_BLOCK\" | grep -q '\\\`repo-conventions\\\`'"
+assert_true "T73-A: P3.4 retains design-review row"           "echo \"\$P34_BLOCK\" | grep -q '\\\`design-review\\\`'"
+assert_true "T73-A: P3.4 retains plan-mode row"               "echo \"\$P34_BLOCK\" | grep -q '\\\`plan-mode\\\`'"
+assert_true "T73-A: P3.4 retains async-error-handling row"    "echo \"\$P34_BLOCK\" | grep -q '\\\`async-error-handling\\\`'"
+assert_true "T73-A: P3.4 retains database-transactions row"   "echo \"\$P34_BLOCK\" | grep -q '\\\`database-transactions\\\`'"
+assert_true "T73-A: P3.4 table is 2-column (When MUST fire only, no 'What goes wrong')" \
+  "echo \"\$P34_BLOCK\" | grep -qE '^\\| Skill \\| When MUST fire \\|\$' && ! echo \"\$P34_BLOCK\" | grep -qE 'What goes wrong if it doesn'"
+
+# B — P5 retains all load-bearing always-on disciplines
+P5_BLOCK=$(awk '/^## P5/,/^## P6/' CLAUDE.md)
+assert_true "T73-B: P5 retains memory-consultation rule"      "echo \"\$P5_BLOCK\" | grep -q 'Consult feedback memories first'"
+assert_true "T73-B: P5 retains scope discipline"              "echo \"\$P5_BLOCK\" | grep -q 'Scope discipline'"
+assert_true "T73-B: P5 retains surgical diffs"                "echo \"\$P5_BLOCK\" | grep -q 'Surgical diffs'"
+assert_true "T73-B: P5 retains root-cause focus + no retries (merged)" \
+  "echo \"\$P5_BLOCK\" | grep -qE 'Root-cause focus.*MUST fail fast|fail fast with actionable'"
+assert_true "T73-B: P5 retains stop-on-confusion + proceed-when-clear (merged)" \
+  "echo \"\$P5_BLOCK\" | grep -q 'Stop on confusion / Proceed when clear'"
+assert_true "T73-B: P5 cross-references pushback-templates" \
+  "echo \"\$P5_BLOCK\" | grep -q 'pushback-templates'"
+assert_true "T73-B: P5 cross-references plan-mode for re-plan trigger" \
+  "echo \"\$P5_BLOCK\" | grep -qE 'plan-mode.*Re-plan|re-plan'"
+# Old standalone bullets removed
+assert_true "T73-B: P5 no longer has standalone 'No retries' bullet" \
+  "! echo \"\$P5_BLOCK\" | grep -qE '^- \\*\\*No retries\\.'"
+assert_true "T73-B: P5 no longer has standalone 'Pushback duty' bullet" \
+  "! echo \"\$P5_BLOCK\" | grep -qE '^- \\*\\*Pushback duty\\.'"
+assert_true "T73-B: P5 no longer has standalone 'Plan mode by default' bullet" \
+  "! echo \"\$P5_BLOCK\" | grep -qE '^- \\*\\*Plan mode by default\\*\\*'"
+assert_true "T73-B: P5 no longer has standalone 'Re-plan when reality changes' bullet" \
+  "! echo \"\$P5_BLOCK\" | grep -qE '^- \\*\\*Re-plan when reality changes\\*\\*'"
+
+# C — P0.3 retains the 4-step protocol structure
+P03_BLOCK=$(awk '/^### P0.3/,/^---/' CLAUDE.md)
+assert_true "T73-C: P0.3 retains step 1 (output exact command)"   "echo \"\$P03_BLOCK\" | grep -qE 'output the exact command'"
+assert_true "T73-C: P0.3 retains step 2 (impact summary)"          "echo \"\$P03_BLOCK\" | grep -qE 'impact summary'"
+assert_true "T73-C: P0.3 retains git-workflow + db-write-protocol cites" \
+  "echo \"\$P03_BLOCK\" | grep -q 'git-workflow' && echo \"\$P03_BLOCK\" | grep -q 'db-write-protocol'"
+assert_true "T73-C: P0.3 retains step 3 (Awaiting approval line)"  "echo \"\$P03_BLOCK\" | grep -q 'Awaiting approval'"
+assert_true "T73-C: P0.3 retains 'MUST stop' rule"                 "echo \"\$P03_BLOCK\" | grep -qE 'MUST stop|MUST NOT execute until'"
+
+# D — P8 item 11 is one-line
+assert_true "T73-D: P8 item 11 retains 'Skills consulted:' label" "grep -qE '^11\\.' CLAUDE.md && grep -qE '^11\\..*Skills consulted' CLAUDE.md"
+assert_true "T73-D: P8 item 11 retains alphabetical-list rule"    "grep -qE '^11\\..*alphabetical' CLAUDE.md"
+assert_true "T73-D: P8 item 11 retains self-attestation rule"     "grep -qiE '^11\\..*(self-attestation|do NOT list skills you only saw)' CLAUDE.md"
+
+# Word budget ratchets back down
+assert_true "T73: T13 budget ratcheted back to 3350 (post-A+B+C+D)" "grep -q '<= 3350 words' .claude/tests/run-acceptance.sh"
+
+echo
+echo "=== T74: Layered-router principle (CLAUDE.md is pure routing) ==="
+
+# CLAUDE.md does NOT cite specific ADR numbers
+assert_true "T74: CLAUDE.md does NOT enumerate ADR-NNN" \
+  "! grep -qE 'ADR-[0-9]{3}' CLAUDE.md"
+
+# CLAUDE.md does NOT contain docs/decisions/ paths
+assert_true "T74: CLAUDE.md does NOT contain docs/decisions/ paths" \
+  "! grep -q 'docs/decisions/' CLAUDE.md"
+
+# CLAUDE.md does NOT contain src/<dir>/ source paths (skip the example placeholder src/foo.ts)
+assert_true "T74: CLAUDE.md does NOT contain real src/<module>/ paths" \
+  "! grep -qE 'src/(modules|shared|admin|chat|projects|airweave|database)/' CLAUDE.md"
+
+# CLAUDE.md does NOT cite typical code symbols (decorators / class names that should live in skills)
+assert_true "T74: CLAUDE.md does NOT cite @RequirePermissions decorator" \
+  "! grep -q '@RequirePermissions' CLAUDE.md"
+assert_true "T74: CLAUDE.md does NOT cite PermissionsGuard class"        "! grep -q 'PermissionsGuard' CLAUDE.md"
+assert_true "T74: CLAUDE.md does NOT cite resolveOrgScope function"      "! grep -q 'resolveOrgScope' CLAUDE.md"
+assert_true "T74: CLAUDE.md does NOT cite @InjectRepository decorator"   "! grep -q '@InjectRepository' CLAUDE.md"
+assert_true "T74: CLAUDE.md does NOT cite NestJS exception class names"  "! grep -qE 'NotFoundException|ForbiddenException|BadRequestException|HttpException' CLAUDE.md"
+
+# documentation-and-adrs codifies the principle
+DA=".claude/skills/documentation-and-adrs/SKILL.md"
+assert_true "T74: documentation-and-adrs has 'Layered-router principle' section" \
+  "grep -q 'Layered-router principle' $DA"
+assert_true "T74: principle states 'CLAUDE.md is the always-loaded router'" \
+  "grep -qiE 'CLAUDE.md is the always-loaded router|CLAUDE.md is.*pure routing|CLAUDE.md is NEVER updated' $DA"
+assert_true "T74: principle enumerates allowed CLAUDE.md references"     "grep -q 'CLAUDE.md MAY reference' $DA"
+assert_true "T74: principle enumerates forbidden CLAUDE.md references"   "grep -q 'CLAUDE.md MUST NOT reference' $DA"
+assert_true "T74: principle names the single-source-of-truth flow"       "grep -q 'single-source-of-truth flow' $DA"
+assert_true "T74: principle names enforcement (T74 + meta-skill-hygiene + reviewers)" \
+  "grep -qE 'T74.*meta-skill-hygiene|T74' $DA && grep -q 'meta-skill-hygiene' $DA"
+
+# meta-skill-hygiene has audit check 7
+MSH=".claude/skills/meta-skill-hygiene/SKILL.md"
+assert_true "T74: meta-skill-hygiene has '7. CLAUDE.md cross-coupling' check" \
+  "grep -q '7. CLAUDE.md cross-coupling' $MSH"
+assert_true "T74: audit names ADR-NNN regex check"                       "grep -qE 'ADR-\\[0-9\\]\\{3\\}' $MSH"
+assert_true "T74: audit names file-path scan"                            "grep -q 'file paths' $MSH"
+assert_true "T74: audit names code-symbol scan"                          "grep -q 'code symbols' $MSH"
+
+# code-reviewer flags CLAUDE.md artifact citations
+CR=".claude/agents/code-reviewer.md"
+assert_true "T74: code-reviewer has 'CLAUDE.md layered-router audit'" \
+  "grep -q 'CLAUDE.md layered-router audit' $CR"
+assert_true "T74: code-reviewer flags CLAUDE.md ADR-NNN citation as MED" \
+  "grep -qE 'ADR-\\[0-9\\]\\{3\\}.*MED|Each occurrence = \\*\\*MED' $CR"
+
+# architect-reviewer flags plan steps that would add artifact citations to CLAUDE.md
+AR=".claude/agents/architect-reviewer.md"
+assert_true "T74: architect-reviewer has 'CLAUDE.md layered-router audit'" \
+  "grep -q 'CLAUDE.md layered-router audit' $AR"
+
+# repo-conventions description broadened to cover non-code architecture discussions
+RC=".claude/skills/repo-conventions/SKILL.md"
+assert_true "T74: repo-conventions description covers architecture discussions" \
+  "grep -m1 '^description:' $RC | grep -qiE 'architecture|even on non-code turns'"
+assert_true "T74: repo-conventions description acknowledges CLAUDE.md no longer enumerates ADRs" \
+  "grep -m1 '^description:' $RC | grep -qE 'CLAUDE.md no longer enumerates|primes the model'"
+
+# T13 budget ratcheted to 3350 (post-T74)
+assert_true "T74: T13 budget ratcheted to 3350"                         "grep -q '<= 3350 words' .claude/tests/run-acceptance.sh"
 
 echo
 echo "==========================="

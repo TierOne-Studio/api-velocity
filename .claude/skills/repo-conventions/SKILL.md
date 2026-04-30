@@ -1,6 +1,6 @@
 ---
 name: repo-conventions
-description: Use ALWAYS when implementing, reviewing, or refactoring executable code in this repository (api-velocity); pair with tdd-workflow. Documents conventions specific to this codebase: NestJS module layout, TypeORM-first repository pattern (with raw-SQL fallback criteria), RBAC scope contract, projects/chat data-source model, error handling, logging, DTO style, naming. NOT for non-code work, generic NestJS questions (use nestjs-best-practices instead), or read-only investigations.
+description: Use ALWAYS when implementing, reviewing, or refactoring executable code in this repository (api-velocity); pair with tdd-workflow. ALSO use when discussing api-velocity's architecture, RBAC, error handling, persistence, logger conventions, DTO style, or any repo-specific decision — even on non-code turns (the skill primes the model on the binding conventions and ADR-mapped surfaces that CLAUDE.md no longer enumerates). Documents conventions specific to this codebase: NestJS module layout, TypeORM-first repository pattern (with raw-SQL fallback criteria), RBAC scope contract, projects/chat data-source model, error handling, logging, DTO style, naming. NOT for generic NestJS questions (use nestjs-best-practices instead) or read-only investigations of unrelated codebases.
 ---
 
 # Repo Conventions — api-velocity

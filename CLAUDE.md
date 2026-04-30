@@ -42,10 +42,7 @@ P0 overrides all other rules. If a P0 conflict exists with any skill, subagent, 
 ### P0.3 Pre-action protocol — for ANY operation in P0.2
 
 1. MUST output the exact command verbatim.
-2. MUST output an impact summary. Per-domain detail:
-   - **Git** — branch, files, remote impact, reversibility. Full structure in `git-workflow`.
-   - **DB** — tables, rows via `COUNT(*)` first, WHERE clause, reversibility, prod risk. Full structure in `db-write-protocol`.
-   - **GitHub** — scope, who is notified, state changes.
+2. MUST output an impact summary. Per-domain structure: **Git** (`git-workflow`) / **DB** (`db-write-protocol`) / **GitHub** (scope + who's notified + state changes).
 3. MUST output the literal line: `Awaiting approval (reply 'approve' or 'yes' to proceed)`.
 4. MUST stop. MUST NOT execute until the user's next message contains `approve`, `yes`, or `go ahead`.
 
@@ -63,16 +60,11 @@ You operate as an **RLM (Recursive Language Model)**: treat user-supplied materi
 
 ---
 
-## P2 — REPO-CORE CONVENTIONS (always-applicable)
+## P2 — REPO-CORE CONVENTIONS
 
-This codebase is **NestJS + Postgres + Jest**. **For new modules, prefer TypeORM** (`@nestjs/typeorm`, `@InjectRepository`, entity classes — see RBAC's [src/modules/admin/rbac/infrastructure/persistence/](src/modules/admin/rbac/infrastructure/persistence/) for the canonical example). **Drop to raw SQL via `DatabaseService` only with stated justification** (TypeORM can't satisfy the query, measured perf issue, or materially safer/more auditable as parameterized raw SQL). Several existing modules (projects, chat, admin/users) use raw SQL — that's their established pattern; the new convention is forward-looking and does NOT flag them for migration. Full convention set + decision criteria are in the `repo-conventions` skill; load-bearing slice restated here.
+All conventions, ADRs, and code-symbol-level details live in the `repo-conventions` skill (mandatory load per P3.4 on code work AND on architecture discussions per its description). High-risk surfaces (auth, RBAC, payments, secrets, PII, public API, migrations) are also primed at write time by P3.3 high-risk restate.
 
-- **MUST honor the RBAC scope contract.** Every protected route uses `@RequirePermissions(...)`. The `PermissionsGuard` enforces it. Scope values: `all` (cross-org, superadmin only — throws **400** for other roles) or per-organization (defaults to `activeOrganizationId`). Guards return **403 ForbiddenException** on permission mismatch. Use `resolveOrgScope()` to derive scope from the request.
-- **MUST scope org queries by `organization_id`.** All org-scoped queries include `where: { organizationId }` (TypeORM) or `WHERE organization_id = $1` (raw SQL) — even when the route is scope-guarded. Belt + suspenders against IDOR.
-- **PREFER NestJS built-in exceptions over plain `Error` for HTTP-facing flows.** In controllers and request-lifecycle services, default to `ForbiddenException`, `BadRequestException`, `NotFoundException`, `HttpException`. NestJS auto-maps to HTTP. **No custom `AppError`, no global exception filter.** Existing code may not yet follow this everywhere (chat services, admin-user repo, and a few others throw plain `Error`); treat the rule as the direction for new and modified code.
-- **PREFER NestJS built-in `Logger` for application services:** `private readonly logger = new Logger(MyService.name)`. **No pino, no structured logging, no request-id middleware** — manually redact sensitive fields before logging. Existing code mixes `Logger` with `console.log` / `console.error` (chat-agent service, airweave service, migration scripts); when adding or normalizing a logger, default to `Logger`.
-
-For module structure, raw-SQL repository patterns, projects/chat data-source domain, DTO conventions, naming, migrations, and source-file citations: see `repo-conventions`.
+CLAUDE.md does NOT enumerate ADRs, file paths, or code symbols — see `documentation-and-adrs` § "Layered-router principle".
 
 ---
 
@@ -94,7 +86,7 @@ TDD waived — <reason>.
 design-review waived — <reason>.
 ```
 
-The only valid `<reason>` values are: `non-code change`, `type-only`, `config change with no behavior impact`, `ADR-only change` (PR is exclusively `docs/decisions/ADR-NNN-*.md` content with no executable code).
+The only valid `<reason>` values are: `non-code change`, `type-only`, `config change with no behavior impact`, `ADR-only change` (PR is exclusively ADR documentation; see `documentation-and-adrs` for the format).
 
 ### P3.2 Forbidden non-waiver phrases
 
@@ -108,41 +100,29 @@ For changes touching **auth, sessions, RBAC, payments, secrets, encryption, PII,
 
 Skills load on description match — that's a heuristic, not a guarantee. For executable-code work in this repo, the following skills MUST be invoked **even if their description didn't auto-fire**:
 
-| Skill | When MUST fire | What goes wrong if it doesn't |
-|---|---|---|
-| `tdd-workflow` | Any executable-code change | No failing test written first; rule erosion |
-| `failure-mode-analysis` | Any non-trivial change, BEFORE the failing test | Tests miss failure modes (null, race, partial, malformed, boundary); `qa-validator` later finds gaps |
-| `repo-conventions` | Any code change in `api-velocity` | Plausible-but-wrong-for-this-repo code (custom errors, wrong logger, missing org_id scope) |
-| `design-review` | Before declaring complete | No principle grid, no `Design review:` block, no Confidence rubric output |
-| `plan-mode` | 3+ steps OR multi-file OR architectural OR risky | Silent interpretation of ambiguous request, no `verify:` clauses |
-| `async-error-handling` | Any change adding/modifying async code (`await`, `Promise.*`, external I/O) | Defensive try/catch that swallows errors, `Promise.all` where `allSettled` is needed, retries that violate fail-fast |
-| `database-transactions` | Any multi-statement DB write (across rows or tables) | Partial-write states leak to prod; `this.db.query` accidentally outside the transaction callback |
+| Skill | When MUST fire |
+|---|---|
+| `tdd-workflow` | Any executable-code change |
+| `failure-mode-analysis` | Any non-trivial change, BEFORE the failing test |
+| `repo-conventions` | Any code change in `api-velocity` |
+| `design-review` | Before declaring complete |
+| `plan-mode` | 3+ steps OR multi-file OR architectural OR risky |
+| `async-error-handling` | Any change adding/modifying async code (`await`, `Promise.*`, external I/O) |
+| `database-transactions` | Any multi-statement DB write (across rows or tables) |
 
 If a listed skill genuinely doesn't apply (e.g., `plan-mode` for a single-line typo), state which one and why in the response. Do NOT silently skip.
 
 ### P3.5 Skill-vs-repo conflict resolution
 
-When a skill (e.g., `nestjs-best-practices`) recommends a pattern that conflicts with `CLAUDE.md` or `repo-conventions`:
+When a skill recommends a pattern that conflicts with `CLAUDE.md` or `repo-conventions`:
 
-**Default: follow the skill recommendation.** Skills are the team's best-practice catalog.
+**Default:** follow the skill recommendation. Skills are the team's best-practice catalog.
 
-**Exception — structural refactor:** if applying the skill would require ANY of:
-- Installing a new dependency (already gated by skills' asks-first sections where present).
-- Adding cross-cutting infrastructure the repo lacks (e.g., global exception filter, global `ValidationPipe`, app-wide logger swap, request-id middleware, CLS).
-- Modifying app-wide bootstrap or `main.ts` configuration affecting other modules.
-- Refactoring established patterns in modules unrelated to the current change.
+**Exception — structural refactor:** if applying the skill would require a new dependency, cross-cutting infrastructure the repo lacks (global filter, global `ValidationPipe`, app-wide logger swap, request-id middleware), bootstrap changes, or refactoring unrelated modules → **follow `repo-conventions` / `CLAUDE.md` for the current PR**, and recommend the skill's pattern as a Future task in P8 item 10.
 
-Then **follow `repo-conventions` / `CLAUDE.md` for the current PR. Do NOT smuggle structural changes into unrelated work.**
+**The test:** would applying this best practice change code outside the current PR's scope? Yes → structural → repo wins, future task. No → skill wins, apply now.
 
-**When deferring, recommend a future task.** Add to the response's "Optional improvements" section (per P8 item 10): `Future task — adopt <practice> per <skill> § <rule>. Current PR follows existing repo convention to keep scope minimal. Structural change estimated: <one-line scope>.`
-
-**What is NOT structural** (best practice wins, no exception):
-- Throwing `NotFoundException` / `ForbiddenException` instead of plain `Error` in NEW service code.
-- Wrapping a multi-statement DB write in `db.transaction(...)` for the current change.
-- Choosing the right Guard vs Pipe vs Interceptor for a NEW cross-cutting concern.
-- Using `useFactory:` for a NEW provider with env-driven creation.
-
-**The test:** would applying this best practice change code outside the current PR's scope? If yes → structural → repo wins, recommend future task. If no → skill wins, apply now.
+Full rule + "What is NOT structural" examples + ADR-coupling guidance in `decision-rules` § 6 (the canonical mirror — keep both in sync; contradiction is a docs bug, flag via `lessons-curator`).
 
 ---
 
@@ -168,20 +148,16 @@ MUST address every HIGH/CRITICAL issue before declaring done. A BLOCK from any r
 
 These bullets apply to every turn, every change.
 
-- **Consult feedback memories first.** Before any code change, MUST read the auto-memory `MEMORY.md` index (always loaded at session start) AND the linked `feedback`-type memory files for any rule that touches the area being changed. Past corrections only protect future work if you actively consult them.
+- **Consult feedback memories first.** Before any code change, MUST read the auto-memory `MEMORY.md` index (always loaded at session start) AND the linked `feedback`-type memory files for any rule that touches the area being changed.
 - **Scope discipline.** MUST do only the requested task. Propose adjacent work and STOP for approval.
 - **Surgical diffs.** Every changed line MUST trace directly to the request. NO adjacent cleanup.
 - **Local cleanup only.** MUST remove only items made obsolete by THIS change. MUST NOT delete pre-existing dead code unless asked.
 - **State assumptions explicitly** when they affect behavior, architecture, or delivery risk.
 - **Backward compatibility preserved** unless the user explicitly says otherwise.
-- **Root-cause focus.** MUST fix causes, not symptoms. MUST NEVER patch with try/catch or retry.
-- **No retries.** MUST fail fast with actionable, contextual errors.
+- **Root-cause focus + no retries.** MUST fix causes, not symptoms. MUST NEVER patch with try/catch or retry. MUST fail fast with actionable, contextual errors.
 - **Full test suite after every change** unless the user explicitly narrows scope.
-- **Stop on confusion.** If ambiguity affects correctness, MUST stop and ask. MUST NOT choose silently between interpretations.
-- **Proceed when clear.** Inverse of the above: when the task IS clear, MUST proceed without hand-holding. Don't ask permission for steps the user obviously wants done. Especially applies to bug fixes, CI failures, and routine refactors where the path is unambiguous.
-- **Pushback duty.** MUST name simpler in-scope alternatives.
-- **Plan mode by default** for 3+ steps, multi-file, architectural, or risky work. See `plan-mode`.
-- **Re-plan when reality changes** (new evidence, unexpected failures, scope drift, fix feels hacky).
+- **Stop on confusion / Proceed when clear.** If ambiguity affects correctness, STOP and ask — never choose silently between interpretations. Inverse: when the task IS clear, proceed without hand-holding (bug fixes, CI failures, routine refactors).
+- Other always-on disciplines enforced at their canonical site: pushback duty (P6.2 + `pushback-templates`), plan-mode by default (P3.4 + `plan-mode`), re-plan on new evidence (`plan-mode` § "Re-plan trigger conditions").
 
 ---
 
@@ -245,7 +221,7 @@ The response for any code change MUST include these items, in order:
 8. `Design review:` block (principle grid + trade-offs)
 9. `Confidence:` 0.0–1.0 + key risks
 10. Optional out-of-scope improvements (proposals only — no implementation)
-11. `Skills consulted:` line — alphabetical list of every skill whose `SKILL.md` was actually read this turn (e.g., `Skills consulted: design-review, repo-conventions, tdd-workflow`). Self-attestation; do NOT list skills you only saw in CLAUDE.md's pointer table.
+11. `Skills consulted:` — alphabetical list of skills whose `SKILL.md` was read this turn. Self-attestation; do NOT list skills you only saw in the Skill Pointers table.
 
 **Multi-file output formatting:** when changing 2+ files, MUST output file-by-file with clear path headers (e.g., `### src/foo.ts` then the diff/code). MUST avoid dumping unrelated context. MUST output only what's required to apply the change.
 
@@ -324,7 +300,7 @@ Situation → skill lookup. The model loads a skill on description match; this t
 | Optimizing measured hot paths — tight loops, large datasets, high-frequency events | `js-performance-patterns` |
 | Cleanup pass on recently modified code (clarity, consistency, no behavior change) | `code-simplifier` |
 | Proposing or superseding a load-bearing engineering decision; about to restate an existing rationale inline | `documentation-and-adrs` (cite ADR-NNN; don't restate the why) |
-| Designing/reviewing a new domain module (or refactoring a flat one that grew invariants) | `nestjs-clean-architecture` (cite ADR-009) |
+| Designing/reviewing a new domain module (or refactoring a flat one that grew invariants) | `nestjs-clean-architecture` |
 
 ## Workflow chains
 
@@ -343,6 +319,6 @@ Common task types and the skill chains they invoke. The Skill Pointers table is 
 | **NestJS module / provider design** | `nestjs-best-practices` (relevant `arch-*`/`di-*` rules) → `nestjs-patterns` (route to specific pattern file in `patterns/`) → `repo-conventions` → `design-review` → **architect-reviewer** + **code-reviewer** |
 | **Large code review** (>4 files OR >500 LOC) | All review subagents (`architect-reviewer`, `code-reviewer`, `qa-validator`, `security-reviewer`) automatically apply RLM in their step 1. They report a **Working Set** in the verdict — read that section first to see what they actually evaluated. |
 | **Structural decision** (new persistence layer, new auth library, new public-API contract — anything cited from CLAUDE.md or skills) | `plan-mode` (with P3.3 restate) → `documentation-and-adrs` (write the ADR alongside the implementation) → `tdd-workflow` → `repo-conventions` → `design-review` → **architect-reviewer** + **code-reviewer** + **qa-validator** |
-| **New domain module** | `plan-mode` (contract-first) → `nestjs-clean-architecture` (per ADR-009) → `repo-conventions` § 2/§ 4 → `tdd-workflow` → `design-review` → **architect-reviewer** (dependency-rule audit) + **code-reviewer** + **qa-validator** |
+| **New domain module** | `plan-mode` (contract-first) → `nestjs-clean-architecture` → `repo-conventions` → `tdd-workflow` → `design-review` → **architect-reviewer** (dependency-rule audit) + **code-reviewer** + **qa-validator** |
 
 After a user correction, see [P7 — Reflexive Lesson Capture](#p7--reflexive-lesson-capture-after-corrections).

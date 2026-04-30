@@ -59,6 +59,13 @@ CLAUDE.md carries the highest-impact decisions as one-liners. This skill carries
 **Override — structural refactor:** If applying the skill would force a structural change to the repo — installing a new dependency, adding cross-cutting infrastructure the repo lacks (global filter, global ValidationPipe, app-wide logger swap, request-id middleware), modifying app-wide bootstrap, or refactoring established patterns in unrelated modules — **follow CLAUDE.md / `repo-conventions` for the current PR** and recommend the skill's pattern as a Future task in the response's Optional Improvements section.
 **Rationale:** Skills express the destination; CLAUDE.md sets the boundary conditions for what counts as in-scope for the current change. Smuggling structural refactors into unrelated work is itself a scope-discipline violation. Within CLAUDE.md, lower P-number wins.
 **Test for "structural":** would applying this best practice change code outside the current PR's scope? If yes → repo wins, recommend future task. If no → skill wins, apply now.
+
+**What is NOT structural** (best practice wins, no exception):
+- Throwing `NotFoundException` / `ForbiddenException` / `BadRequestException` instead of plain `Error` in NEW service code (per `ADR-003`).
+- Wrapping a multi-statement DB write in `db.transaction(...)` for the current change (per `database-transactions` skill).
+- Choosing the right Guard vs Pipe vs Interceptor for a NEW cross-cutting concern (per `nestjs-patterns`).
+- Using `useFactory:` for a NEW provider with env-driven creation.
+- Following the 4-layer module structure for a NEW domain module (per `ADR-009` + `nestjs-clean-architecture`).
 **Cross-reference:** This rule is the skill-side mirror of CLAUDE.md P3.5. Both must read the same way; a contradiction here is a docs bug — flag it via `lessons-curator`.
 **ADR coupling:** When the structural Approach is eventually adopted (either deferred to a Future task and then implemented, or chosen explicitly in the current PR), the adoption MUST include writing an ADR in `docs/decisions/ADR-NNN-<title>.md`. The Future-task entry in Optional Improvements should name the ADR explicitly: `Future task — adopt <practice> per <skill> § <rule>; write ADR-NNN documenting the rationale.` See `documentation-and-adrs`.
 

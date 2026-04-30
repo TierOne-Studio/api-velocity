@@ -57,6 +57,17 @@ Skill never fires. Either the trigger description doesn't match real prompts, or
 
 Fix: rewrite trigger or remove.
 
+### 7. CLAUDE.md cross-coupling (Layered-router principle)
+
+CLAUDE.md is a pure router — it points to skills and subagents but does NOT enumerate Layer-3 artifacts. The principle is owned by `documentation-and-adrs` § "Layered-router principle" and enforced by acceptance test T74. Audit drift:
+
+- Scan CLAUDE.md for `ADR-[0-9]{3}` regex matches → flag MED, propose moving citation to `repo-conventions` ADR table or the relevant meta-skill.
+- Scan for file paths (`src/`, `docs/`, `.claude/skills/`, `.claude/agents/`) → flag MED.
+- Scan for code symbols (decorators like `@RequirePermissions`, class names like `PermissionsGuard`, function names like `resolveOrgScope`) → flag MED. Boundary case: literal command tokens that ARE the rule (`git push`, `INSERT`, AI-attribution trailer strings) are allowed because the rule literally matches those strings.
+- Scan for subagent internal step references (e.g., "see code-reviewer Step 5") → flag LOW.
+
+Fix: move the citation into the relevant skill or subagent file; CLAUDE.md keeps only the skill/subagent name. Each artifact citation lives in exactly one place.
+
 ### 6. Missing disambiguation
 
 A frequent prompt fires no skill, or fires the wrong one.

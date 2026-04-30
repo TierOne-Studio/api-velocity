@@ -37,6 +37,50 @@ Each ADR contains:
 
 ADRs are **append-only**. Don't edit accepted ADRs except to update Status (Accepted → Superseded by ADR-XXX). The next ADR explains why.
 
+## Layered-router principle (CLAUDE.md is pure routing)
+
+**The rule:** CLAUDE.md is the always-loaded router. It MUST NOT reference Layer-3 artifacts. Skills and subagents own all artifact citations. Adding a new artifact is normal repo growth; the always-loaded router does NOT grow with it.
+
+**CLAUDE.md MAY reference:**
+
+- Skills by name (e.g., `repo-conventions`, `tdd-workflow`).
+- Subagents by name (e.g., `architect-reviewer`).
+- Other CLAUDE.md sections by P-number (e.g., "see P3.4").
+- Literal command tokens that ARE the rule (e.g., `git push`, `INSERT`, `Co-Authored-By: Claude` — strings the rule literally matches at the tool boundary).
+- Domain category names (auth, RBAC, payments, PII — concepts, not artifacts).
+- Output structural labels (`Skills consulted:`, `Confidence:` — response markers the contract enforces).
+
+**CLAUDE.md MUST NOT reference:**
+
+- ADR numbers (`ADR-001`, `ADR-002`, ...) — those live in `repo-conventions` § "ADR-backed conventions" + `docs/decisions/README.md`.
+- File paths (`src/...`, `docs/...`, `.claude/skills/...`) — those live in skill/subagent files.
+- Code symbols, decorators, class names, function names (`@RequirePermissions`, `PermissionsGuard`, `@InjectRepository`, `resolveOrgScope`, etc.) — those live in skills with patterns + examples.
+- Subagent internal step numbers (`code-reviewer Step 5`) — those are subagent implementation detail.
+
+**Where every new artifact gets cited (single-source-of-truth flow):**
+
+For a new ADR:
+
+1. The ADR file: `docs/decisions/ADR-NNN-<title>.md`.
+2. Index row: `docs/decisions/README.md`.
+3. Citation site (depending on type):
+
+   | ADR type | Citation site |
+   |---|---|
+   | Convention (persistence, error-handling, logging, DTOs, layering) | `repo-conventions` § "ADR-backed conventions" table |
+   | Meta-rule (conflict resolution, asks-first, attribution) | The relevant skill (`decision-rules` § 6, `nestjs-best-practices` prelude, `git-workflow` Hard rules) |
+   | Subagent behavior (review-time enforcement) | The relevant subagent's Required Reading + audit step |
+
+4. **CLAUDE.md is NEVER updated** for new ADRs. The router doesn't track artifacts.
+
+For a new skill: add Skill Pointers row + (if part of a recipe) Workflow chains row in CLAUDE.md. Skill itself owns description, when-to-use, patterns, examples, ADR citations, code symbols.
+
+For a new subagent: add to P4 verification matrix in CLAUDE.md if it's a review subagent. Subagent itself owns all process detail.
+
+**Enforcement:** acceptance test T74 fails if CLAUDE.md gains an `ADR-NNN`, `docs/decisions/`, or `src/<dir>/` reference. `meta-skill-hygiene` audit check 7 catches drift. Both architect-reviewer and code-reviewer flag CLAUDE.md edits that introduce artifact citations as MED.
+
+**The "load-bearing exception" was retired.** Earlier versions of CLAUDE.md kept code-symbol primers in P2 (RBAC, org-scoping) on the theory that they were always-on safety nets. We retired this in favor of broadening `repo-conventions` description so the skill auto-loads on architecture discussions too. Don't reintroduce inline symbols in CLAUDE.md without superseding this section.
+
 ## How to cite ADRs from skills, CLAUDE.md, subagents
 
 When a skill or convention enforces an ADR-backed rule, MUST cite the ADR by number, not restate the rationale:
