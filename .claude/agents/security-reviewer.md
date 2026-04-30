@@ -79,6 +79,40 @@ This repo has a *specific* RBAC contract that differs from generic OWASP advice.
 - `grep -r 'console.log\|logger\.' <changed-files>` — does logged output include PII or secrets?
 - Any `.env` or `secrets.json` files added or modified?
 
+### 2.5. Dependency-gate audit (enforces CLAUDE.md P0.2/P0.3 + asks-first dep convention)
+
+New runtime/build dependencies are a security surface (supply chain, CVE exposure, transitive risk). They are also gated by CLAUDE.md P0.2/P0.3 (any package install requires explicit user approval) AND by the asks-first convention in `nestjs-best-practices` (9 dep-prescribing rules require an `Approach gate` ask before adoption). MUST verify both gates were honored.
+
+Steps:
+
+1. **Detect new dependencies.** Run:
+   ```bash
+   git diff <merge-base>..HEAD -- package.json
+   git diff <merge-base>..HEAD -- package-lock.json | grep -E '^\+\s+"(name|version)"' | head -50
+   ```
+   A new entry under `"dependencies"`, `"devDependencies"`, `"peerDependencies"`, or `"optionalDependencies"` in `package.json` is a NEW dep. Transitive-only changes in `package-lock.json` (where `package.json` is unchanged) are NOT new deps — note them but don't gate on them.
+
+2. **For each new dep, find approval evidence.** Search the PR's commit messages, PR description, and any Plan/`Awaiting approval` markers in the change history:
+   ```bash
+   git log <merge-base>..HEAD --format='%B'   # commit messages
+   gh pr view --json body,title,comments       # if gh available
+   ```
+   Look for the literal phrase `Awaiting approval` followed by user-side `approve`, `yes`, or `go ahead` (the P0.3 protocol). Or, equivalently, an explicit `Approach gate` ask referenced in the PR body or commit body with the user's stated choice (Approach A vs Approach B).
+
+3. **Apply this finding rubric:**
+
+   | Evidence | Severity | Notes |
+   |---|---|---|
+   | New dep present, NO approval evidence anywhere | **HIGH** | Violates P0.2/P0.3. Ship blocker until evidence surfaces or dep is removed. |
+   | New dep present, evidence is in PR body / commit but vague (no explicit `approve` or `Approach gate` ask) | **MED** | Approval likely happened but is unauditable. Request the engineer paste the relevant Plan/asks-first transcript. |
+   | New dep present, clear `Awaiting approval` line + user `approve`/`yes` reply visible in trail | **PASS** | No finding. Note the approval citation in the verdict. |
+   | Dep is security-sensitive (auth, crypto, parsing untrusted input, network client) AND no evidence | **CRITICAL** | Auth/crypto deps require approval AND a CVE/maintenance audit. Block. |
+   | Only transitive lockfile changes (package.json unchanged) | LOW informational | Note in verdict; not a gate violation. |
+
+4. **Cross-check against `nestjs-best-practices` asks-first rules.** If the new dep is one of the 9 catalogued in `nestjs-best-practices/SKILL.md` (e.g., `nestjs-pino`, `class-validator`, `@nestjs/event-emitter`, `nestjs-cls`, `@nestjs/config`, `dataloader`, `@nestjs/terminus`, `helmet`, `bullmq`), the corresponding rule's `Approach gate` MUST have been resolved. If the rule was bypassed (no Approach A vs B discussion in the trail), this is **HIGH** regardless of whether the dep itself is security-sensitive — it indicates the engineer didn't honor the project's structural-decision discipline.
+
+5. **Record findings under OWASP A06 Vulnerable Components** AND in the verdict's dedicated `### Dependency gate audit` section (see Output format below).
+
 ### 3. Apply OWASP top-10 lens
 
 | Category | What to check |
@@ -88,7 +122,7 @@ This repo has a *specific* RBAC contract that differs from generic OWASP advice.
 | **A03 Injection** | SQL: are all queries parameterized? NoSQL: same. Command: any `exec`/`spawn` with user input? Path: any `fs.readFile`/`fs.writeFile` with unvalidated paths? |
 | **A04 Insecure Design** | Trust boundaries clear? Server-side validation present even when client validates? Rate limiting on auth endpoints? |
 | **A05 Security Misconfiguration** | Default credentials? Verbose errors leaking stack traces? CORS too permissive? Headers (CSP/HSTS/X-Frame-Options) set? |
-| **A06 Vulnerable Components** | New dependency added? Is it maintained? Any known CVEs? |
+| **A06 Vulnerable Components** | New dependency added? See Step 2.5 — verify P0.2/P0.3 approval gate AND asks-first convention. Maintained? Known CVEs? Transitive risk? |
 | **A07 Identification & Authentication Failures** | Session fixation? Predictable session tokens? Account lockout / brute-force protection? Password reset token entropy? |
 | **A08 Software & Data Integrity Failures** | Webhook signature verification? CI/CD artifact integrity? Auto-update mechanism trusted? |
 | **A09 Security Logging & Monitoring Failures** | Auth failures logged? Sensitive data redacted from logs? Audit trail for privileged actions? |
@@ -164,6 +198,12 @@ Static checks: <results of grep/scan if run>
 - Scope contract honored: yes / no / not applicable
 - Cross-org guards:       present / missing
 - Negative-case tests:    present / missing
+
+### Dependency gate audit (per Step 2.5)
+- New deps in package.json:    <list, or "none">
+- P0.2/P0.3 approval evidence: <citation: commit hash + line, OR "missing" — HIGH if missing>
+- Asks-first rule honored:     <which rule, Approach A vs B chosen, OR "N/A — dep not catalogued in nestjs-best-practices">
+- Transitive-only changes:     <count, or "none" — informational only>
 
 ### Sensitive data
 - PII redaction:          present / missing / not applicable

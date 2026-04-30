@@ -52,12 +52,14 @@ CLAUDE.md carries the highest-impact decisions as one-liners. This skill carries
 **Rationale:** "Cleanup" has unbounded scope by default; one pass produces a reviewable diff. Multiple passes turn into a refactor of the entire module.
 **Override:** If the user explicitly asks for "a comprehensive cleanup of <module>", scope expands to that module and you should plan it via `plan-mode`.
 
-### 6. CLAUDE.md vs skill guidance conflict
+### 6. CLAUDE.md vs skill guidance conflict (P3.5)
 
-**Situation:** A skill says one thing, CLAUDE.md says another.
-**Default:** **CLAUDE.md wins.** Skills are situational; CLAUDE.md is universal. Within CLAUDE.md, lower P-number wins.
-**Rationale:** Skills are loaded conditionally; their authors couldn't have known every other rule. CLAUDE.md is the ground truth.
-**Override:** None. If a skill genuinely contradicts CLAUDE.md, the skill is wrong and should be flagged via `lessons-curator`.
+**Situation:** A skill says one thing, CLAUDE.md / `repo-conventions` says another.
+**Default:** **Follow the skill when it applies.** Skills are the team's curated best-practice catalog and are the default source for situational guidance.
+**Override — structural refactor:** If applying the skill would force a structural change to the repo — installing a new dependency, adding cross-cutting infrastructure the repo lacks (global filter, global ValidationPipe, app-wide logger swap, request-id middleware), modifying app-wide bootstrap, or refactoring established patterns in unrelated modules — **follow CLAUDE.md / `repo-conventions` for the current PR** and recommend the skill's pattern as a Future task in the response's Optional Improvements section.
+**Rationale:** Skills express the destination; CLAUDE.md sets the boundary conditions for what counts as in-scope for the current change. Smuggling structural refactors into unrelated work is itself a scope-discipline violation. Within CLAUDE.md, lower P-number wins.
+**Test for "structural":** would applying this best practice change code outside the current PR's scope? If yes → repo wins, recommend future task. If no → skill wins, apply now.
+**Cross-reference:** This rule is the skill-side mirror of CLAUDE.md P3.5. Both must read the same way; a contradiction here is a docs bug — flag it via `lessons-curator`.
 
 ### 7. Skill description matches but feels wrong
 

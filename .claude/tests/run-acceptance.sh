@@ -601,7 +601,7 @@ echo "=== T61: nestjs-best-practices rules use ASKS-FIRST structure (no silent d
 # Skill index documents the asks-first convention.
 assert_true "T61: SKILL.md prelude documents 'How rules are structured'"      "grep -q 'How rules in this skill are structured' .claude/skills/nestjs-best-practices/SKILL.md"
 assert_true "T61: SKILL.md describes Approach A vs Approach B framing"        "grep -qiE 'Approach A.*Approach B|Custom abstraction.*Library|Approach gate' .claude/skills/nestjs-best-practices/SKILL.md"
-assert_true "T61: SKILL.md lists 9 asks-first rules"                          "grep -qiE '9 rules currently follow|Tier' .claude/skills/nestjs-best-practices/SKILL.md"
+assert_true "T61: SKILL.md lists 11 asks-first / P3.5 rules"                  "grep -qiE '11 rules currently document|Tier' .claude/skills/nestjs-best-practices/SKILL.md"
 
 # Each of 9 rules has the asks-first structure.
 ASKS_FIRST_RULES="devops-use-logging security-validate-all-input arch-use-events di-scope-awareness devops-use-config-module db-avoid-n-plus-one micro-use-health-checks security-sanitize-output micro-use-queues"
@@ -647,6 +647,105 @@ assert_true "T62: error-use-exception-filters has Outcome section"     "grep -q 
 assert_true "T62: error-use-exception-filters has Approach A (no global filter)" "grep -qE 'Approach A.*no global filter|Approach A.*Throw NestJS' .claude/skills/nestjs-best-practices/rules/error-use-exception-filters.md"
 assert_true "T62: error-use-exception-filters marks Approach B as Structural refactor" "grep -qE 'Structural refactor|structural change to the repo' .claude/skills/nestjs-best-practices/rules/error-use-exception-filters.md"
 assert_true "T62: error-use-exception-filters tells agent to ASK user" "grep -qiE 'ASK the user|Wait for explicit response' .claude/skills/nestjs-best-practices/rules/error-use-exception-filters.md"
+
+echo
+echo "=== T63: security-reviewer dep-gate audit (Step 2.5) ==="
+SR=".claude/agents/security-reviewer.md"
+assert_true "T63: security-reviewer has '2.5. Dependency-gate audit' section" \
+  "grep -q '### 2.5. Dependency-gate audit' $SR"
+assert_true "T63: section cites P0.2/P0.3 approval gate"                       \
+  "grep -qE 'P0.2/P0.3|P0\\.2.*P0\\.3' $SR"
+assert_true "T63: section instructs git diff package.json check"               \
+  "grep -q 'git diff.*package.json' $SR"
+assert_true "T63: section searches for 'Awaiting approval' phrase"             \
+  "grep -q \"Awaiting approval\" $SR"
+assert_true "T63: section has finding rubric with HIGH for missing evidence"   \
+  "grep -qE 'NO approval evidence.*HIGH|HIGH.*NO approval evidence' $SR"
+assert_true "T63: section has CRITICAL for security-sensitive dep + no evidence" \
+  "grep -qiE 'security-sensitive.*CRITICAL|CRITICAL.*security-sensitive' $SR"
+assert_true "T63: section cross-checks against nestjs-best-practices asks-first" \
+  "grep -q 'asks-first' $SR"
+assert_true "T63: A06 OWASP row references Step 2.5"                           \
+  "grep -q 'A06.*Step 2.5' $SR"
+assert_true "T63: Output format has 'Dependency gate audit' block"             \
+  "grep -q '### Dependency gate audit' $SR"
+
+echo
+echo "=== T64: skill-loading simulation script present and green ==="
+assert_true "T64: simulate-prompts.sh exists"     "test -f .claude/tests/simulate-prompts.sh"
+assert_true "T64: simulate-prompts.sh executable" "test -x .claude/tests/simulate-prompts.sh"
+# Run simulation as a subassertion. All cases must pass.
+if bash .claude/tests/simulate-prompts.sh >/tmp/sim-prompts.log 2>&1; then
+  echo "PASS: T64 simulation passed (see /tmp/sim-prompts.log)"; PASS=$((PASS+1))
+else
+  echo "FAIL: T64 simulation FAILED — see /tmp/sim-prompts.log:"
+  tail -20 /tmp/sim-prompts.log
+  FAIL=$((FAIL+1)); FAILED_TESTS="$FAILED_TESTS T64"
+fi
+# Structural assertions on the simulation file.
+assert_true "T64: simulation defines run_case helper"       "grep -q 'run_case()' .claude/tests/simulate-prompts.sh"
+assert_true "T64: simulation defines workflow-chain helper" "grep -q 'check_workflow_chain_mentions' .claude/tests/simulate-prompts.sh"
+assert_true "T64: simulation notes mandatory P3.4 exemption" "grep -q 'P3.4' .claude/tests/simulate-prompts.sh"
+
+echo
+echo "=== T65: PR-feedback fixes (5 items from 2026-04-30 review) ==="
+
+# Item 5 — settings.json deny patterns cover non-colon main/master push + rebase -i.
+SJ=".claude/settings.json"
+assert_true "T65: deny pattern 'git push * main' (no colon)"        "grep -q 'git push \\* main)' $SJ"
+assert_true "T65: deny pattern 'git push * master' (no colon)"      "grep -q 'git push \\* master)' $SJ"
+assert_true "T65: deny pattern 'git push * *:main' (force-form)"    "grep -q 'git push \\* \\*:main)' $SJ"
+assert_true "T65: deny pattern 'git push * *:master' (force-form)"  "grep -q 'git push \\* \\*:master)' $SJ"
+assert_true "T65: deny pattern 'git push * :main' (delete refspec)" "grep -q 'git push \\* :main)' $SJ"
+assert_true "T65: deny pattern 'git push * :master' (delete)"       "grep -q 'git push \\* :master)' $SJ"
+assert_true "T65: deny pattern 'git push origin main' (no colon)"   "grep -q 'git push origin main)' $SJ"
+assert_true "T65: deny pattern 'git push origin master' (no colon)" "grep -q 'git push origin master)' $SJ"
+assert_true "T65: deny pattern 'git push -u origin main' (no colon)"   "grep -q 'git push -u origin main)' $SJ"
+assert_true "T65: deny pattern 'git push -u origin master' (no colon)" "grep -q 'git push -u origin master)' $SJ"
+assert_true "T65: deny pattern 'git rebase -i main' (no colon)"     "grep -q 'git rebase -i main)' $SJ"
+assert_true "T65: deny pattern 'git rebase -i master' (no colon)"   "grep -q 'git rebase -i master)' $SJ"
+
+# Item 4 — decision-rules § 6 aligned with P3.5.
+DR=".claude/skills/decision-rules/SKILL.md"
+assert_true "T65: decision-rules § 6 default is follow-the-skill"   "grep -q 'Follow the skill when it applies' $DR"
+assert_true "T65: decision-rules § 6 names structural-refactor override" \
+  "grep -qE 'structural change to the repo|cross-cutting infrastructure|installing a new dependency' $DR"
+assert_true "T65: decision-rules § 6 cross-references CLAUDE.md P3.5" \
+  "grep -q 'mirror of CLAUDE.md P3.5\\|CLAUDE.md P3.5' $DR"
+# Negative — old "CLAUDE.md wins. Skills are situational" wording must be gone.
+assert_true "T65: decision-rules § 6 no longer says 'CLAUDE.md wins. Skills are situational'" \
+  "! grep -qE 'CLAUDE\\.md wins\\. Skills are situational' $DR"
+
+# Item 1 — security-use-guards restructured under P3.5.
+SUG=".claude/skills/nestjs-best-practices/rules/security-use-guards.md"
+assert_true "T65: security-use-guards references P3.5"              "grep -q 'P3.5' $SUG"
+assert_true "T65: security-use-guards has Approach gate ASK FIRST"  "grep -q '## Approach gate (ASK FIRST)' $SUG"
+assert_true "T65: security-use-guards Approach A is route-level"    "grep -qE 'Approach A.*Route-level|Route-level.*Approach A' $SUG"
+assert_true "T65: security-use-guards Approach B is APP_GUARD structural" \
+  "grep -qE 'Approach B.*APP_GUARD|APP_GUARD.*Structural refactor' $SUG"
+assert_true "T65: security-use-guards has Outcome section"          "grep -q '^## Outcome' $SUG"
+assert_true "T65: security-use-guards adoption checklist"           "grep -q 'Adoption checklist' $SUG"
+
+# Item 2 — perf-use-caching restructured under asks-first.
+PUC=".claude/skills/nestjs-best-practices/rules/perf-use-caching.md"
+assert_true "T65: perf-use-caching references P3.5"                 "grep -q 'P3.5' $PUC"
+assert_true "T65: perf-use-caching has Approach gate ASK FIRST"     "grep -q '## Approach gate (ASK FIRST)' $PUC"
+assert_true "T65: perf-use-caching Approach A is in-process (no deps)" \
+  "grep -qE 'Approach A.*[Ii]n-process|no new deps|no deps' $PUC"
+assert_true "T65: perf-use-caching Approach B names KeyvRedis"      "grep -q 'KeyvRedis\\|@keyv/redis' $PUC"
+assert_true "T65: perf-use-caching has Outcome section"             "grep -q '^## Outcome' $PUC"
+assert_true "T65: perf-use-caching adoption checklist"              "grep -q 'Adoption checklist' $PUC"
+
+# Item 3 — nestjs-best-practices SKILL.md prelude softened + 11-rule table.
+NBP=".claude/skills/nestjs-best-practices/SKILL.md"
+assert_true "T65: SKILL.md prelude softens 'never silently' to 'intended to avoid'" \
+  "grep -q 'intended to.*avoid silently introducing new dependencies' $NBP"
+assert_true "T65: SKILL.md prelude tells agent 'do not assume a dependency can be added without user confirmation'" \
+  "grep -qE 'do not assume a dependency can be added without user confirmation' $NBP"
+assert_true "T65: SKILL.md prelude lists 11 rules"                  "grep -q '11 rules currently document' $NBP"
+assert_true "T65: SKILL.md table includes perf-use-caching row"     "grep -q '\\\`perf-use-caching\\\`' $NBP"
+assert_true "T65: SKILL.md table includes security-use-guards row"  "grep -q '\\\`security-use-guards\\\`' $NBP"
+assert_true "T65: SKILL.md prelude references P3.5 framing"         "grep -q 'P3.5' $NBP"
 
 echo
 echo "==========================="

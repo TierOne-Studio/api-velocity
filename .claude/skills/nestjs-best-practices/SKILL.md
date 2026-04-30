@@ -13,16 +13,17 @@ Comprehensive best practices guide for NestJS applications. Contains 40 rules ac
 
 ## How rules in this skill are structured (api-velocity adaptation)
 
-Rules in this skill **never silently force a new dependency.** Each best practice expresses an **outcome** (the engineering goal) and asks the user before implementing.
+This skill is intended to **avoid silently introducing new dependencies.** Each best practice expresses an **outcome** (the engineering goal), and rules that recommend third-party libraries should ask the user before adopting them.
 
 - **Where a custom abstraction is possible** (Tier 1 + Tier 2): the rule presents BOTH "Approach A — Custom abstraction (no new deps)" AND "Approach B — Library (requires installing `<pkg>`)". The agent **MUST ask the user which approach to use** before writing code.
 - **Where no clean abstraction exists** (Tier 3, e.g., `micro-use-queues`): the rule presents only the library approach but **MUST ask the user before adding the dep**.
+- **Where the conflict is structural, not just dep-driven** (e.g., adopting global `APP_GUARD` registration or a global exception filter): the rule applies `CLAUDE.md` P3.5 — default to the existing repo pattern; treat the global pattern as adoption-gated and ask first.
 
-The dep is one way to achieve the outcome — not the outcome itself.
+The dep (or structural change) is one way to achieve the outcome — not the outcome itself. The asks-first structure is documented explicitly for the rules listed below; **other rules that mention third-party packages or app-wide bootstrap changes should be treated the same way: do not assume a dependency can be added without user confirmation.**
 
-**9 rules currently follow this asks-first structure:**
+**11 rules currently document this asks-first / P3.5 structure explicitly:**
 
-| Tier | Rule | Library | Custom abstraction available? |
+| Tier | Rule | Library / Structural change | Custom abstraction available? |
 |---|---|---|---|
 | 1 | `devops-use-logging` | `nestjs-pino`, `nestjs-cls` | ✅ `LoggerService` wrapper + `AsyncLocalStorage` |
 | 1 | `security-validate-all-input` | `class-validator`, `class-transformer` | ✅ validator helper functions |
@@ -32,9 +33,12 @@ The dep is one way to achieve the outcome — not the outcome itself.
 | 2 | `db-avoid-n-plus-one` | `dataloader` | ✅ custom per-request `Loader<K, V>` over Map cache |
 | 2 | `micro-use-health-checks` | `@nestjs/terminus` | ✅ manual `@Get('/health')` endpoint |
 | 2 | `security-sanitize-output` | `helmet`, `sanitize-html`, `class-transformer` | ⚠️ partial — manual headers + escape helpers; HTML sanitization stays library-only |
+| 2 | `perf-use-caching` | `@nestjs/cache-manager`, `@keyv/redis` (+ Redis infra) | ✅ in-process `CacheService` (Map + TTL) |
+| P3.5 | `error-use-exception-filters` | structural: global `AllExceptionsFilter` | ✅ throw NestJS built-ins (current repo pattern) |
+| P3.5 | `security-use-guards` | structural: `APP_GUARD` global registration | ✅ route-level `@UseGuards` + `@RequirePermissions` (current repo pattern) |
 | 3 | `micro-use-queues` | `@nestjs/bullmq`, `@bull-board/*` | ❌ no clean abstraction — ask before adopting |
 
-Future rules that prescribe new deps should follow the same shape. The principle: **ask the user, present alternatives where possible, never silently install.**
+Future rules that prescribe new deps OR structural changes should follow the same shape. The principle: **ask the user, present alternatives where possible, never silently install or refactor app-wide infrastructure.**
 
 ## When to Apply
 
