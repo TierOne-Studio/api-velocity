@@ -100,8 +100,29 @@ done
 
 echo
 echo "=== T15: Subagent tool allowlists ==="
-LC_TOOLS=$(awk '/^tools:/{sub(/^tools:[[:space:]]*/,""); print; exit}' .claude/agents/lessons-curator.md)
-CR_TOOLS=$(awk '/^tools:/{sub(/^tools:[[:space:]]*/,""); print; exit}' .claude/agents/code-reviewer.md)
+# Ruler emits tools as a multi-line YAML list ("tools:\n  - Read\n  - Grep").
+# Older inline form ("tools: Read, Grep") may still appear in hand-edited drafts.
+# This awk captures BOTH: the tail of the inline form OR each "  - <tool>" line until
+# the next top-level key. Then we join into a single space-separated string for grep.
+tools_for_agent() {
+  awk '
+    /^tools:/ {
+      sub(/^tools:[[:space:]]*/,"")
+      if ($0 != "") inline=$0
+      intools=1
+      next
+    }
+    intools && /^  *- / {
+      sub(/^  *- */,"")
+      list = list " " $0
+      next
+    }
+    intools && /^[a-zA-Z]/ { exit }
+    END { print inline " " list }
+  ' "$1"
+}
+LC_TOOLS=$(tools_for_agent .claude/agents/lessons-curator.md)
+CR_TOOLS=$(tools_for_agent .claude/agents/code-reviewer.md)
 assert_true "T15: lessons-curator has 'Read'"  "echo '$LC_TOOLS' | grep -q Read"
 assert_true "T15: lessons-curator has 'Grep'"  "echo '$LC_TOOLS' | grep -q Grep"
 assert_true "T15: lessons-curator has 'Glob'"  "echo '$LC_TOOLS' | grep -q Glob"
@@ -164,7 +185,7 @@ assert_true "T26: auth/payments/sessions etc. mentioned" "grep -Eqi 'auth.*payme
 echo
 echo "=== T27: architect-reviewer subagent well-formed ==="
 AR_DESC=$(awk '/^description:/{sub(/^description:[[:space:]]*/,""); print; exit}' .claude/agents/architect-reviewer.md)
-AR_TOOLS=$(awk '/^tools:/{sub(/^tools:[[:space:]]*/,""); print; exit}' .claude/agents/architect-reviewer.md)
+AR_TOOLS=$(tools_for_agent .claude/agents/architect-reviewer.md)
 assert_true "T27: description starts 'Use BEFORE'"  "echo '$AR_DESC' | grep -q '^Use BEFORE'"
 assert_true "T27: description has 'NOT for'"        "echo '$AR_DESC' | grep -q 'NOT for'"
 assert_true "T27: tools has Read"                   "echo '$AR_TOOLS' | grep -q Read"
@@ -176,7 +197,7 @@ assert_true "T27: emits APPROVE_PLAN verdict"       "grep -q APPROVE_PLAN .claud
 echo
 echo "=== T28: qa-validator subagent well-formed ==="
 QA_DESC=$(awk '/^description:/{sub(/^description:[[:space:]]*/,""); print; exit}' .claude/agents/qa-validator.md)
-QA_TOOLS=$(awk '/^tools:/{sub(/^tools:[[:space:]]*/,""); print; exit}' .claude/agents/qa-validator.md)
+QA_TOOLS=$(tools_for_agent .claude/agents/qa-validator.md)
 assert_true "T28: description starts 'Use ALWAYS'" "echo '$QA_DESC' | grep -q '^Use ALWAYS'"
 assert_true "T28: description has 'NOT for'"       "echo '$QA_DESC' | grep -q 'NOT for'"
 assert_true "T28: tools has Bash"                  "echo '$QA_TOOLS' | grep -q Bash"
@@ -187,7 +208,7 @@ assert_true "T28: emits PASS verdict"              "grep -q '^.*PASS.*GAPS.*BLOC
 echo
 echo "=== T29: security-reviewer subagent well-formed ==="
 SR_DESC=$(awk '/^description:/{sub(/^description:[[:space:]]*/,""); print; exit}' .claude/agents/security-reviewer.md)
-SR_TOOLS=$(awk '/^tools:/{sub(/^tools:[[:space:]]*/,""); print; exit}' .claude/agents/security-reviewer.md)
+SR_TOOLS=$(tools_for_agent .claude/agents/security-reviewer.md)
 assert_true "T29: description starts 'Use ALWAYS'" "echo '$SR_DESC' | grep -q '^Use ALWAYS'"
 assert_true "T29: description has 'NOT for'"       "echo '$SR_DESC' | grep -q 'NOT for'"
 assert_true "T29: tools has Bash"                  "echo '$SR_TOOLS' | grep -q Bash"
@@ -1312,6 +1333,43 @@ assert_true "T74: repo-conventions description acknowledges CLAUDE.md no longer 
 
 # T13 budget ratcheted to 3350 (post-T74)
 assert_true "T74: T13 budget ratcheted to 3350"                         "grep -q '<= 3350 words' .claude/tests/run-acceptance.sh"
+
+echo
+echo "=== T75: cross-repo-workspace skill (workspace topology with spa-velocity) ==="
+
+XRS=".claude/skills/cross-repo-workspace/SKILL.md"
+
+# Structural — file present and frontmatter well-formed
+assert_true "T75: cross-repo-workspace SKILL.md exists" "test -f $XRS"
+XRS_DESC=$(awk '/^description:/{sub(/^description:[[:space:]]*/,""); print; exit}' "$XRS" 2>/dev/null || echo "")
+assert_true "T75: description starts with 'Use ALWAYS when'"  "echo \"\$XRS_DESC\" | grep -q '^Use ALWAYS when'"
+assert_true "T75: description has 'NOT for' exclusion"        "echo \"\$XRS_DESC\" | grep -q 'NOT for'"
+assert_true "T75: description names both repos by name"       "echo \"\$XRS_DESC\" | grep -qE 'api-velocity.*spa-velocity|spa-velocity.*api-velocity'"
+
+# Rules 1-7 all present
+assert_true "T75: Rule 1 (Active-lens by path)"      "grep -q 'Rule 1 — Active-lens by path' $XRS"
+assert_true "T75: Rule 2 (ADR-qualification)"        "grep -q 'Rule 2 — ADR-qualification' $XRS"
+assert_true "T75: Rule 3 (Coordinated cross-repo)"   "grep -q 'Rule 3 — Coordinated' $XRS"
+assert_true "T75: Rule 4 (ADR adoption that binds)"  "grep -q 'Rule 4 — ADR adoption' $XRS"
+assert_true "T75: Rule 5 (Memory-keying)"            "grep -q 'Rule 5 — Memory' $XRS"
+assert_true "T75: Rule 6 (Prompt-target convention)" "grep -q 'Rule 6 — Prompt' $XRS"
+assert_true "T75: Rule 7 (Settings-gate scope)"      "grep -q 'Rule 7 — Settings' $XRS"
+
+# Critical content — ADR-collision table and lens-switch attestation
+assert_true "T75: ADR collision table names TypeORM (api side)"       "grep -q 'TypeORM-first persistence' $XRS"
+assert_true "T75: ADR collision table names Zustand (spa side)"       "grep -q 'Zustand for client state' $XRS"
+assert_true "T75: lens-switch attestation directive ('Lens-switch:')" "grep -q 'Lens-switch:' $XRS"
+
+# Router wiring — P3.4 force-load + Skill Pointers (loose check; both should mention it)
+assert_true "T75: P3.4 lists cross-repo-workspace as force-load" \
+  "awk '/^### P3.4/,/^### P3.5/' .ruler/instructions.md | grep -q 'cross-repo-workspace'"
+assert_true "T75: Skill Pointers row for cross-repo-workspace exists" \
+  "awk '/^## Skill Pointers/{flag=1; next} /^## Workflow/{exit} flag' .ruler/instructions.md | grep -q 'cross-repo-workspace'"
+
+# Cross-repo qualifier rule — skill body uses qualified ADR refs.
+# Real format uses bold: '**api-velocity** ADR-XXX'. Accept both bold and plain qualifiers.
+assert_true "T75: skill body uses qualified ADR refs (**api-velocity** ADR-XXX or **spa-velocity** ADR-XXX)" \
+  "grep -qE '\\*\\*api-velocity\\*\\* ADR-|\\*\\*spa-velocity\\*\\* ADR-|api-velocity ADR-|spa-velocity ADR-' $XRS"
 
 echo
 echo "==========================="
