@@ -1,7 +1,11 @@
 ---
 name: code-reviewer
 description: Use ALWAYS after a feature/fix/refactor where 3+ files were modified OR auth/payments/sessions/data-migration is touched. NOT optional for those scopes. Runs isolated DESIGN review against MUST principles (SOLID/DRY/KISS/SoC/YAGNI/cohesion/fail-fast/explicitness/SSoT). Test coverage / edge cases delegated to qa-validator; security review delegated to security-reviewer. Returns APPROVE / CHANGES REQUESTED / BLOCK. NOT for non-code work, incomplete implementations, or single-file trivial edits.
-tools: Read, Grep, Glob, Bash
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
 ---
 
 # Code Reviewer

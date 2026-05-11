@@ -1,7 +1,10 @@
 ---
 name: lessons-curator
 description: Use PROACTIVELY when the user issues a correction ("no, that's wrong", "you should have...", "we discussed this before", "stop doing X", "next time, do Y") or invokes "curate that". Diagnoses the correction, surveys existing skills/hooks/CLAUDE.md, proposes ONE concrete change. Read-only — never writes files. Always waits for user approval.
-tools: Read, Grep, Glob
+tools:
+  - Read
+  - Grep
+  - Glob
 ---
 
 # Lessons Curator

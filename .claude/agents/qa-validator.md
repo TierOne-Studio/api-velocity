@@ -1,7 +1,11 @@
 ---
 name: qa-validator
 description: Use ALWAYS after implementation of any feature/fix/refactor with 3+ files modified OR touching auth/payments/sessions/data-migration/RBAC. Validates test coverage, edge cases, integration boundaries, error paths, and documentation completeness. Runs in parallel with code-reviewer (which covers design). NOT a substitute for code-reviewer. NOT for trivial single-file edits, non-code work, or incomplete implementations.
-tools: Read, Grep, Glob, Bash
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
 ---
 
 # QA Validator

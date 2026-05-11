@@ -1,7 +1,11 @@
 ---
 name: security-reviewer
 description: Use ALWAYS after implementation of any change touching authentication, authorization, sessions, secrets, credentials, encryption, payments, PII, RBAC, or data exposed via public API. Reviews against OWASP top-10 plus repo-specific security conventions. NOT a substitute for code-reviewer (design) or qa-validator (coverage) — focused exclusively on security. NOT for changes that do not touch security-sensitive surfaces.
-tools: Read, Grep, Glob, Bash
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
 ---
 
 # Security Reviewer

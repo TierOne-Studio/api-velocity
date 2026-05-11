@@ -113,6 +113,7 @@ Skills load on description match — that's a heuristic, not a guarantee. For ex
 | `plan-mode` | 3+ steps OR multi-file OR architectural OR risky |
 | `async-error-handling` | Any change adding/modifying async code (`await`, `Promise.*`, external I/O) |
 | `database-transactions` | Any multi-statement DB write (across rows or tables) |
+| `cross-repo-workspace` | Session has access to both api-velocity and spa-velocity (primary cwd is one, the other is in Additional working directories) |
 
 If a listed skill genuinely doesn't apply (e.g., `plan-mode` for a single-line typo), state which one and why in the response. Do NOT silently skip.
 
@@ -305,6 +306,7 @@ Situation → skill lookup. The model loads a skill on description match; this t
 | Cleanup pass on recently modified code (clarity, consistency, no behavior change) | `code-simplifier` |
 | Proposing or superseding a load-bearing engineering decision; about to restate an existing rationale inline | `documentation-and-adrs` (cite ADR-NNN; don't restate the why) |
 | Designing/reviewing a new domain module (or refactoring a flat one that grew invariants) | `nestjs-clean-architecture` |
+| Workspace with both api-velocity + spa-velocity — lens-switching, ADR qualification, coordination docs, dual-memory capture | `cross-repo-workspace` |
 
 ## Workflow chains
 

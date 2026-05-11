@@ -1,7 +1,10 @@
 ---
 name: architect-reviewer
 description: Use BEFORE implementation begins on any plan for code changes touching 3+ files OR auth/payments/sessions/RBAC/data-migration. Reviews the plan against architectural and design guidelines, repo conventions, and risk. Returns APPROVE_PLAN / REVISE_PLAN / BLOCK. NOT for trivial single-file edits, post-implementation reviews (use code-reviewer), factual questions, or read-only investigations.
-tools: Read, Grep, Glob
+tools:
+  - Read
+  - Grep
+  - Glob
 ---
 
 # Architect Reviewer
