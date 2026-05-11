@@ -1371,6 +1371,21 @@ assert_true "T75: Skill Pointers row for cross-repo-workspace exists" \
 assert_true "T75: skill body uses qualified ADR refs (**api-velocity** ADR-XXX or **spa-velocity** ADR-XXX)" \
   "grep -qE '\\*\\*api-velocity\\*\\* ADR-|\\*\\*spa-velocity\\*\\* ADR-|api-velocity ADR-|spa-velocity ADR-' $XRS"
 
+# Enforcement directives — these turn doctrine into subagent audit items.
+# Without them, the cross-repo rules are advisory; with them, code-reviewer +
+# architect-reviewer have explicit MED/HIGH findings to surface.
+assert_true "T75: ENFORCE-1 per-repo architect-reviewer invocation directive"  "grep -q 'ENFORCE-1' $XRS"
+assert_true "T75: ENFORCE-2 coordination-doc presence audit directive"         "grep -q 'ENFORCE-2' $XRS"
+assert_true "T75: ENFORCE-3 lens-switch attestation audit directive"           "grep -q 'ENFORCE-3' $XRS"
+assert_true "T75: ENFORCE-4 bare ADR-NNN audit directive"                      "grep -q 'ENFORCE-4' $XRS"
+assert_true "T75: ENFORCE-1 names architect-reviewer as the executor"          "awk '/ENFORCE-1/,/ENFORCE-2/' $XRS | grep -q 'architect-reviewer'"
+assert_true "T75: ENFORCE-2 names architect-reviewer as the executor"          "awk '/ENFORCE-2/,/ENFORCE-3/' $XRS | grep -q 'architect-reviewer'"
+assert_true "T75: ENFORCE-3 names code-reviewer as the executor"               "awk '/ENFORCE-3/,/ENFORCE-4/' $XRS | grep -q 'code-reviewer'"
+assert_true "T75: ENFORCE-1 cites severity (MED)"                              "awk '/ENFORCE-1/,/ENFORCE-2/' $XRS | grep -q 'MED'"
+assert_true "T75: ENFORCE-2 cites severity (HIGH)"                             "awk '/ENFORCE-2/,/ENFORCE-3/' $XRS | grep -q 'HIGH'"
+assert_true "T75: ENFORCE-3 cites severity (HIGH)"                             "awk '/ENFORCE-3/,/ENFORCE-4/' $XRS | grep -q 'HIGH'"
+assert_true "T75: ENFORCE-4 cites severity (MED)"                              "awk '/ENFORCE-4/,/^## /' $XRS | grep -q 'MED'"
+
 echo
 echo "==========================="
 echo "Results: $PASS passed, $FAIL failed"

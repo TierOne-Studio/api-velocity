@@ -148,6 +148,30 @@ When this skill fires, the response's `Skills consulted:` line MUST include `cro
 
 This makes the lens-switch auditable so a future review knows which repo's rules the model followed.
 
+## Enforcement directives (audit items for subagents)
+
+When this skill is loaded into a session, the following audit items apply IN ADDITION to each subagent's normal mandate. Subagents reading this skill MUST honor them.
+
+### ENFORCE-1: Per-repo `architect-reviewer` invocation (cross-repo plans)
+
+When the plan under review touches files in BOTH repos, the `architect-reviewer` that loads from the primary cwd MUST ALSO read the non-primary repo's `.ruler/agents/architect-reviewer.md` and apply its criteria to the non-primary-side steps. A plan reviewed from only the primary repo's perspective is incomplete — the non-primary side's conventions (NestJS layering rules vs React feature-folder rules, etc.) will not be checked. A cross-repo plan where only one architect-reviewer ran is a **MED finding** minimum; the verdict should list "non-primary side not audited" in Required revisions.
+
+### ENFORCE-2: Coordination-doc presence (cross-repo plans)
+
+Per Rule 3, cross-repo features require `docs/<feature>-coordination-plan.md` in the user-visible-side repo. The `architect-reviewer` MUST audit cross-repo plans for the coordination-doc step. If the plan introduces a cross-repo feature but no coordination-doc step exists in the per-step list, that is a **HIGH finding** — the plan is missing the structural artifact that prevents per-side drift, per-side branch confusion, and bilateral-ADR collisions.
+
+### ENFORCE-3: Lens-switch attestation (cross-repo diffs)
+
+The `code-reviewer` MUST audit diffs that modify files under the non-primary repo's path (per Rule 1) for the literal `Lens-switch:` attestation line in the implementer's response:
+
+> Lens-switch: applied **<target-repo>** conventions for files under `/<target-repo>/`. Read `<absolute-path>/.ruler/skills/repo-conventions/SKILL.md` before editing.
+
+If the diff modifies non-primary-repo files but the response lacks this line, that is a **HIGH finding** — the implementer cannot have followed Rule 1 without attesting to it. The attestation IS the evidence that Rule 1 was followed; absence of attestation = absence of evidence = treat as Rule 1 violation.
+
+### ENFORCE-4: Bare ADR-NNN in cross-repo context (any subagent reviewing cross-repo artifacts)
+
+Per Rule 2, cross-repo artifacts (coordination docs, cross-repo PR descriptions, responses that compare both sides) MUST qualify every ADR reference with the repo name (`api-velocity ADR-XXX` or `spa-velocity ADR-XXX`). Any subagent reviewing a cross-repo artifact MUST grep the artifact for bare `ADR-[0-9]+` references not preceded by a repo qualifier. Each bare reference in a cross-repo context is a **MED finding** — Rule 2 violation, recoverable by adding the qualifier.
+
 ## Anti-patterns
 
 - **Applying api-velocity rules to spa-velocity code** (or vice versa) because the active doctrine got loaded from the primary cwd. The whole point of this skill.
