@@ -5,7 +5,19 @@
       "WebFetch(domain:js.langchain.com)",
       "WebFetch(domain:docs.langchain.com)",
       "WebFetch(domain:reference.langchain.com)",
-      "Bash(npx jest:*)"
+      "Bash(npx jest:*)",
+      "Bash(gh pr *)",
+      "Bash(gh api *)",
+      "Bash(bash .claude/tests/run-acceptance.sh)",
+      "Bash(git rev-list *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git add *)",
+      "Bash(git push *)",
+      "Bash(xargs -I {} dirname {})",
+      "Bash(awk '/## Skill Pointers/,/^---$/' CLAUDE.md)",
+      "Bash(awk '/## Skill Pointers/,0' CLAUDE.md)",
+      "Bash(sed -n '118,125p' .claude/skills/nestjs-dynamic-modules/SKILL.md)",
+      "Bash(sed -n '92,98p' .claude/skills/decision-rules/SKILL.md)"
     ]
   }
 }

@@ -1,3 +1,7 @@
+
+
+<!-- Source: .ruler/instructions.md -->
+
 # SENIOR ENGINEER — OPERATING PROFILE (api-velocity)
 
 ## PRIORITY ORDER (HOW TO READ THIS)

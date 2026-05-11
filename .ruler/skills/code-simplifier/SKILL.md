@@ -19,6 +19,36 @@ Refine code so it is easier to read, more consistent with project standards, and
 - When recently touched code has redundant branching, awkward naming, or avoidable nesting.
 - When you need to align a local change with repository conventions without broad refactoring.
 
+## When NOT to use
+
+- **The code is already clean and readable.** Don't simplify for the sake of it — that produces churn without value.
+- **You don't understand what the code does yet.** Comprehend before you simplify; otherwise you'll silently change behavior.
+- **The code is performance-critical and the "simpler" version would be measurably slower.** Cite the measurement.
+- **You're about to rewrite the module entirely.** Simplifying throwaway code wastes effort.
+
+## Chesterton's Fence — pre-touch checklist
+
+Before changing or removing any non-trivial element, answer these (out loud, in the response):
+
+- What is this code's responsibility?
+- What calls it? What does it call?
+- What are the edge cases and error paths it handles?
+- Are there tests that lock in its current behavior?
+- Why might it have been written this way? (Performance? Platform constraint? Historical reason?)
+- What does `git blame` / commit message say about the original context?
+
+If you can't answer these, **understand first**. Tearing down a fence you don't understand is the failure mode; if you understand it and the reason has lapsed, simplification is safe.
+
+## Over-simplification traps (anti-rationalization)
+
+The failure mode of this skill. Watch for these patterns and stop yourself:
+
+- **Inlining too aggressively.** Removing a helper that gave a concept a name makes the call site harder to read, not easier. The helper *was* the simplification.
+- **Combining unrelated logic.** Two simple functions merged into one with mixed responsibilities is not simpler — it's denser.
+- **Removing "unnecessary" abstraction.** Some abstractions exist for testability, future-extension under a real plan, or hiding genuine complexity. Apply the **deletion test** from `design-review` § YAGNI before removing.
+- **Optimizing for line count.** Fewer lines is not the goal; easier comprehension is. A one-liner with three nested ternaries is denser than five clear lines.
+- **Drive-by refactors of unrelated code.** Default scope is the diff under review. Anything else is scope creep — propose, don't apply.
+
 ## Core Rules
 
 1. Preserve exact functionality.
