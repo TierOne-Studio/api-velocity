@@ -27,7 +27,7 @@
     "@airweave/sdk": "^0.9.60",
     "@langchain/core": "^1.1.39",
     "@langchain/openai": "^1.4.2",
-    "@mravinale/ruler": "^0.4.0-main.2.ef5aa22",
+    "@intellectronica/ruler": "0.3.40",
     "@nestjs/common": "^11.0.17",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
