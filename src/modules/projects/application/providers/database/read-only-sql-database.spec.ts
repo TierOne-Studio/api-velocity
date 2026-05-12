@@ -1,12 +1,21 @@
 import { jest } from '@jest/globals';
 
+// Captured params from the most recent SqlDatabase.fromDataSourceParams
+// call. Used by the H1c spec below to assert `includesTables` is forwarded.
+const capturedFromDataSourceParams: Array<Record<string, unknown>> = [];
+
 jest.unstable_mockModule('@langchain/classic/sql_db', () => {
   class SqlDatabase {
     appDataSource: unknown;
     constructor(appDataSource: unknown) {
       this.appDataSource = appDataSource;
     }
-    static async fromDataSourceParams(params: { appDataSource: unknown }) {
+    static async fromDataSourceParams(params: {
+      appDataSource: unknown;
+      includesTables?: string[];
+      ignoreTables?: string[];
+    }) {
+      capturedFromDataSourceParams.push({ ...params });
       return new SqlDatabase(params.appDataSource);
     }
     async run(_command: string, _fetch?: 'all' | 'one'): Promise<string> {
@@ -98,5 +107,48 @@ describe('ReadOnlySqlDatabase', () => {
     await expect(db.runRaw('DROP TABLE users')).rejects.toBeInstanceOf(
       ReadOnlyViolation,
     );
+  });
+
+  // H1c: per-connection table allowlist forwards to SqlToolkit introspection.
+  describe('fromDataSource forwards table scoping options', () => {
+    beforeEach(() => {
+      capturedFromDataSourceParams.length = 0;
+    });
+
+    it('passes includesTables when provided', async () => {
+      const { ds } = buildFakeDataSource();
+      await ReadOnlySqlDatabase.fromDataSource(ds as never, limits, {
+        includesTables: ['users', 'analytics.orders'],
+      });
+      const last = capturedFromDataSourceParams.at(-1)!;
+      expect(last.includesTables).toEqual(['users', 'analytics.orders']);
+    });
+
+    it('omits includesTables when not provided (sub-agent sees all tables)', async () => {
+      const { ds } = buildFakeDataSource();
+      await ReadOnlySqlDatabase.fromDataSource(ds as never, limits);
+      const last = capturedFromDataSourceParams.at(-1)!;
+      expect(last.includesTables).toBeUndefined();
+    });
+
+    it('omits includesTables when options.includesTables is undefined', async () => {
+      // Mirrors how chat-to-sql.service passes
+      // { includesTables: connection.allowedTables ?? undefined }.
+      const { ds } = buildFakeDataSource();
+      await ReadOnlySqlDatabase.fromDataSource(ds as never, limits, {
+        includesTables: undefined,
+      });
+      const last = capturedFromDataSourceParams.at(-1)!;
+      expect(last.includesTables).toBeUndefined();
+    });
+
+    it('passes ignoreTables when provided', async () => {
+      const { ds } = buildFakeDataSource();
+      await ReadOnlySqlDatabase.fromDataSource(ds as never, limits, {
+        ignoreTables: ['migrations'],
+      });
+      const last = capturedFromDataSourceParams.at(-1)!;
+      expect(last.ignoreTables).toEqual(['migrations']);
+    });
   });
 });

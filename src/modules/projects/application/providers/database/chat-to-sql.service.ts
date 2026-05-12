@@ -59,7 +59,13 @@ export class ChatToSqlService {
     let db: ReadOnlySqlDatabase;
     try {
       const dataSource = await factory.get(connection);
-      db = await ReadOnlySqlDatabase.fromDataSource(dataSource, limits);
+      // H1c: pipe the per-connection table allowlist into the sub-agent's
+      // SqlToolkit. NULL/missing → undefined → SqlToolkit sees the entire
+      // schema (preserves prior behavior). Array → SqlToolkit only sees
+      // the listed tables in list_tables_sql_db / info_sql_db calls.
+      db = await ReadOnlySqlDatabase.fromDataSource(dataSource, limits, {
+        includesTables: connection.allowedTables ?? undefined,
+      });
     } catch (error) {
       const sanitized = sanitizeAgentError(error);
       this.logger.warn(
