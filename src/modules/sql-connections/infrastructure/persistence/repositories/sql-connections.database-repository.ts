@@ -211,4 +211,20 @@ export class SqlConnectionsDatabaseRepository
     );
     return Boolean(result);
   }
+
+  async countProjectReferences(connectionId: string): Promise<number> {
+    // M6: cross-module schema read against project_data_source. JSONB
+    // `config->>'connectionId'` extracts the string value the projects
+    // module stores when kind='database'. The kind filter is redundant
+    // with the connectionId JSON-key filter (only database rows carry
+    // a connectionId), but explicit makes the intent clearer.
+    const row = await this.db.queryOne<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+         FROM project_data_source
+         WHERE kind = 'database'
+           AND config->>'connectionId' = $1`,
+      [connectionId],
+    );
+    return row ? parseInt(row.count, 10) : 0;
+  }
 }

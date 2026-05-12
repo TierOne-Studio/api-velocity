@@ -54,4 +54,16 @@ export interface ISqlConnectionsRepository {
     name: string,
   ): Promise<SqlConnectionRow | null>;
   delete(id: string, organizationId: string): Promise<boolean>;
+  /**
+   * M6: returns the number of project_data_source rows that reference this
+   * connection (kind='database', config->>'connectionId' = id). Used by
+   * the service's delete path to refuse-with-context when a project would
+   * be orphaned by the deletion.
+   *
+   * Cross-module schema read: pragmatically lives here rather than in a
+   * projects-side port + DI injection (heavier for one query). If the
+   * projects module grows a public "list-references-by-connection" method,
+   * this can delegate there.
+   */
+  countProjectReferences(connectionId: string): Promise<number>;
 }

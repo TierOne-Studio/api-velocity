@@ -35,6 +35,7 @@ function buildRepositoryMock(): jest.Mocked<ISqlConnectionsRepository> {
     listForOrganization: jest.fn(),
     findByOrganizationAndName: jest.fn(),
     delete: jest.fn(),
+    countProjectReferences: jest.fn<() => Promise<number>>().mockResolvedValue(0),
   } as unknown as jest.Mocked<ISqlConnectionsRepository>;
 }
 
@@ -301,6 +302,55 @@ describe('SqlConnectionsService.create / update — allowedTables (H1b)', () => 
       }),
     ).rejects.toThrow(BadRequestException);
     expect(repository.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('SqlConnectionsService.delete — refuse-on-reference (M6)', () => {
+  let repository: jest.Mocked<ISqlConnectionsRepository>;
+  let configService: jest.Mocked<ConfigService>;
+  let tester: jest.Mocked<SqlConnectionTester>;
+  let service: SqlConnectionsService;
+
+  beforeEach(() => {
+    repository = buildRepositoryMock();
+    configService = {
+      getProjectSourceSecretKey: jest.fn().mockReturnValue(secretKey),
+      getProjectSourceSecretKeyPrevious: jest.fn().mockReturnValue(null),
+      getSqlAgentConnectTimeoutMs: jest.fn().mockReturnValue(1000),
+    } as unknown as jest.Mocked<ConfigService>;
+    tester = {
+      test: jest.fn<() => Promise<TestConnectionResult>>(),
+    } as unknown as jest.Mocked<SqlConnectionTester>;
+    service = new SqlConnectionsService(repository, configService, tester);
+  });
+
+  it('deletes when no project references the connection', async () => {
+    repository.findByIdInOrg.mockResolvedValue(buildRow());
+    (repository.countProjectReferences as jest.Mock).mockResolvedValue(0 as never);
+    (repository.delete as jest.Mock).mockResolvedValue(true as never);
+
+    const out = await service.delete(adminScope, 'conn-1');
+
+    expect(out).toEqual({ deleted: true });
+    expect(repository.delete).toHaveBeenCalledWith('conn-1', 'org-1');
+  });
+
+  it('refuses delete with ConflictException when references exist', async () => {
+    repository.findByIdInOrg.mockResolvedValue(buildRow());
+    (repository.countProjectReferences as jest.Mock).mockResolvedValue(3 as never);
+
+    await expect(service.delete(adminScope, 'conn-1')).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(repository.delete).not.toHaveBeenCalled();
+  });
+
+  it('still throws NotFoundException for missing connection (no refuse-on-reference check leaks)', async () => {
+    repository.findByIdInOrg.mockResolvedValue(null);
+    await expect(service.delete(adminScope, 'missing')).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(repository.countProjectReferences).not.toHaveBeenCalled();
   });
 });
 

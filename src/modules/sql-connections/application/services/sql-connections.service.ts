@@ -189,6 +189,18 @@ export class SqlConnectionsService {
     id: string,
   ): Promise<{ deleted: boolean }> {
     const orgId = this.requireOrg(scope);
+    // M6: refuse-on-reference. If any project's data-source list points at
+    // this connection, deletion would leave dangling references; the chat
+    // resolver would silently drop the tool with no operator signal. Force
+    // the operator to detach references first.
+    const existing = await this.repository.findByIdInOrg(id, orgId);
+    if (!existing) throw new NotFoundException('SQL connection not found');
+    const referenceCount = await this.repository.countProjectReferences(id);
+    if (referenceCount > 0) {
+      throw new ConflictException(
+        `Cannot delete SQL connection: ${referenceCount} project data source(s) still reference it. Detach them first.`,
+      );
+    }
     const deleted = await this.repository.delete(id, orgId);
     if (!deleted) throw new NotFoundException('SQL connection not found');
     return { deleted: true };
