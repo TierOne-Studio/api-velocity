@@ -129,11 +129,24 @@ export class SqlDataSourceFactory {
         reject(new Error('connect timeout'));
       }, timeoutMs);
       ds.initialize()
-        .then((value) => {
+        .then(async (value) => {
           clearTimeout(timer);
           if (timedOut) {
-            // We've already rejected — cleanup the pool instead of leaking it.
-            void value.destroy().catch(() => undefined);
+            // M1: await the destroy and log if it fails. We've already
+            // rejected with 'connect timeout' so the outer caller has
+            // moved on, but the late-init DataSource MUST be cleaned up
+            // (or visibly fail to clean up) — silently swallowing the
+            // error was the leak gap flagged in the PR review.
+            try {
+              await value.destroy();
+            } catch (destroyErr) {
+              console.warn(
+                '[SqlDataSourceFactory] late-init destroy after timeout failed:',
+                destroyErr instanceof Error
+                  ? destroyErr.message
+                  : String(destroyErr),
+              );
+            }
             return;
           }
           resolve(value);

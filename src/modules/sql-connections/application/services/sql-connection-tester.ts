@@ -80,10 +80,24 @@ export class SqlConnectionTester {
         reject(new Error('connect timeout'));
       }, ms);
       ds.initialize()
-        .then((value) => {
+        .then(async (value) => {
           clearTimeout(timer);
           if (timedOut) {
-            void value.destroy().catch(() => undefined);
+            // M1: await the destroy and log if it fails. The outer caller
+            // has already rejected with 'connect timeout' and moved on;
+            // they can't be made to wait, but the destroy MUST complete
+            // (or visibly fail) so a late-init DataSource doesn't leak
+            // its pool. Silently swallowing the error was the gap.
+            try {
+              await value.destroy();
+            } catch (destroyErr) {
+              console.warn(
+                '[SqlConnectionTester] late-init destroy after timeout failed:',
+                destroyErr instanceof Error
+                  ? destroyErr.message
+                  : String(destroyErr),
+              );
+            }
             return;
           }
           resolve(value);
