@@ -265,7 +265,12 @@ export class SqlConnectionsService {
   }
 
   private decryptPassword(row: SqlConnectionRow): string {
+    // C3a: pass the optional previous key so legacy rows encrypted under
+    // the prior master key still decrypt during a rotation window.
+    // Lazy upgrade-on-read of those rows is C3b (separate commit).
     const key = this.configService.getProjectSourceSecretKey();
+    const previousKey =
+      this.configService.getProjectSourceSecretKeyPrevious() ?? undefined;
     return decryptAesGcm(
       {
         ciphertext: row.password_ciphertext,
@@ -273,6 +278,7 @@ export class SqlConnectionsService {
         tag: row.password_tag,
       },
       key,
+      { previousKey },
     );
   }
 

@@ -270,6 +270,20 @@ export class ConfigService {
       );
     }
 
+    // C3a: PROJECT_SOURCE_SECRET_KEY_PREVIOUS is optional, but when set it
+    // must be a valid AES-256 base64 key. Validating at boot lets operators
+    // catch typos during rotation rather than at first decrypt.
+    const previous = this.getProjectSourceSecretKeyPrevious();
+    if (previous !== null) {
+      try {
+        assertValidBase64Key(previous);
+      } catch (error) {
+        throw new Error(
+          `Invalid PROJECT_SOURCE_SECRET_KEY_PREVIOUS: ${(error as Error).message}`,
+        );
+      }
+    }
+
     console.log('✅ All required environment variables are present');
   }
 
@@ -281,6 +295,20 @@ export class ConfigService {
       );
     }
     return key;
+  }
+
+  /**
+   * C3a: optional previous key used during the rotation window. When set,
+   * decrypt tries the current key first; on auth-tag failure it retries
+   * with this previous key. Allows operators to rotate the master key
+   * without simultaneously re-encrypting every stored credential.
+   *
+   * Returns `null` when unset (no previous key in play; decrypt is
+   * single-key).
+   */
+  getProjectSourceSecretKeyPrevious(): string | null {
+    const key = process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS?.trim();
+    return key && key.length > 0 ? key : null;
   }
 
   hasProjectSourceSecretKey(): boolean {

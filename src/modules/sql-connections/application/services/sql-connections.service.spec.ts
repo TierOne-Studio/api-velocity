@@ -71,6 +71,7 @@ describe('SqlConnectionsService.testCredentials', () => {
     repository = buildRepositoryMock();
     configService = {
       getProjectSourceSecretKey: jest.fn().mockReturnValue(secretKey),
+      getProjectSourceSecretKeyPrevious: jest.fn().mockReturnValue(null),
       getSqlAgentConnectTimeoutMs: jest.fn().mockReturnValue(1000),
     } as unknown as jest.Mocked<ConfigService>;
     tester = {

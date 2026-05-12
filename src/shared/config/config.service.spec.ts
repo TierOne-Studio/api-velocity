@@ -689,6 +689,57 @@ describe('ConfigService', () => {
           'Invalid PROJECT_SOURCE_SECRET_KEY',
         );
       });
+
+      // C3a: previous-key validation during rotation window
+      it('passes validation when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is unset', () => {
+        process.env.AUTH_SECRET = 'secret';
+        process.env.DATABASE_URL = 'postgresql://localhost/db';
+        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+        delete process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS;
+        const cs = new ConfigService();
+        expect(() => cs.validateEnvironment()).not.toThrow();
+      });
+
+      it('passes validation when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is a valid base64 key', () => {
+        process.env.AUTH_SECRET = 'secret';
+        process.env.DATABASE_URL = 'postgresql://localhost/db';
+        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+        process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS =
+          validProjectSourceSecretKey;
+        const cs = new ConfigService();
+        expect(() => cs.validateEnvironment()).not.toThrow();
+      });
+
+      it('throws when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is set but invalid', () => {
+        process.env.AUTH_SECRET = 'secret';
+        process.env.DATABASE_URL = 'postgresql://localhost/db';
+        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+        process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS = 'not-a-key';
+        const cs = new ConfigService();
+        expect(() => cs.validateEnvironment()).toThrow(
+          /Invalid PROJECT_SOURCE_SECRET_KEY_PREVIOUS/,
+        );
+      });
+  });
+
+  describe('getProjectSourceSecretKeyPrevious (C3a)', () => {
+    it('returns null when unset', () => {
+      delete process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS;
+      const cs = new ConfigService();
+      expect(cs.getProjectSourceSecretKeyPrevious()).toBeNull();
+    });
+
+    it('returns null when set to whitespace', () => {
+      process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS = '   ';
+      const cs = new ConfigService();
+      expect(cs.getProjectSourceSecretKeyPrevious()).toBeNull();
+    });
+
+    it('returns the trimmed string when set', () => {
+      process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS = '  someValue  ';
+      const cs = new ConfigService();
+      expect(cs.getProjectSourceSecretKeyPrevious()).toBe('someValue');
+    });
   });
 
   describe('shouldEnforceResendTestRecipients', () => {
