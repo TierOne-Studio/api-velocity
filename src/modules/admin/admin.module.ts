@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { EmailModule } from '../../shared/email/email.module';
 import { DatabaseModule } from '../../shared/infrastructure/database/database.module';
-import { SqlConnectionsModule } from '../sql-connections/sql-connections.module';
 
 // Users sub-domain
 import { AdminUsersController } from './users/api/controllers/admin-users.controller';
@@ -39,7 +38,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
  * Requires admin or manager platform role.
  */
 @Module({
-  imports: [EmailModule, DatabaseModule, DashboardModule, SqlConnectionsModule],
+  imports: [EmailModule, DatabaseModule, DashboardModule],
   controllers: [
     AdminUsersController,
     SessionsController,
