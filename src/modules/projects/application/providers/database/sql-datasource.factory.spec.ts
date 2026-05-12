@@ -1,5 +1,8 @@
 import { UnsafeHostError } from '../../../../../shared/security/host-validator';
-import { SqlDataSourceFactory } from './sql-datasource.factory';
+import {
+  SqlDataSourceFactory,
+  checkForbiddenAppDatabase,
+} from './sql-datasource.factory';
 import type { ResolvedSqlConnection, SqlLimits } from './types';
 
 const limits: SqlLimits = {
@@ -44,4 +47,77 @@ describe('SqlDataSourceFactory (SSRF guard)', () => {
       );
     },
   );
+});
+
+describe('checkForbiddenAppDatabase (S1+S2)', () => {
+  it('allows when there is no forbidden URL', () => {
+    expect(
+      checkForbiddenAppDatabase(null, { host: 'public.example.com', port: 5432 }),
+    ).toEqual({ result: 'allow' });
+  });
+
+  it('forbids when host+port match the app DB (S1: regardless of database name)', () => {
+    const check = checkForbiddenAppDatabase(
+      'postgres://u:p@app-db.internal:5432/app',
+      { host: 'app-db.internal', port: 5432 },
+    );
+    expect(check.result).toBe('forbidden');
+  });
+
+  it('forbids a sibling database on the same physical instance (S1)', () => {
+    // Was the gap: old impl required database-name match too. Sibling DBs
+    // share the same physical Postgres, so dblink etc. cross trivially.
+    const check = checkForbiddenAppDatabase(
+      'postgres://u:p@10.0.1.5:5432/app',
+      { host: '10.0.1.5', port: 5432 },
+    );
+    expect(check.result).toBe('forbidden');
+  });
+
+  it('allows when host differs', () => {
+    const check = checkForbiddenAppDatabase(
+      'postgres://u:p@app-db.internal:5432/app',
+      { host: 'other-db.example.com', port: 5432 },
+    );
+    expect(check.result).toBe('allow');
+  });
+
+  it('allows when port differs', () => {
+    const check = checkForbiddenAppDatabase(
+      'postgres://u:p@app-db.internal:5432/app',
+      { host: 'app-db.internal', port: 6543 },
+    );
+    expect(check.result).toBe('allow');
+  });
+
+  it('compares host case-insensitively', () => {
+    const check = checkForbiddenAppDatabase(
+      'postgres://u:p@APP-DB.INTERNAL:5432/app',
+      { host: 'app-db.internal', port: 5432 },
+    );
+    expect(check.result).toBe('forbidden');
+  });
+
+  it('treats missing port in URL as 5432 (Postgres default)', () => {
+    const check = checkForbiddenAppDatabase(
+      'postgres://u:p@app-db.internal/app',
+      { host: 'app-db.internal', port: 5432 },
+    );
+    expect(check.result).toBe('forbidden');
+  });
+
+  it('S2: fails closed when the forbidden URL is malformed', () => {
+    const check = checkForbiddenAppDatabase('not-a-url', {
+      host: 'public.example.com',
+      port: 5432,
+    });
+    expect(check.result).toBe('invalid-forbidden-url');
+  });
+
+  it('S2: the factory refuses to dial when forbidden URL is malformed', async () => {
+    const factory = new SqlDataSourceFactory(limits, 'not-a-url');
+    await expect(factory.get(conn('public.example.com'))).rejects.toThrow(
+      /malformed; cannot verify/,
+    );
+  });
 });

@@ -3,6 +3,58 @@ import { assertSafeAgentHost } from '../../../../../shared/security/host-validat
 import type { ResolvedSqlConnection, SqlLimits } from './types';
 
 /**
+ * Pure-function helper exposed for unit testing. Returns `'allow'` when the
+ * connection is safe to dial, `'forbidden'` when host+port match the
+ * forbidden (application) DATABASE_URL, and `'invalid-forbidden-url'` when
+ * the forbidden URL is malformed.
+ *
+ * Notes vs. the prior `assertNotAppDatabase`:
+ *   - S1: matches on host+port only. The old impl required `database` to
+ *     match too, which let sibling databases on the same physical instance
+ *     slip through (`postgres://...@10.0.1.5:5432/app_readonly` was treated
+ *     as different from `.../app`, but `dblink` from one to the other was
+ *     trivial).
+ *   - S2: fails closed on malformed URL. The old impl silently allowed the
+ *     connection through. A broken DATABASE_URL is a boot-time bug; the
+ *     SQL agent path must NOT proceed without a valid app-DB identity to
+ *     compare against.
+ *   - Hostname compare is case-insensitive.
+ */
+export type ForbiddenAppDbCheck =
+  | { result: 'allow' }
+  | { result: 'forbidden'; reason: string }
+  | { result: 'invalid-forbidden-url'; reason: string };
+
+export function checkForbiddenAppDatabase(
+  forbiddenUrl: string | null,
+  connection: { host: string; port: number },
+): ForbiddenAppDbCheck {
+  if (!forbiddenUrl) return { result: 'allow' };
+
+  let parsed: URL;
+  try {
+    parsed = new URL(forbiddenUrl);
+  } catch {
+    return {
+      result: 'invalid-forbidden-url',
+      reason: 'Forbidden app-DB URL is malformed; cannot verify isolation',
+    };
+  }
+  const appHost = parsed.hostname.toLowerCase();
+  const appPort = Number(parsed.port || '5432');
+  const connHost = connection.host.trim().toLowerCase();
+
+  if (appHost === connHost && appPort === connection.port) {
+    return {
+      result: 'forbidden',
+      reason:
+        'Refusing to connect to the application database via a user SQL connection',
+    };
+  }
+  return { result: 'allow' };
+}
+
+/**
  * Request-scoped factory for TypeORM DataSources. One instance per chat turn.
  * Callers must `destroyAll()` in a `finally` block.
  */
@@ -18,12 +70,14 @@ export class SqlDataSourceFactory {
     const cached = this.dataSources.get(connection.id);
     if (cached) return cached;
 
-    // SSRF guard (C1+S3): re-validate the host at every dial, not just at
-    // create-time. Even though the connection was validated when first
-    // saved, DNS rebinding can change resolution between then and now.
-    await assertSafeAgentHost(connection.host);
-
+    // Cheap in-memory check first (S1+S2): refuses dials at the app DB and
+    // fails closed on a malformed forbidden URL.
     this.assertNotAppDatabase(connection);
+
+    // SSRF guard (C1+S3): re-validate the host at every dial. DNS rebinding
+    // between save-time and dial-time can change resolution; we revalidate
+    // every time the chat agent attempts a query.
+    await assertSafeAgentHost(connection.host);
 
     const ds = new DataSource({
       type: 'postgres',
@@ -55,26 +109,12 @@ export class SqlDataSourceFactory {
   }
 
   private assertNotAppDatabase(connection: ResolvedSqlConnection): void {
-    if (!this.forbiddenUrl) return;
-    try {
-      const url = new URL(this.forbiddenUrl);
-      const host = url.hostname;
-      const port = Number(url.port || '5432');
-      const database = url.pathname.replace(/^\//, '');
-      if (
-        host === connection.host &&
-        port === connection.port &&
-        database === connection.database
-      ) {
-        throw new Error(
-          'Refusing to connect to the application database via a user SQL connection',
-        );
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith('Refusing')) {
-        throw error;
-      }
-      // Malformed DATABASE_URL: we do not enforce the check, fail-open is acceptable.
+    const check = checkForbiddenAppDatabase(this.forbiddenUrl, {
+      host: connection.host,
+      port: connection.port,
+    });
+    if (check.result === 'forbidden' || check.result === 'invalid-forbidden-url') {
+      throw new Error(check.reason);
     }
   }
 
