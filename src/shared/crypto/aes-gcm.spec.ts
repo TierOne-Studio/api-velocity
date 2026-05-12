@@ -1,10 +1,20 @@
 import { randomBytes } from 'node:crypto';
 import {
   assertValidBase64Key,
-  decryptAesGcm,
   decryptAesGcmWithUpgradeHint,
   encryptAesGcm,
 } from './aes-gcm';
+
+// Thin test helper for the single-decrypt API: the production code calls
+// `decryptAesGcmWithUpgradeHint` and destructures plaintext + needsUpgrade.
+// Many of the original tests only care about the plaintext, so a tiny
+// wrapper keeps those tests readable. Tests that care about the hint
+// call the full function inline.
+const decryptAesGcm = (
+  payload: Parameters<typeof decryptAesGcmWithUpgradeHint>[0],
+  key: string,
+  options?: Parameters<typeof decryptAesGcmWithUpgradeHint>[2],
+): string => decryptAesGcmWithUpgradeHint(payload, key, options).plaintext;
 
 function freshKey(): string {
   return randomBytes(32).toString('base64');

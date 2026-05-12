@@ -65,45 +65,6 @@ export function encryptAesGcm(
   };
 }
 
-export function decryptAesGcm(
-  payload: AesGcmCiphertext,
-  base64Key: string,
-  options: DecryptOptions = {},
-): string {
-  const iv = Buffer.from(payload.iv, 'base64');
-  const tag = Buffer.from(payload.tag, 'base64');
-  if (iv.length !== IV_BYTES) {
-    throw new Error(`Invalid IV length: expected ${IV_BYTES}`);
-  }
-  if (tag.length !== TAG_BYTES) {
-    throw new Error(`Invalid auth tag length: expected ${TAG_BYTES}`);
-  }
-
-  // Strip the version prefix if present; the body is the same shape in
-  // both v0 and v1 — only the wrapper changed.
-  const body = payload.ciphertext.startsWith(V1_PREFIX)
-    ? payload.ciphertext.slice(V1_PREFIX.length)
-    : payload.ciphertext;
-  const cipherBytes = Buffer.from(body, 'base64');
-
-  // Try current key first. On auth-tag failure (or any decipher error),
-  // retry once with previousKey if provided. We do NOT collapse the two
-  // attempts into a single combined catch — keeping them sequential
-  // means the success case never touches the previous key path.
-  try {
-    return runDecrypt(cipherBytes, iv, tag, base64Key);
-  } catch (currentErr) {
-    if (!options.previousKey) throw currentErr;
-    try {
-      return runDecrypt(cipherBytes, iv, tag, options.previousKey);
-    } catch {
-      // Re-throw the original (current-key) error so callers and logs
-      // see the "expected" failure mode first.
-      throw currentErr;
-    }
-  }
-}
-
 function runDecrypt(
   cipherBytes: Buffer,
   iv: Buffer,
@@ -125,23 +86,17 @@ export function assertValidBase64Key(base64Key: string): void {
 }
 
 /**
- * Returns true iff this ciphertext was written in v1 wire format. Callers
- * doing lazy-upgrade-on-read (C3b) use this to detect rows still in v0.
- */
-export function isV1Ciphertext(payload: AesGcmCiphertext): boolean {
-  return payload.ciphertext.startsWith(V1_PREFIX);
-}
-
-/**
- * Same as `decryptAesGcm` but also reports whether the row needs to be
- * re-encrypted with the current key. The hint is set when:
- *   - The wire format is v0 (legacy, no prefix), OR
- *   - The previous key succeeded after the current key failed (rotation).
+ * Decrypts a v0 (legacy, unprefixed) or v1 ciphertext using the current key
+ * first, falling back to `options.previousKey` on auth-tag failure.
  *
- * Callers persisting the ciphertext (sql-connections.service in C3b) use
- * this hint to fire a fire-and-forget rewrite that brings the row up to
- * the current key + v1 wire format, so the rotation window can be closed
- * incrementally as rows are read.
+ * Returns `{ plaintext, needsUpgrade }`. `needsUpgrade` is the hint callers
+ * use to fire a lazy re-encrypt (C3b): true when the row was in v0 wire
+ * format, or when the previous key was needed to decrypt.
+ *
+ * This is the single decrypt entry point on the public API — the earlier
+ * `decryptAesGcm` and `isV1Ciphertext` exports were retired because the
+ * upgrade-hint shape strictly subsumes both (post-review cleanup, code-
+ * reviewer MED-2).
  */
 export function decryptAesGcmWithUpgradeHint(
   payload: AesGcmCiphertext,

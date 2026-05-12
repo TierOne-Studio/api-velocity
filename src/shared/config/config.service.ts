@@ -468,14 +468,6 @@ export class ConfigService {
     return `${base}\n\n## Available source_id values\n\nMultiple databases are attached. Pass one of these as \`source_id\`:\n${list}`;
   }
 
-  private positiveInt(raw: string | undefined, fallback: number): number {
-    const parsed = parseInt(raw || '', 10);
-    if (Number.isNaN(parsed) || parsed < 1) {
-      return fallback;
-    }
-    return parsed;
-  }
-
   /**
    * Bounded-int parser for SQL-agent and similar safety-critical knobs (L2).
    *
