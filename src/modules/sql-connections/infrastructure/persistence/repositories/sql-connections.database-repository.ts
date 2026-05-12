@@ -1,3 +1,34 @@
+/**
+ * Raw-SQL repository adapter for the SQL Connections module (M5 justification
+ * per the repo's "TypeORM-first; raw SQL only with criteria" convention).
+ *
+ * Why raw SQL here rather than TypeORM entities:
+ *
+ *   1. **Encrypted opaque blobs**: the table's central columns
+ *      (password_ciphertext, password_iv, password_tag) are AES-GCM
+ *      output blobs that bypass any TypeORM column-type sugar. Their
+ *      lifecycle is owned by the application layer (encrypt-on-write,
+ *      decrypt-on-read with lazy v0→v1 upgrade, see C3a/b), so a TypeORM
+ *      `@Column()` with transformers would add a layer without helping.
+ *
+ *   2. **JSONB explicitness**: `ssl` and `allowed_tables` are JSONB columns
+ *      stored as JSON of arbitrary shape. The raw SQL with `::jsonb` casts
+ *      makes the wire encoding explicit (and the failure mode obvious
+ *      when, e.g., an array is mis-serialized). TypeORM's jsonb support
+ *      via `@Column({ type: 'jsonb' })` works but hides the conversion.
+ *
+ *   3. **Module-owned migrations**: schema changes are managed by
+ *      sql-connections.migration.ts (a tracked-migration NestJS service),
+ *      NOT through TypeORM's migration CLI. Keeping the adapter consistent
+ *      with that ownership simplifies cross-environment management.
+ *
+ *   4. **Flat schema**: one table, no joins, no relations to other entities.
+ *      TypeORM's relationship machinery is overhead with no payoff.
+ *
+ * If the schema ever grows joins (e.g. a `sql_connection_audit` table that
+ * references this one with relational reads), revisit this decision and
+ * consider entity-based access for the joined surface.
+ */
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../../../../shared/infrastructure/database/database.module';
 import type {
