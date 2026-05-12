@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ConfigService } from '../../../../shared/config';
+import { scrubCredentials } from '../../../../shared/security/credential-scrubber';
 import { assertSafeAgentHost } from '../../../../shared/security/host-validator';
 import type { SqlSslConfig } from '../../api/dto/sql-connection.dto';
 
@@ -112,7 +113,11 @@ export class SqlConnectionTester {
 }
 
 export function sanitizeError(err: unknown): string {
+  // Security MED-9: delegate to the shared `scrubCredentials` helper so
+  // both the chat-to-SQL error sanitizer and this tester path apply the
+  // same patterns (the tester used to only strip `password=...`,
+  // leaving URL-form `postgres://user:pass@host/db` credentials in
+  // `status_error` visible to operators in the SPA admin UI).
   const raw = err instanceof Error ? err.message : String(err);
-  // Strip query strings that might embed credentials or values from the LLM.
-  return raw.replace(/password=[^\s&]+/gi, 'password=***').slice(0, 500);
+  return scrubCredentials(raw).slice(0, 500);
 }

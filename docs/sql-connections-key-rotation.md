@@ -78,6 +78,17 @@ Restart api-velocity. From this point on, any row still encrypted under `K_old` 
 
 After Phase C is stable (a few days), destroy `K_old` from your secrets store. You no longer need it.
 
+> ⚠️ **Pre-destruction gate (operator must verify).** Destroying `K_old` while any row still carries v0 wire format permanently bricks those rows. Before destroying, run:
+>
+> ```sql
+> SELECT COUNT(*) FROM org_sql_connection
+>  WHERE password_ciphertext NOT LIKE 'v1:%';
+> ```
+>
+> Wait until the count is **zero** across all environments (and stays zero for a full traffic cycle — typically one business day) before retiring `K_old`. If the count is non-zero, either trigger a read of each remaining row through the admin UI (which decrypts and lazy-upgrades it) or extend Phase B until traffic catches up.
+>
+> This is the only failure mode of the rotation flow that's unrecoverable, and the only one that depends on operator timing rather than on the code. Treat it as a checklist item, not a default.
+
 ---
 
 ## Rollback

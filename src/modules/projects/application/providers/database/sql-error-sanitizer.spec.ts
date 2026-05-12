@@ -109,4 +109,28 @@ describe('sanitizeAgentError', () => {
     // Identifier still doesn't leak to the LLM-bound message.
     expect(out.message).not.toContain('secret_audit_log');
   });
+
+  // Security HIGH-3: Postgres errors are often multi-line (the canonical
+  // form is `<primary>\nDETAIL: ...\nHINT: ...`). The LLM-bound `message`
+  // MUST be the canonical short string, with the multi-line PII-leaking
+  // payload confined to `serverDetail`. Pin this so a future regex change
+  // can't accidentally widen the LLM-bound surface.
+  it('multi-line errors with DETAIL/HINT lines never leak identifiers to the LLM-bound message', () => {
+    const raw = [
+      'permission denied for table secret_audit',
+      'DETAIL: column "ssn_hash" of table "secret_audit" has security label',
+      "HINT: try requesting access from the data-governance team",
+    ].join('\n');
+    const out = sanitizeAgentError(new Error(raw));
+
+    expect(out.code).toBe('internal_error');
+    expect(out.message).toMatch(/agent does not have access/i);
+    // None of the multi-line PII identifiers / hint text appears in the
+    // LLM-bound message.
+    expect(out.message).not.toContain('secret_audit');
+    expect(out.message).not.toContain('ssn_hash');
+    expect(out.message).not.toMatch(/data-governance/i);
+    // The serverDetail IS expected to carry them (operator visibility).
+    expect(out.serverDetail).toContain('secret_audit');
+  });
 });

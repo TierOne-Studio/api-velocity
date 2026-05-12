@@ -15,6 +15,7 @@
  *   - Returns `serverDetail` for server-side logging so operators still
  *     get to see what actually happened (with credentials scrubbed).
  */
+import { scrubCredentials } from '../../../../../shared/security/credential-scrubber';
 import type { ChatToSqlError } from './types';
 
 export type SanitizedAgentError = {
@@ -24,19 +25,6 @@ export type SanitizedAgentError = {
   /** Verbose detail for server-side logging only; never returned to LLM. */
   serverDetail: string;
 };
-
-/**
- * Server-side detail: strip obvious credential patterns but otherwise
- * preserve enough context for operators to debug.
- */
-function scrubCredentials(raw: string): string {
-  return raw
-    .replace(/password=[^\s&;,)'"]+/gi, 'password=***')
-    .replace(
-      /postgres(?:ql)?:\/\/[^@\s]*@[^/\s]+/gi,
-      'postgres://***:***@***',
-    );
-}
 
 const PATTERNS: Array<{
   match: RegExp;
