@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ConfigService } from '../../../../shared/config';
+import { assertSafeAgentHost } from '../../../../shared/security/host-validator';
 import type { SqlSslConfig } from '../../api/dto/sql-connection.dto';
 
 export type TestConnectionInput = {
@@ -21,6 +22,16 @@ export class SqlConnectionTester {
   constructor(private readonly configService: ConfigService) {}
 
   async test(input: TestConnectionInput): Promise<TestConnectionResult> {
+    // SSRF guard: refuse to dial a host that resolves to a private,
+    // loopback, link-local, or cloud-metadata address (C1+S3). Runs before
+    // any connection attempt so a malicious caller can't probe internal
+    // services via timing or error-shape signals.
+    try {
+      await assertSafeAgentHost(input.host);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+
     const timeoutMs = this.configService.getSqlAgentConnectTimeoutMs();
     const ds = new DataSource({
       type: 'postgres',

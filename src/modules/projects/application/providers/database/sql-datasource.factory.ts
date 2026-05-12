@@ -1,4 +1,5 @@
 import { DataSource } from 'typeorm';
+import { assertSafeAgentHost } from '../../../../../shared/security/host-validator';
 import type { ResolvedSqlConnection, SqlLimits } from './types';
 
 /**
@@ -16,6 +17,11 @@ export class SqlDataSourceFactory {
   async get(connection: ResolvedSqlConnection): Promise<DataSource> {
     const cached = this.dataSources.get(connection.id);
     if (cached) return cached;
+
+    // SSRF guard (C1+S3): re-validate the host at every dial, not just at
+    // create-time. Even though the connection was validated when first
+    // saved, DNS rebinding can change resolution between then and now.
+    await assertSafeAgentHost(connection.host);
 
     this.assertNotAppDatabase(connection);
 
