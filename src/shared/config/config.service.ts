@@ -288,39 +288,63 @@ export class ConfigService {
   }
 
   getSqlAgentStatementTimeoutMs(): number {
-    return this.positiveInt(process.env.SQL_AGENT_STATEMENT_TIMEOUT_MS, 5000);
+    return this.boundedInt('SQL_AGENT_STATEMENT_TIMEOUT_MS', 5000, {
+      min: 100,
+      max: 300_000,
+    });
   }
 
   getSqlAgentIdleTimeoutMs(): number {
-    return this.positiveInt(process.env.SQL_AGENT_IDLE_TIMEOUT_MS, 5000);
+    return this.boundedInt('SQL_AGENT_IDLE_TIMEOUT_MS', 5000, {
+      min: 100,
+      max: 300_000,
+    });
   }
 
   getSqlAgentMaxRows(): number {
-    return this.positiveInt(process.env.SQL_AGENT_MAX_ROWS, 200);
+    return this.boundedInt('SQL_AGENT_MAX_ROWS', 200, {
+      min: 1,
+      max: 100_000,
+    });
   }
 
   getSqlAgentMaxBytes(): number {
-    return this.positiveInt(process.env.SQL_AGENT_MAX_BYTES, 65536);
+    return this.boundedInt('SQL_AGENT_MAX_BYTES', 65536, {
+      min: 1024,
+      max: 10_485_760,
+    });
   }
 
   getSqlAgentMaxFieldBytes(): number {
-    return this.positiveInt(process.env.SQL_AGENT_MAX_FIELD_BYTES, 4096);
+    return this.boundedInt('SQL_AGENT_MAX_FIELD_BYTES', 4096, {
+      min: 128,
+      max: 1_048_576,
+    });
   }
 
   getSqlAgentMaxSqlLength(): number {
-    return this.positiveInt(process.env.SQL_AGENT_MAX_SQL_LENGTH, 8192);
+    return this.boundedInt('SQL_AGENT_MAX_SQL_LENGTH', 8192, {
+      min: 128,
+      max: 1_048_576,
+    });
   }
 
   getSqlAgentMaxIterations(): number {
-    return this.positiveInt(process.env.SQL_AGENT_MAX_ITERATIONS, 8);
+    return this.boundedInt('SQL_AGENT_MAX_ITERATIONS', 8, {
+      min: 1,
+      max: 50,
+    });
   }
 
   getSqlAgentPoolMax(): number {
-    return this.positiveInt(process.env.SQL_AGENT_POOL_MAX, 2);
+    return this.boundedInt('SQL_AGENT_POOL_MAX', 2, { min: 1, max: 50 });
   }
 
   getSqlAgentConnectTimeoutMs(): number {
-    return this.positiveInt(process.env.SQL_AGENT_CONNECT_TIMEOUT_MS, 3000);
+    return this.boundedInt('SQL_AGENT_CONNECT_TIMEOUT_MS', 3000, {
+      min: 100,
+      max: 60_000,
+    });
   }
 
   getSqlAgentAllowWrites(): boolean {
@@ -419,6 +443,44 @@ export class ConfigService {
   private positiveInt(raw: string | undefined, fallback: number): number {
     const parsed = parseInt(raw || '', 10);
     if (Number.isNaN(parsed) || parsed < 1) {
+      return fallback;
+    }
+    return parsed;
+  }
+
+  /**
+   * Bounded-int parser for SQL-agent and similar safety-critical knobs (L2).
+   *
+   * - Unset env: returns `fallback` silently (this is the normal case).
+   * - Env set but unparseable / NaN: returns `fallback` and logs a warning
+   *   so an operator typo is visible rather than silently disabled.
+   * - Env below `min` or above `max`: returns `fallback` and logs a warning.
+   *   The fallback is what protects the system; we never honor an unsafe
+   *   value. A 0 statement timeout would disable the read-only guard's
+   *   timeout; a 100_000_000 max-rows would invite OOM.
+   *
+   * @internal exposed for unit testing via getter call sites.
+   */
+  private boundedInt(
+    envName: string,
+    fallback: number,
+    bounds: { min: number; max: number },
+  ): number {
+    const raw = process.env[envName];
+    if (raw === undefined || raw.trim().length === 0) {
+      return fallback;
+    }
+    const parsed = parseInt(raw.trim(), 10);
+    if (Number.isNaN(parsed)) {
+      console.warn(
+        `[ConfigService] ${envName}="${raw}" is not a positive integer; using default ${fallback}`,
+      );
+      return fallback;
+    }
+    if (parsed < bounds.min || parsed > bounds.max) {
+      console.warn(
+        `[ConfigService] ${envName}=${parsed} is outside the allowed range [${bounds.min}, ${bounds.max}]; using default ${fallback}`,
+      );
       return fallback;
     }
     return parsed;

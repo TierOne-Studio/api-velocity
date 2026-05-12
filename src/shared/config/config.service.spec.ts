@@ -125,6 +125,78 @@ describe('ConfigService', () => {
     });
   });
 
+  describe('boundedInt SQL_AGENT_* knobs (L2)', () => {
+    let warnSpy: jest.SpiedFunction<typeof console.warn>;
+    beforeEach(() => {
+      warnSpy = jest
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    it('uses the default silently when unset', () => {
+      delete process.env.SQL_AGENT_STATEMENT_TIMEOUT_MS;
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentStatementTimeoutMs()).toBe(5000);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('uses a valid value when set in range', () => {
+      process.env.SQL_AGENT_STATEMENT_TIMEOUT_MS = '7500';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentStatementTimeoutMs()).toBe(7500);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('warns + falls back when env is non-numeric', () => {
+      process.env.SQL_AGENT_STATEMENT_TIMEOUT_MS = 'abc';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentStatementTimeoutMs()).toBe(5000);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/SQL_AGENT_STATEMENT_TIMEOUT_MS.*not a positive integer/),
+      );
+    });
+
+    it('warns + falls back when env is below min (e.g. 0 disables timeout)', () => {
+      process.env.SQL_AGENT_STATEMENT_TIMEOUT_MS = '0';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentStatementTimeoutMs()).toBe(5000);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/SQL_AGENT_STATEMENT_TIMEOUT_MS=0.*outside.*range/),
+      );
+    });
+
+    it('warns + falls back when env is above max (e.g. 1h timeout)', () => {
+      process.env.SQL_AGENT_STATEMENT_TIMEOUT_MS = '3600000';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentStatementTimeoutMs()).toBe(5000);
+      expect(warnSpy).toHaveBeenCalled();
+    });
+
+    it('warns + falls back for negative values', () => {
+      process.env.SQL_AGENT_MAX_ROWS = '-1';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentMaxRows()).toBe(200);
+      expect(warnSpy).toHaveBeenCalled();
+    });
+
+    it('warns + falls back when SQL_AGENT_POOL_MAX is suspiciously large', () => {
+      process.env.SQL_AGENT_POOL_MAX = '10000';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentPoolMax()).toBe(2);
+      expect(warnSpy).toHaveBeenCalled();
+    });
+
+    it('honors a tightened SQL_AGENT_MAX_SQL_LENGTH', () => {
+      process.env.SQL_AGENT_MAX_SQL_LENGTH = '256';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentMaxSqlLength()).toBe(256);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getTrustedOrigins', () => {
     it('should read TRUSTED_ORIGINS from the environment', () => {
       process.env.TRUSTED_ORIGINS =
