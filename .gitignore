@@ -404,10 +404,15 @@ cookies.txt
 
 
 # START Ruler Generated Files
+/.claude/agents
 /.claude/skills
+/.codex/agents
 /.codex/config.toml
 /.codex/config.toml.bak
 /.codex/skills
+/.cursor/agents
+/.cursor/skills
+/.github/agents
 /.github/copilot-instructions.md
 /.github/copilot-instructions.md.bak
 /AGENTS.md
@@ -415,6 +420,8 @@ cookies.txt
 /CLAUDE.md
 /CLAUDE.md.bak
 # END Ruler Generated Files
-.claude/
 .github/
 .codex/
+.claude/worktrees/
+.claude/settings.local.json
+CLAUDE.md.pre-refactor.bak
