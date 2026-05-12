@@ -86,6 +86,9 @@ export class SqlConnectionsService {
       passwordTag: encrypted.tag,
       ssl: input.ssl ?? false,
       schemaName: input.schemaName?.trim() || 'public',
+      // H1b: validateCreateInput rejects malformed entries; null and the
+      // omitted case both mean "no allowlist" — preserve current behavior.
+      allowedTables: input.allowedTables ?? null,
     });
 
     // Test in the background; do not block create.
@@ -107,6 +110,7 @@ export class SqlConnectionsService {
     input: UpdateSqlConnectionInput,
   ): Promise<SqlConnection> {
     const orgId = this.requireOrg(scope);
+    this.validateUpdateInput(input);
     const existing = await this.repository.findByIdInOrg(id, orgId);
     if (!existing) throw new NotFoundException('SQL connection not found');
 
@@ -131,6 +135,11 @@ export class SqlConnectionsService {
       ssl: input.ssl,
       schemaName: input.schemaName?.trim(),
     };
+    if (input.allowedTables !== undefined) {
+      // H1b: omit → leave unchanged; null → clear allowlist; array → replace
+      // (per the DTO contract). Validation happens in validateUpdateInput.
+      patch.allowedTables = input.allowedTables;
+    }
 
     let newPasswordPlaintext: string | null = null;
     if (input.password !== undefined) {
@@ -388,6 +397,15 @@ export class SqlConnectionsService {
     if (!input.password) {
       throw new BadRequestException('password is required');
     }
+    if (input.allowedTables !== undefined && input.allowedTables !== null) {
+      validateAllowedTables(input.allowedTables);
+    }
+  }
+
+  private validateUpdateInput(input: UpdateSqlConnectionInput): void {
+    if (input.allowedTables !== undefined && input.allowedTables !== null) {
+      validateAllowedTables(input.allowedTables);
+    }
   }
 
   private validateTestInput(input: TestSqlConnectionInput): void {
@@ -409,6 +427,35 @@ export class SqlConnectionsService {
   }
 }
 
+// H1b: validates each entry against the Postgres identifier shape.
+// Accepts unqualified ("users") or schema-qualified ("analytics.orders")
+// names. Per Postgres docs each identifier part is max 63 chars.
+const ALLOWED_TABLE_REGEX =
+  /^[A-Za-z_][A-Za-z0-9_]{0,62}(\.[A-Za-z_][A-Za-z0-9_]{0,62})?$/;
+
+function validateAllowedTables(entries: string[]): void {
+  if (!Array.isArray(entries)) {
+    throw new BadRequestException(
+      'allowedTables must be an array of identifiers or null',
+    );
+  }
+  if (entries.length === 0) {
+    throw new BadRequestException(
+      'allowedTables cannot be an empty array; use null to clear the allowlist',
+    );
+  }
+  if (entries.length > 200) {
+    throw new BadRequestException('allowedTables is limited to 200 entries');
+  }
+  for (const entry of entries) {
+    if (typeof entry !== 'string' || !ALLOWED_TABLE_REGEX.test(entry)) {
+      throw new BadRequestException(
+        `Invalid allowedTables entry: ${JSON.stringify(entry)}. Use Postgres identifier shape, optionally schema-qualified (e.g. "users" or "analytics.orders")`,
+      );
+    }
+  }
+}
+
 function toPublic(row: SqlConnectionRow): SqlConnection {
   return {
     id: row.id,
@@ -420,6 +467,7 @@ function toPublic(row: SqlConnectionRow): SqlConnection {
     username: row.username,
     ssl: row.ssl,
     schemaName: row.schema_name,
+    allowedTables: row.allowed_tables,
     status: row.status,
     statusError: row.status_error,
     createdAt: row.created_at,

@@ -53,6 +53,7 @@ function buildRow(overrides: Partial<SqlConnectionRow> = {}): SqlConnectionRow {
     password_tag: encrypted.tag,
     ssl: false,
     schema_name: 'public',
+    allowed_tables: null,
     status: 'ready',
     status_error: null,
     created_at: now,
@@ -175,6 +176,131 @@ describe('SqlConnectionsService.decryptPassword lazy upgrade (C3b)', () => {
 
     expect(out).toHaveLength(1);
     expect(out[0]!.password).toBe('legacy');
+  });
+});
+
+describe('SqlConnectionsService.create / update — allowedTables (H1b)', () => {
+  let repository: jest.Mocked<ISqlConnectionsRepository>;
+  let configService: jest.Mocked<ConfigService>;
+  let tester: jest.Mocked<SqlConnectionTester>;
+  let service: SqlConnectionsService;
+
+  const baseCreate = {
+    name: 'reporting',
+    host: 'db.example.com',
+    port: 5432,
+    database: 'reporting',
+    username: 'reader',
+    password: 'pw',
+  };
+
+  beforeEach(() => {
+    repository = buildRepositoryMock();
+    configService = {
+      getProjectSourceSecretKey: jest.fn().mockReturnValue(secretKey),
+      getProjectSourceSecretKeyPrevious: jest.fn().mockReturnValue(null),
+      getSqlAgentConnectTimeoutMs: jest.fn().mockReturnValue(1000),
+    } as unknown as jest.Mocked<ConfigService>;
+    tester = {
+      test: jest.fn<() => Promise<TestConnectionResult>>(),
+    } as unknown as jest.Mocked<SqlConnectionTester>;
+    service = new SqlConnectionsService(repository, configService, tester);
+    repository.findByOrganizationAndName.mockResolvedValue(null);
+    (repository.create as jest.Mock).mockImplementation((row: unknown) =>
+      Promise.resolve(
+        buildRow({
+          allowed_tables: (row as { allowedTables: string[] | null }).allowedTables,
+        }) as never,
+      ),
+    );
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('persists allowedTables=null when omitted (default = no allowlist)', async () => {
+    await service.create(adminScope, baseCreate);
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ allowedTables: null }),
+    );
+  });
+
+  it('persists a valid array of unqualified table names', async () => {
+    await service.create(adminScope, {
+      ...baseCreate,
+      allowedTables: ['users', 'orders'],
+    });
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ allowedTables: ['users', 'orders'] }),
+    );
+  });
+
+  it('persists a valid array of schema-qualified table names', async () => {
+    await service.create(adminScope, {
+      ...baseCreate,
+      allowedTables: ['analytics.orders', 'public.users'],
+    });
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allowedTables: ['analytics.orders', 'public.users'],
+      }),
+    );
+  });
+
+  it.each([
+    ['empty array', []],
+    ['malformed entry with SQL injection chars', ["users;DROP TABLE x"]],
+    ['malformed entry with quote', ['"users"']],
+    ['malformed entry starts with number', ['1users']],
+    ['three-dot qualified', ['db.schema.table']],
+    ['contains space', ['user accounts']],
+    ['list of 201 entries', Array.from({ length: 201 }, (_, i) => `t_${i}`)],
+  ])('rejects %s', async (_label, allowedTables) => {
+    await expect(
+      service.create(adminScope, { ...baseCreate, allowedTables }),
+    ).rejects.toThrow(BadRequestException);
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it('update with allowedTables=null clears the allowlist', async () => {
+    const existing = buildRow({ allowed_tables: ['users'] });
+    repository.findByIdInOrg.mockResolvedValue(existing);
+    (repository.update as jest.Mock).mockResolvedValue(
+      buildRow({ allowed_tables: null }) as never,
+    );
+
+    await service.update(adminScope, 'conn-1', { allowedTables: null });
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({ allowedTables: null }),
+    );
+  });
+
+  it('update without allowedTables preserves existing value', async () => {
+    const existing = buildRow({ allowed_tables: ['users'] });
+    repository.findByIdInOrg.mockResolvedValue(existing);
+    (repository.update as jest.Mock).mockResolvedValue(existing as never);
+
+    await service.update(adminScope, 'conn-1', { name: 'renamed' });
+
+    const patchArg = (repository.update as jest.Mock).mock.calls[0]![1];
+    expect(patchArg).not.toHaveProperty('allowedTables');
+  });
+
+  it('update with malformed allowedTables is rejected', async () => {
+    const existing = buildRow();
+    repository.findByIdInOrg.mockResolvedValue(existing);
+
+    await expect(
+      service.update(adminScope, 'conn-1', {
+        allowedTables: ['"x"'],
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(repository.update).not.toHaveBeenCalled();
   });
 });
 

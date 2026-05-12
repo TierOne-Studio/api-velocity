@@ -18,6 +18,8 @@ export type CreateSqlConnectionRow = {
   passwordTag: string;
   ssl: unknown;
   schemaName: string;
+  /** H1b: optional table allowlist; null = sub-agent sees all tables. */
+  allowedTables: string[] | null;
 };
 
 export type UpdateSqlConnectionRow = Partial<

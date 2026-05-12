@@ -19,6 +19,14 @@ export type ResolvedSqlConnection = {
   password: string;
   ssl: unknown;
   schemaName: string;
+  /**
+   * H1b: optional per-connection table allowlist resolved from the
+   * sql_connections row. `null` means no allowlist (sub-agent sees the
+   * whole schema — current behavior). H1c pipes this into
+   * ReadOnlySqlDatabase.fromDataSource's `includesTables` option so the
+   * SqlToolkit's introspection only sees the whitelisted tables.
+   */
+  allowedTables: string[] | null;
 };
 
 export type ValidatorVerdict =

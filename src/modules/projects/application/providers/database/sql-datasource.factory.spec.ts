@@ -26,7 +26,8 @@ function conn(host: string): ResolvedSqlConnection {
     username: 'u',
     password: 'p',
     ssl: false,
-    schemaName: null,
+    schemaName: null as unknown as string,
+    allowedTables: null,
   };
 }
 

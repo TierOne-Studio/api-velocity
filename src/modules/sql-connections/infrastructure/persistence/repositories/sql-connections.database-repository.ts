@@ -13,7 +13,7 @@ import type {
 const SELECT_COLUMNS = `
   id, organization_id, name, host, port, database, username,
   password_ciphertext, password_iv, password_tag,
-  ssl, schema_name, status, status_error, created_at, updated_at
+  ssl, schema_name, allowed_tables, status, status_error, created_at, updated_at
 `;
 
 @Injectable()
@@ -27,9 +27,9 @@ export class SqlConnectionsDatabaseRepository
       `INSERT INTO org_sql_connection (
          id, organization_id, name, host, port, database, username,
          password_ciphertext, password_iv, password_tag,
-         ssl, schema_name, status, status_error
+         ssl, schema_name, allowed_tables, status, status_error
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, 'connecting', NULL)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13::jsonb, 'connecting', NULL)
        RETURNING ${SELECT_COLUMNS}`,
       [
         row.id,
@@ -44,6 +44,9 @@ export class SqlConnectionsDatabaseRepository
         row.passwordTag,
         JSON.stringify(row.ssl ?? false),
         row.schemaName,
+        row.allowedTables === undefined || row.allowedTables === null
+          ? null
+          : JSON.stringify(row.allowedTables),
       ],
     );
     if (!inserted) {
@@ -78,6 +81,16 @@ export class SqlConnectionsDatabaseRepository
       append('ssl', JSON.stringify(row.ssl), '::jsonb');
     }
     if (row.schemaName !== undefined) append('schema_name', row.schemaName);
+    if (row.allowedTables !== undefined) {
+      // H1b: null clears the allowlist, array replaces it. We serialize
+      // both shapes via JSON.stringify (which produces "null" for the
+      // null case) and cast through ::jsonb so Postgres stores the value.
+      append(
+        'allowed_tables',
+        row.allowedTables === null ? null : JSON.stringify(row.allowedTables),
+        '::jsonb',
+      );
+    }
     sets.push(`updated_at = now()`);
 
     values.push(id);

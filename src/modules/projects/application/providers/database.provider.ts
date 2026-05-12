@@ -126,6 +126,9 @@ export class DatabaseSourceProvider implements DataSourceProvider {
         password: row.password,
         ssl: row.ssl,
         schemaName: row.schemaName,
+        // H1b: pass through the per-connection table allowlist. H1c
+        // wires this into ReadOnlySqlDatabase.fromDataSource.
+        allowedTables: row.allowedTables,
       });
     }
     return out;
