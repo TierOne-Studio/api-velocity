@@ -27,6 +27,7 @@
     "@airweave/sdk": "^0.9.60",
     "@langchain/core": "^1.1.39",
     "@langchain/openai": "^1.4.2",
+    "@intellectronica/ruler": "0.3.40",
     "@nestjs/common": "^11.0.17",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
@@ -41,7 +42,6 @@
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
     "resend": "^6.5.2",
-    "ruler": "^1.0.0",
     "rxjs": "^7.8.1",
     "typeorm": "^0.3.28"
   },
