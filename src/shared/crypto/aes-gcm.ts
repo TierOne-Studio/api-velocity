@@ -131,3 +131,50 @@ export function assertValidBase64Key(base64Key: string): void {
 export function isV1Ciphertext(payload: AesGcmCiphertext): boolean {
   return payload.ciphertext.startsWith(V1_PREFIX);
 }
+
+/**
+ * Same as `decryptAesGcm` but also reports whether the row needs to be
+ * re-encrypted with the current key. The hint is set when:
+ *   - The wire format is v0 (legacy, no prefix), OR
+ *   - The previous key succeeded after the current key failed (rotation).
+ *
+ * Callers persisting the ciphertext (sql-connections.service in C3b) use
+ * this hint to fire a fire-and-forget rewrite that brings the row up to
+ * the current key + v1 wire format, so the rotation window can be closed
+ * incrementally as rows are read.
+ */
+export function decryptAesGcmWithUpgradeHint(
+  payload: AesGcmCiphertext,
+  base64Key: string,
+  options: DecryptOptions = {},
+): { plaintext: string; needsUpgrade: boolean } {
+  const iv = Buffer.from(payload.iv, 'base64');
+  const tag = Buffer.from(payload.tag, 'base64');
+  if (iv.length !== IV_BYTES) {
+    throw new Error(`Invalid IV length: expected ${IV_BYTES}`);
+  }
+  if (tag.length !== TAG_BYTES) {
+    throw new Error(`Invalid auth tag length: expected ${TAG_BYTES}`);
+  }
+  const wireIsV1 = payload.ciphertext.startsWith(V1_PREFIX);
+  const body = wireIsV1
+    ? payload.ciphertext.slice(V1_PREFIX.length)
+    : payload.ciphertext;
+  const cipherBytes = Buffer.from(body, 'base64');
+
+  try {
+    const plaintext = runDecrypt(cipherBytes, iv, tag, base64Key);
+    // Wire was v0 → upgrade needed (rewrites the row to v1 next time).
+    // Wire was v1 + current key worked → no upgrade.
+    return { plaintext, needsUpgrade: !wireIsV1 };
+  } catch (currentErr) {
+    if (!options.previousKey) throw currentErr;
+    try {
+      const plaintext = runDecrypt(cipherBytes, iv, tag, options.previousKey);
+      // Decrypt only worked under the previous key → upgrade needed.
+      return { plaintext, needsUpgrade: true };
+    } catch {
+      throw currentErr;
+    }
+  }
+}

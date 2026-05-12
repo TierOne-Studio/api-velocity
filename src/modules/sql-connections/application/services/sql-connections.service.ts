@@ -5,11 +5,12 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '../../../../shared/config';
 import {
-  decryptAesGcm,
+  decryptAesGcmWithUpgradeHint,
   encryptAesGcm,
 } from '../../../../shared/crypto/aes-gcm';
 import type {
@@ -39,6 +40,8 @@ type CallerScope = {
 
 @Injectable()
 export class SqlConnectionsService {
+  private readonly logger = new Logger(SqlConnectionsService.name);
+
   constructor(
     @Inject(SQL_CONNECTIONS_REPOSITORY)
     private readonly repository: ISqlConnectionsRepository,
@@ -265,13 +268,19 @@ export class SqlConnectionsService {
   }
 
   private decryptPassword(row: SqlConnectionRow): string {
-    // C3a: pass the optional previous key so legacy rows encrypted under
-    // the prior master key still decrypt during a rotation window.
-    // Lazy upgrade-on-read of those rows is C3b (separate commit).
+    // C3a + C3b: dual-key decrypt with lazy upgrade-on-read.
+    //
+    // If the row is v0 wire format OR was decrypted under the previous
+    // key, the helper sets `needsUpgrade`. We then fire-and-forget a
+    // re-encrypt + persist with the CURRENT key in v1 format. Errors
+    // on the upgrade write are logged but never bubble up — the caller
+    // gets the plaintext regardless. This is the rotation-window flow:
+    // operator rotates the key, traffic naturally rewrites rows over
+    // time without a batch migration.
     const key = this.configService.getProjectSourceSecretKey();
     const previousKey =
       this.configService.getProjectSourceSecretKeyPrevious() ?? undefined;
-    return decryptAesGcm(
+    const { plaintext, needsUpgrade } = decryptAesGcmWithUpgradeHint(
       {
         ciphertext: row.password_ciphertext,
         iv: row.password_iv,
@@ -280,6 +289,46 @@ export class SqlConnectionsService {
       key,
       { previousKey },
     );
+    if (needsUpgrade) {
+      this.scheduleCiphertextUpgrade(row, plaintext, key);
+    }
+    return plaintext;
+  }
+
+  /**
+   * Fire-and-forget re-encrypt + persist of a row's stored password under
+   * the current key in v1 wire format. Used by lazy upgrade-on-read (C3b).
+   *
+   * Intentionally not awaited by the caller — the decrypt path returns
+   * the plaintext immediately so user-facing latency is unaffected.
+   * Concurrent reads of the same row may race and both rewrite the
+   * column; that's harmless (same plaintext, fresh nonce each time;
+   * last write wins, both equally valid).
+   */
+  private scheduleCiphertextUpgrade(
+    row: SqlConnectionRow,
+    plaintext: string,
+    currentKey: string,
+  ): void {
+    const fresh = encryptAesGcm(plaintext, currentKey);
+    void this.repository
+      .update(row.id, {
+        passwordCiphertext: fresh.ciphertext,
+        passwordIv: fresh.iv,
+        passwordTag: fresh.tag,
+      })
+      .then(() => {
+        this.logger.log(
+          `lazy-upgraded sql_connection ${row.id} ciphertext to v1`,
+        );
+      })
+      .catch((error) => {
+        this.logger.warn(
+          `lazy ciphertext upgrade failed for sql_connection ${row.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
   }
 
   private async runAndRecordTest(

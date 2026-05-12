@@ -61,6 +61,123 @@ function buildRow(overrides: Partial<SqlConnectionRow> = {}): SqlConnectionRow {
   };
 }
 
+describe('SqlConnectionsService.decryptPassword lazy upgrade (C3b)', () => {
+  let repository: jest.Mocked<ISqlConnectionsRepository>;
+  let configService: jest.Mocked<ConfigService>;
+  let tester: jest.Mocked<SqlConnectionTester>;
+  let service: SqlConnectionsService;
+  const oldKey = Buffer.from('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa').toString(
+    'base64',
+  );
+
+  beforeEach(() => {
+    repository = buildRepositoryMock();
+    configService = {
+      getProjectSourceSecretKey: jest.fn().mockReturnValue(secretKey),
+      getProjectSourceSecretKeyPrevious: jest.fn().mockReturnValue(null),
+      getSqlAgentConnectTimeoutMs: jest.fn().mockReturnValue(1000),
+    } as unknown as jest.Mocked<ConfigService>;
+    tester = {
+      test: jest.fn<() => Promise<TestConnectionResult>>(),
+    } as unknown as jest.Mocked<SqlConnectionTester>;
+    service = new SqlConnectionsService(repository, configService, tester);
+
+    // Suppress NestJS Logger output during the test (the upgrade path logs
+    // success/failure of the fire-and-forget repository.update).
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('triggers repository.update when a v0 (legacy) row is decrypted', async () => {
+    const v1 = encryptAesGcm('legacy-secret', secretKey);
+    const v0Row = buildRow({
+      // Strip the v1 prefix to simulate a pre-C3a row.
+      password_ciphertext: v1.ciphertext.slice(3),
+      password_iv: v1.iv,
+      password_tag: v1.tag,
+    });
+    repository.findManyByIdsForOrg.mockResolvedValue([v0Row]);
+    (repository.update as jest.Mock).mockResolvedValue(v0Row as never);
+
+    await service.resolveForAgent('org-1', ['conn-1']);
+
+    // The fire-and-forget upgrade scheduled an async update; flush microtasks.
+    await new Promise((r) => setImmediate(r));
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({
+        passwordCiphertext: expect.stringMatching(/^v1:/),
+        passwordIv: expect.any(String),
+        passwordTag: expect.any(String),
+      }),
+    );
+  });
+
+  it('does NOT trigger repository.update for a v1 row under the current key', async () => {
+    const v1 = encryptAesGcm('current-secret', secretKey);
+    const v1Row = buildRow({
+      password_ciphertext: v1.ciphertext,
+      password_iv: v1.iv,
+      password_tag: v1.tag,
+    });
+    repository.findManyByIdsForOrg.mockResolvedValue([v1Row]);
+
+    await service.resolveForAgent('org-1', ['conn-1']);
+    await new Promise((r) => setImmediate(r));
+
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it('triggers repository.update when the previous key was needed (rotation)', async () => {
+    const v1UnderOld = encryptAesGcm('rotated-secret', oldKey);
+    const rotatedRow = buildRow({
+      password_ciphertext: v1UnderOld.ciphertext,
+      password_iv: v1UnderOld.iv,
+      password_tag: v1UnderOld.tag,
+    });
+    configService.getProjectSourceSecretKeyPrevious = jest
+      .fn()
+      .mockReturnValue(oldKey) as never;
+    repository.findManyByIdsForOrg.mockResolvedValue([rotatedRow]);
+    (repository.update as jest.Mock).mockResolvedValue(rotatedRow as never);
+
+    await service.resolveForAgent('org-1', ['conn-1']);
+    await new Promise((r) => setImmediate(r));
+
+    expect(repository.update).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({
+        passwordCiphertext: expect.stringMatching(/^v1:/),
+      }),
+    );
+  });
+
+  it('does not surface upgrade-write failures to the caller', async () => {
+    const v1 = encryptAesGcm('legacy', secretKey);
+    const v0Row = buildRow({
+      password_ciphertext: v1.ciphertext.slice(3),
+      password_iv: v1.iv,
+      password_tag: v1.tag,
+    });
+    repository.findManyByIdsForOrg.mockResolvedValue([v0Row]);
+    (repository.update as jest.Mock).mockRejectedValue(
+      new Error('db write failed') as never,
+    );
+
+    // The caller still gets the resolved connection.
+    const out = await service.resolveForAgent('org-1', ['conn-1']);
+    await new Promise((r) => setImmediate(r));
+
+    expect(out).toHaveLength(1);
+    expect(out[0]!.password).toBe('legacy');
+  });
+});
+
 describe('SqlConnectionsService.testCredentials', () => {
   let repository: jest.Mocked<ISqlConnectionsRepository>;
   let configService: jest.Mocked<ConfigService>;

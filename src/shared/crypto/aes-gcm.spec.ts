@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import {
   assertValidBase64Key,
   decryptAesGcm,
+  decryptAesGcmWithUpgradeHint,
   encryptAesGcm,
 } from './aes-gcm';
 
@@ -121,6 +122,46 @@ describe('aes-gcm', () => {
       // the implementation ever passed previousKey to encrypt by accident,
       // the new key would not decrypt — confirm round-trip integrity.
       expect(decryptAesGcm(payload, key)).toBe('check');
+    });
+  });
+
+  describe('C3b: decryptAesGcmWithUpgradeHint', () => {
+    it('reports needsUpgrade=false for v1 ciphertext under current key', () => {
+      const key = freshKey();
+      const payload = encryptAesGcm('x', key);
+      const out = decryptAesGcmWithUpgradeHint(payload, key);
+      expect(out.plaintext).toBe('x');
+      expect(out.needsUpgrade).toBe(false);
+    });
+
+    it('reports needsUpgrade=true for v0 (legacy) ciphertext even under current key', () => {
+      const key = freshKey();
+      const v1 = encryptAesGcm('legacy', key);
+      const v0 = { ...v1, ciphertext: v1.ciphertext.slice(3) };
+      const out = decryptAesGcmWithUpgradeHint(v0, key);
+      expect(out.plaintext).toBe('legacy');
+      expect(out.needsUpgrade).toBe(true);
+    });
+
+    it('reports needsUpgrade=true when previousKey succeeded after current failed', () => {
+      const oldKey = freshKey();
+      const newKey = freshKey();
+      const payload = encryptAesGcm('rotated', oldKey);
+      const out = decryptAesGcmWithUpgradeHint(payload, newKey, {
+        previousKey: oldKey,
+      });
+      expect(out.plaintext).toBe('rotated');
+      expect(out.needsUpgrade).toBe(true);
+    });
+
+    it('throws when neither key decrypts', () => {
+      const a = freshKey();
+      const b = freshKey();
+      const c = freshKey();
+      const payload = encryptAesGcm('x', a);
+      expect(() =>
+        decryptAesGcmWithUpgradeHint(payload, b, { previousKey: c }),
+      ).toThrow();
     });
   });
 
