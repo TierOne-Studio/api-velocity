@@ -1,8 +1,9 @@
 // M4: SqlConnectionStatus is defined in domain/sql-connection.repository.ts
 // (the repository port references it; the lifecycle is a domain concern, not
-// a transport-shape concern). Re-exported here for ergonomic imports and
-// backward compatibility with existing call sites.
-export type { SqlConnectionStatus } from '../../domain/sql-connection.repository';
+// a transport-shape concern). Imported here so this file can reference the
+// type, and re-exported for backward-compatible imports at the api/dto path.
+import type { SqlConnectionStatus } from '../../domain/sql-connection.repository';
+export type { SqlConnectionStatus };
 
 export type SqlSslConfig =
   | boolean
