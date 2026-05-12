@@ -77,6 +77,54 @@ describe('ConfigService', () => {
     });
   });
 
+  describe('getAgentForbiddenDatabases (S4)', () => {
+    it('defaults to a single-element list containing DATABASE_URL', () => {
+      process.env.DATABASE_URL = 'postgres://u:p@app-db:5432/app';
+      delete process.env.AGENT_FORBIDDEN_DATABASES;
+      const cs = new ConfigService();
+      expect(cs.getAgentForbiddenDatabases()).toEqual([
+        'postgres://u:p@app-db:5432/app',
+      ]);
+    });
+
+    it('parses AGENT_FORBIDDEN_DATABASES as a comma-separated list', () => {
+      process.env.AGENT_FORBIDDEN_DATABASES =
+        'postgres://u:p@primary:5432/app, postgres://u:p@replica:5432/app';
+      const cs = new ConfigService();
+      expect(cs.getAgentForbiddenDatabases()).toEqual([
+        'postgres://u:p@primary:5432/app',
+        'postgres://u:p@replica:5432/app',
+      ]);
+    });
+
+    it('filters empty entries and trims whitespace', () => {
+      process.env.AGENT_FORBIDDEN_DATABASES =
+        '  postgres://u:p@a:5432/x ,, postgres://u:p@b:5432/y  ';
+      const cs = new ConfigService();
+      expect(cs.getAgentForbiddenDatabases()).toEqual([
+        'postgres://u:p@a:5432/x',
+        'postgres://u:p@b:5432/y',
+      ]);
+    });
+
+    it('returns empty list when neither env is set', () => {
+      delete process.env.DATABASE_URL;
+      delete process.env.AGENT_FORBIDDEN_DATABASES;
+      const cs = new ConfigService();
+      expect(cs.getAgentForbiddenDatabases()).toEqual([]);
+    });
+
+    it('AGENT_FORBIDDEN_DATABASES overrides DATABASE_URL default', () => {
+      process.env.DATABASE_URL = 'postgres://u:p@app-db:5432/app';
+      process.env.AGENT_FORBIDDEN_DATABASES =
+        'postgres://u:p@only-this:5432/x';
+      const cs = new ConfigService();
+      expect(cs.getAgentForbiddenDatabases()).toEqual([
+        'postgres://u:p@only-this:5432/x',
+      ]);
+    });
+  });
+
   describe('getTrustedOrigins', () => {
     it('should read TRUSTED_ORIGINS from the environment', () => {
       process.env.TRUSTED_ORIGINS =

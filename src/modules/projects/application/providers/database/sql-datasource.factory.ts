@@ -4,9 +4,9 @@ import type { ResolvedSqlConnection, SqlLimits } from './types';
 
 /**
  * Pure-function helper exposed for unit testing. Returns `'allow'` when the
- * connection is safe to dial, `'forbidden'` when host+port match the
- * forbidden (application) DATABASE_URL, and `'invalid-forbidden-url'` when
- * the forbidden URL is malformed.
+ * connection is safe to dial, `'forbidden'` when host+port match any
+ * forbidden (application) database URL, and `'invalid-forbidden-url'` when
+ * any forbidden URL is malformed (fail-closed, per S2).
  *
  * Notes vs. the prior `assertNotAppDatabase`:
  *   - S1: matches on host+port only. The old impl required `database` to
@@ -15,9 +15,11 @@ import type { ResolvedSqlConnection, SqlLimits } from './types';
  *     as different from `.../app`, but `dblink` from one to the other was
  *     trivial).
  *   - S2: fails closed on malformed URL. The old impl silently allowed the
- *     connection through. A broken DATABASE_URL is a boot-time bug; the
- *     SQL agent path must NOT proceed without a valid app-DB identity to
- *     compare against.
+ *     connection through. A broken URL is a boot-time bug; the SQL agent
+ *     path must NOT proceed without a valid app-DB identity to compare
+ *     against.
+ *   - S4: accepts a LIST of forbidden URLs (primary + replica + sibling
+ *     instances). Empty list = no guard.
  *   - Hostname compare is case-insensitive.
  */
 export type ForbiddenAppDbCheck =
@@ -26,30 +28,31 @@ export type ForbiddenAppDbCheck =
   | { result: 'invalid-forbidden-url'; reason: string };
 
 export function checkForbiddenAppDatabase(
-  forbiddenUrl: string | null,
+  forbiddenUrls: readonly string[] | null,
   connection: { host: string; port: number },
 ): ForbiddenAppDbCheck {
-  if (!forbiddenUrl) return { result: 'allow' };
+  if (!forbiddenUrls || forbiddenUrls.length === 0) return { result: 'allow' };
 
-  let parsed: URL;
-  try {
-    parsed = new URL(forbiddenUrl);
-  } catch {
-    return {
-      result: 'invalid-forbidden-url',
-      reason: 'Forbidden app-DB URL is malformed; cannot verify isolation',
-    };
-  }
-  const appHost = parsed.hostname.toLowerCase();
-  const appPort = Number(parsed.port || '5432');
   const connHost = connection.host.trim().toLowerCase();
-
-  if (appHost === connHost && appPort === connection.port) {
-    return {
-      result: 'forbidden',
-      reason:
-        'Refusing to connect to the application database via a user SQL connection',
-    };
+  for (const forbiddenUrl of forbiddenUrls) {
+    let parsed: URL;
+    try {
+      parsed = new URL(forbiddenUrl);
+    } catch {
+      return {
+        result: 'invalid-forbidden-url',
+        reason: `Forbidden app-DB URL is malformed; cannot verify isolation: ${forbiddenUrl}`,
+      };
+    }
+    const appHost = parsed.hostname.toLowerCase();
+    const appPort = Number(parsed.port || '5432');
+    if (appHost === connHost && appPort === connection.port) {
+      return {
+        result: 'forbidden',
+        reason:
+          'Refusing to connect to the application database via a user SQL connection',
+      };
+    }
   }
   return { result: 'allow' };
 }
@@ -63,7 +66,7 @@ export class SqlDataSourceFactory {
 
   constructor(
     private readonly limits: SqlLimits,
-    private readonly forbiddenUrl: string | null = null,
+    private readonly forbiddenUrls: readonly string[] = [],
   ) {}
 
   async get(connection: ResolvedSqlConnection): Promise<DataSource> {
@@ -109,7 +112,7 @@ export class SqlDataSourceFactory {
   }
 
   private assertNotAppDatabase(connection: ResolvedSqlConnection): void {
-    const check = checkForbiddenAppDatabase(this.forbiddenUrl, {
+    const check = checkForbiddenAppDatabase(this.forbiddenUrls, {
       host: connection.host,
       port: connection.port,
     });

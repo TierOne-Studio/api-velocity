@@ -43,7 +43,10 @@ export class ChatToSqlService {
   constructor(private readonly configService: ConfigService) {}
 
   createFactory(): SqlDataSourceFactory {
-    return new SqlDataSourceFactory(this.buildLimits(), this.safeAppDbUrl());
+    return new SqlDataSourceFactory(
+      this.buildLimits(),
+      this.configService.getAgentForbiddenDatabases(),
+    );
   }
 
   async askConnection(
@@ -149,14 +152,6 @@ export class ChatToSqlService {
       maxSqlLength: this.configService.getSqlAgentMaxSqlLength(),
       poolMax: this.configService.getSqlAgentPoolMax(),
     };
-  }
-
-  private safeAppDbUrl(): string | null {
-    try {
-      return this.configService.getDatabaseUrl();
-    } catch {
-      return null;
-    }
   }
 
 }

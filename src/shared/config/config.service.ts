@@ -327,6 +327,33 @@ export class ConfigService {
     return process.env.SQL_AGENT_ALLOW_WRITES === 'true';
   }
 
+  /**
+   * Returns the list of database URLs the SQL agent path is forbidden from
+   * dialing (the "forbidden app-DB list" — see S4 of the chat-to-SQL self-
+   * review). The intent is "agent path can NOT reach these specific Postgres
+   * endpoints", evaluated by host+port match against each URL.
+   *
+   * Defaults to a single-element list containing DATABASE_URL so the app's
+   * own database is always blocked. Operators with primary + replica setups
+   * or multi-instance topologies set `AGENT_FORBIDDEN_DATABASES` to a
+   * comma-separated list of all endpoints to block.
+   *
+   * If neither env is set, the getter returns an empty list and the factory
+   * applies no forbidden-host guard — this is rare; the canonical config
+   * always has DATABASE_URL set.
+   */
+  getAgentForbiddenDatabases(): string[] {
+    const explicit = process.env.AGENT_FORBIDDEN_DATABASES?.trim();
+    if (explicit && explicit.length > 0) {
+      return explicit
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
+    const databaseUrl = process.env.DATABASE_URL?.trim();
+    return databaseUrl ? [databaseUrl] : [];
+  }
+
   getSqlAgentModel(): string | null {
     return process.env.SQL_AGENT_MODEL?.trim() || null;
   }
