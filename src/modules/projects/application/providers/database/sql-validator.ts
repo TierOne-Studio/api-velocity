@@ -21,11 +21,22 @@ const DENY_WORDS = [
   'LOCK',
   'RESET',
   'PG_SLEEP',
+  // Filesystem access via privileged Postgres functions. PG_READ_SERVER_FILES
+  // is the *role* name; pg_read_file / pg_read_binary_file are the actual
+  // function calls an attacker would invoke (C2).
   'PG_READ_SERVER_FILES',
+  'PG_READ_FILE',
+  'PG_READ_BINARY_FILE',
   'PG_LS_DIR',
   'PG_STAT_FILE',
   'PG_TERMINATE_BACKEND',
   'PG_CANCEL_BACKEND',
+  // Large-object filesystem I/O (server-side import/export to disk) (C2).
+  'LO_IMPORT',
+  'LO_EXPORT',
+  // Outbound network calls from inside the DB — exfil + SSRF primitive (C2).
+  'DBLINK',
+  'DBLINK_EXEC',
 ];
 
 const DENY_REGEX = new RegExp(`\\b(${DENY_WORDS.join('|')})\\b`, 'i');
@@ -35,6 +46,13 @@ const ALLOWED_START = /^(WITH|SELECT|SHOW|EXPLAIN)\b/i;
 // CTE-write guard: WITH ... AS ( ... INSERT|UPDATE|DELETE ... )
 const CTE_WRITE_REGEX =
   /\bWITH\b[\s\S]*?\bAS\b[\s\S]*?\b(INSERT|UPDATE|DELETE)\b/i;
+// SELECT col INTO new_table FROM old_table — Postgres "CREATE TABLE AS"
+// semantics (writes). No INSERT/CREATE keyword appears textually, so the
+// word-list guard misses it; this explicit regex closes the C2 gap.
+// Matches a SELECT followed by INTO followed by an identifier, terminated
+// by FROM / WHERE / a delimiter — common Postgres SELECT-INTO shapes.
+const SELECT_INTO_REGEX =
+  /\bSELECT\b[\s\S]+?\bINTO\b\s+["A-Za-z_][\w."]*\s*(?:FROM|WHERE|GROUP|HAVING|ORDER|LIMIT|;|$)/i;
 
 export function stripComments(sql: string): string {
   // Remove /* ... */ block comments and -- line comments. Block comments
@@ -85,6 +103,13 @@ export function validateReadOnlySql(
 
   if (DENY_REGEX.test(oneStatement)) {
     return { ok: false, reason: 'write or dangerous keyword detected' };
+  }
+
+  if (SELECT_INTO_REGEX.test(oneStatement)) {
+    return {
+      ok: false,
+      reason: 'SELECT INTO is not allowed (creates a table)',
+    };
   }
 
   if (CTE_WRITE_REGEX.test(oneStatement)) {

