@@ -589,6 +589,50 @@ describe('stripSqlFencesFromReply', () => {
   it('handles empty input', () => {
     expect(stripSqlFencesFromReply('')).toBe('');
   });
+
+  // M3: tightened to require SQL-shaped follow-up for ambiguous keywords
+  it('M3: preserves a pascal-tagged block whose body uses BEGIN as a Pascal keyword', () => {
+    const input = [
+      'Here is the Pascal example:',
+      '```pascal',
+      'BEGIN',
+      '  WriteLn(\'hi\');',
+      'END.',
+      '```',
+      'That is the example.',
+    ].join('\n');
+    // BEGIN is not followed by TRANSACTION/WORK/`;`, so the block must
+    // pass through untouched.
+    expect(stripSqlFencesFromReply(input)).toBe(input);
+  });
+
+  it('M3: still strips a bare ``` block whose BEGIN IS SQL-shaped', () => {
+    const input = [
+      'I ran:',
+      '```',
+      'BEGIN TRANSACTION;',
+      'SELECT 1;',
+      'COMMIT;',
+      '```',
+      'Done.',
+    ].join('\n');
+    const out = stripSqlFencesFromReply(input);
+    expect(out).not.toContain('BEGIN TRANSACTION');
+    expect(out).toContain('I ran:');
+    expect(out).toContain('Done.');
+  });
+
+  it('M3: still strips an explicit ```sql block even with bare BEGIN inside', () => {
+    // The sql tag is the canonical match — body shape doesn't matter.
+    const input = '```sql\nBEGIN\nSELECT 1;\n```\nResult.';
+    expect(stripSqlFencesFromReply(input)).toBe('Result.');
+  });
+
+  it('M3: preserves a bash block where a SQL-keyword-looking identifier appears', () => {
+    // Pure non-SQL: language tag is bash, no SQL fingerprint in the body.
+    const input = '```bash\nROLLBACK_TIMEOUT=5 ./run.sh\n```\nDone.';
+    expect(stripSqlFencesFromReply(input)).toBe(input);
+  });
 });
 
 describe('createStreamingSqlFenceStripper', () => {

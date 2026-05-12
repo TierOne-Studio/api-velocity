@@ -144,10 +144,24 @@ Reply with **prose only** — 1–3 short sentences that directly answer the que
 // leaves non-SQL fences (```js, ```python, etc.) intact.
 //
 // A fence is treated as SQL if: (a) the language tag is `sql`, OR (b) the
-// first non-whitespace token inside the block is a SQL DML/DDL keyword.
-const SQL_KEYWORDS =
-  '(?:SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|ALTER|DROP|TRUNCATE|MERGE|BEGIN|COMMIT|ROLLBACK|EXPLAIN|SHOW|USE|GRANT|REVOKE)';
-// Matches either explicit ```sql or any ``` followed (after whitespace/newlines) by a SQL keyword.
+// first non-whitespace token inside the block is one of the UNAMBIGUOUS
+// SQL DML/DDL keywords below. Ambiguous keywords (BEGIN, COMMIT, ROLLBACK)
+// overlap with Pascal / Plpgsql / Ada code-block bodies, so we require
+// them to be followed by SQL-shaped syntax to count as SQL (M3 tighten).
+//
+// Specifically:
+//   - `BEGIN` matches only when followed by TRANSACTION|WORK|`;` (the
+//     SQL-shape) — `\`\`\`pascal\nBEGIN someVar := 1` no longer false-
+//     positives.
+//   - `COMMIT`/`ROLLBACK` likewise allow optional TRANSACTION|WORK|`;`.
+//   - SELECT / INSERT / UPDATE / DELETE / WITH / CREATE / ALTER / DROP /
+//     TRUNCATE / MERGE / EXPLAIN / SHOW / USE / GRANT / REVOKE are
+//     considered uniquely SQL; matching is unconditional.
+const SQL_UNAMBIGUOUS =
+  '(?:SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|ALTER|DROP|TRUNCATE|MERGE|EXPLAIN|SHOW|USE|GRANT|REVOKE)';
+const SQL_AMBIGUOUS_WITH_SHAPE =
+  '(?:BEGIN|COMMIT|ROLLBACK)\\b\\s*(?:TRANSACTION|WORK|;)';
+const SQL_KEYWORDS = `(?:${SQL_UNAMBIGUOUS}|${SQL_AMBIGUOUS_WITH_SHAPE})`;
 const SQL_FENCE_OPEN = new RegExp(
   `\`\`\`(?:sql\\b|[a-z]*\\s*\\n?\\s*${SQL_KEYWORDS}\\b)`,
   'i',
