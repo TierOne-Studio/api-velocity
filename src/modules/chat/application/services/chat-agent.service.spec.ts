@@ -683,4 +683,61 @@ describe('createStreamingSqlFenceStripper', () => {
       s.flush();
     expect(out).toBe('Found 4 rows.');
   });
+
+  // qa MED-1: M3 ambiguous-keyword tightening through the streaming path.
+  // `stripSqlFencesFromReply` has dedicated M3 tests; the streaming version
+  // shares SQL_KEYWORDS but has its own state machine + 64-char lookahead
+  // window. Same logical rule deserves coverage on both implementations.
+  it('M3 streaming: preserves a ```pascal block with BEGIN as a Pascal keyword (token-by-token)', () => {
+    const s = createStreamingSqlFenceStripper();
+    // Emit the Pascal block one chunk at a time so the decision happens
+    // during the streaming window-fill, not after the whole block is buffered.
+    const chunks = [
+      'Here is the Pascal example:\n',
+      '```',
+      'pascal\n',
+      'BEGIN\n',
+      "  WriteLn('hi');\n",
+      'END.\n',
+      '```',
+      '\nThat is the example.',
+    ];
+    const out = chunks.map((c) => s.push(c)).join('') + s.flush();
+    expect(out).toContain('```pascal');
+    expect(out).toContain('BEGIN');
+    expect(out).toContain('END.');
+    expect(out).toContain('That is the example.');
+  });
+
+  it('M3 streaming: preserves a ```bash block with a SQL-keyword-shaped identifier', () => {
+    const s = createStreamingSqlFenceStripper();
+    const chunks = [
+      'Run: ',
+      '```',
+      'bash\n',
+      'ROLLBACK_TIMEOUT=5 ./run.sh\n',
+      '```',
+      '\nDone.',
+    ];
+    const out = chunks.map((c) => s.push(c)).join('') + s.flush();
+    expect(out).toContain('ROLLBACK_TIMEOUT=5');
+    expect(out).toContain('Done.');
+  });
+
+  it('M3 streaming: still strips a bare ``` block with SQL-shaped BEGIN', () => {
+    const s = createStreamingSqlFenceStripper();
+    const chunks = [
+      'I ran:\n',
+      '```\n',
+      'BEGIN TRANSACTION;\n',
+      'SELECT 1;\n',
+      'COMMIT;\n',
+      '```\n',
+      'Done.',
+    ];
+    const out = chunks.map((c) => s.push(c)).join('') + s.flush();
+    expect(out).not.toContain('BEGIN TRANSACTION');
+    expect(out).toContain('I ran:');
+    expect(out).toContain('Done.');
+  });
 });

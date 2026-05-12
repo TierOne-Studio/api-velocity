@@ -89,4 +89,24 @@ describe('sanitizeAgentError', () => {
     );
     expect(out.serverDetail).not.toContain('hunter2');
   });
+
+  // qa LOW-4: first-match-wins ordering is load-bearing. The pattern table
+  // has `permission denied` BEFORE `relation .* does not exist`. A
+  // pathological error message that matches both should resolve to the
+  // permission-denied category (and its canonical message that doesn't
+  // echo identifiers). This pins the ordering contract so a future
+  // refactor that reorders the PATTERNS array fails noisily.
+  it('first-match-wins ordering: permission-denied beats relation-does-not-exist on ambiguous input', () => {
+    const out = sanitizeAgentError(
+      new Error(
+        'permission denied for relation "secret_audit_log" does not exist',
+      ),
+    );
+    expect(out.code).toBe('internal_error');
+    // Permission-denied message wins (not the missing-table message).
+    expect(out.message).toMatch(/agent does not have access/i);
+    expect(out.message).not.toMatch(/does not exist/i);
+    // Identifier still doesn't leak to the LLM-bound message.
+    expect(out.message).not.toContain('secret_audit_log');
+  });
 });

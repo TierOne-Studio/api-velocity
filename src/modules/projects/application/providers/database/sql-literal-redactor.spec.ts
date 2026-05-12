@@ -84,4 +84,42 @@ describe('redactSqlLiterals (M7)', () => {
     expect(out).toContain('<redacted>');
     expect(out).not.toContain('open value');
   });
+
+  // qa LOW-5: edge cases worth pinning to the contract
+  it('SQL comments containing quote-shaped sequences trigger over-redact (acceptable per doc)', () => {
+    // The redactor scans linearly and doesn't parse comments; a `--` line
+    // comment containing an unmatched quote will cause the rest of the
+    // statement to be redacted. Doc contract says "over-redact, never
+    // under-redact" — this test pins that.
+    const sql = `SELECT id FROM users -- it's a comment\n WHERE id > 0`;
+    const out = redactSqlLiterals(sql);
+    // The exact shape depends on the scanner's state, but the safety
+    // invariant is: no part of the comment text after the unclosed `'`
+    // leaks through.
+    expect(out).toContain('<redacted>');
+    expect(out).not.toContain("it's a comment");
+  });
+
+  it('round-trips UTF-8 characters in identifiers untouched', () => {
+    // Double-quoted identifiers pass through verbatim, including UTF-8.
+    expect(
+      redactSqlLiterals(`SELECT "Naïve" FROM "Café"`),
+    ).toBe(`SELECT "Naïve" FROM "Café"`);
+  });
+
+  it('redacts UTF-8 characters inside literals (emoji + accented chars)', () => {
+    // String literals with UTF-8 should be fully redacted; the surrogate
+    // pairs in emoji shouldn't confuse the scanner's position tracking.
+    expect(
+      redactSqlLiterals(`SELECT * FROM t WHERE name = 'François' OR icon = '🦀'`),
+    ).toBe(`SELECT * FROM t WHERE name = '<redacted>' OR icon = '<redacted>'`);
+  });
+
+  it('handles a very long literal without throwing or running indefinitely', () => {
+    const longValue = 'x'.repeat(100_000);
+    const sql = `SELECT * FROM t WHERE blob = '${longValue}'`;
+    const out = redactSqlLiterals(sql);
+    expect(out).toBe(`SELECT * FROM t WHERE blob = '<redacted>'`);
+    expect(out).not.toContain(longValue);
+  });
 });
