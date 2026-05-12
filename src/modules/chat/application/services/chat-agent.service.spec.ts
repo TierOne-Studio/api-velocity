@@ -479,31 +479,25 @@ describe('ChatAgentService', () => {
       expect(systemPrompt).not.toContain('Available capabilities');
     });
 
-    it('instructs the agent NOT to emit a SQL code block after query_database', () => {
-      // The SPA renders executed SQL from the sql_executed SSE event as a
-      // collapsible panel. If the LLM also emits the SQL in its text reply,
-      // the rendering regularly breaks (closing fence collides with prose,
-      // literal asterisks bleed through). The prompt MUST tell the agent
-      // to reply with prose only.
-      configService.getChatSystemPrompt.mockReturnValue('expert persona body');
-
-      const systemPrompt = (
-        service as unknown as {
-          buildAgentSystemPrompt: (p: {
-            organizationName: string;
-            projectName: string;
-            sources: Array<{ kind: string }>;
-          }) => string;
-        }
-      ).buildAgentSystemPrompt({
-        organizationName: 'Acme',
-        projectName: 'Alpha',
-        sources: [{ kind: 'database' }],
-      });
-
-      expect(systemPrompt).toMatch(/prose only/i);
-      expect(systemPrompt).toMatch(/do not include the sql query/i);
-      expect(systemPrompt).not.toMatch(/closing fence/i);
+    it('keeps the "do not emit SQL" guidance in the tool description file (L3)', async () => {
+      // L3: the "Answer format after query_database" rule moved out of
+      // the system prompt and into the tool description bundled with
+      // query-database-tool-description.md. The LLM sees it every time
+      // it considers calling the tool, which is the right scope for
+      // per-call output rules. Test the .md file directly so this
+      // assertion doesn't depend on the configService mock surface.
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const url = await import('node:url');
+      const dir = path.dirname(url.fileURLToPath(import.meta.url));
+      const file = path.resolve(
+        dir,
+        '../../prompts/query-database-tool-description.md',
+      );
+      const content = fs.readFileSync(file, 'utf8');
+      expect(content).toMatch(/prose only/i);
+      expect(content).toMatch(/do not include the sql query/i);
+      expect(content).toMatch(/Answer format/i);
     });
   });
 

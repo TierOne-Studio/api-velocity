@@ -21,3 +21,19 @@ Ask a natural-language question of a project's attached SQL database. An inner r
 A JSON object with `connectionId`, `connectionName`, `sql` (the SQL the inner agent actually executed), `rowCount`, `rows`, `truncated`, and `durationMs`. If the input can't be resolved to a single connection, returns `{error: "ambiguous_source" | "connection_not_found", available: [...]}`. If the inner agent fails, returns `{error: "<code>", message, durationMs}` — common codes: `read_only_violation`, `no_query_executed`, `connection_failed`, `timeout`, `internal_error`.
 
 Use the returned rows to synthesize a natural-language answer for the user. Cite the values that actually appear in the rows; never invent numbers that are not there.
+
+## Answer format after calling this tool
+
+Reply with **prose only** — 1–3 short sentences that directly answer the question using values from `rows`. For multi-row results, a small markdown table is fine.
+
+**Do NOT include the SQL query in your reply.** The application UI renders the executed SQL automatically from tool metadata as a separate, collapsible panel beneath your answer. Repeating the SQL in your text creates duplication and renders poorly.
+
+### Correct example
+
+  There are 4 users in your database.
+
+### Incorrect examples (do NOT do this)
+
+- Pasting a ```sql fenced block with the query — the UI already shows it.
+- Wrapping any part of the reply in a code fence.
+- Prefixing the answer with "I ran the query …" or other meta-commentary about tool use.

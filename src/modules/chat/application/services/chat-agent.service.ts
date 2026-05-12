@@ -115,21 +115,13 @@ For any of the above, pass the user's question verbatim as the \`question\` argu
 
 When you call \`query_database\`, cite the numbers you got back; never reshape them. When results are empty or the tool returns an error, say so plainly and consider falling back to \`search_knowledge_base\` for a complementary view.
 
-## Answer format after query_database
-
-Reply with **prose only** — 1–3 short sentences that directly answer the question using values from \`rows\`. For multi-row results, a small markdown table is fine.
-
-**Do NOT include the SQL query in your reply.** The application UI renders the executed SQL automatically from tool metadata as a separate, collapsible panel beneath your answer. Repeating the SQL in your text creates duplication and renders poorly.
-
-### Correct example
-
-  There are 4 users in your database.
-
-### Incorrect examples (do NOT do this)
-
-- Pasting a \`\`\`sql fenced block with the query — the UI already shows it.
-- Wrapping any part of the reply in a code fence.
-- Prefixing the answer with "I ran the query …" or other meta-commentary about tool use.
+(L3: the "Answer format after query_database" guidance — prose only,
+no SQL fences, no meta-commentary — now lives in the tool description
+itself at \`src/modules/chat/prompts/query-database-tool-description.md\`.
+The LLM sees that text every time it considers calling the tool, which
+is the right scope for per-call output rules. The streaming-fence
+sanitizer in this file is the belt; the tool-description rule is the
+suspenders.)
 `.trim();
 
 // LLMs occasionally ignore the "do not include the SQL query" instruction and
