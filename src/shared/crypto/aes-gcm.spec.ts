@@ -192,4 +192,33 @@ describe('aes-gcm', () => {
       /auth tag length/i,
     );
   });
+
+  // L1: explicit wire-format invariants on encrypt output. These are
+  // implied by the algorithm but worth asserting directly so a future
+  // refactor of the helper can't silently change them.
+  describe('L1: encrypt wire-format invariants', () => {
+    it('produces an IV of exactly 12 bytes (96 bits — AES-GCM standard)', () => {
+      const payload = encryptAesGcm('x', freshKey());
+      expect(Buffer.from(payload.iv, 'base64').length).toBe(12);
+    });
+
+    it('produces an auth tag of exactly 16 bytes (128 bits)', () => {
+      const payload = encryptAesGcm('x', freshKey());
+      expect(Buffer.from(payload.tag, 'base64').length).toBe(16);
+    });
+
+    it('always starts the ciphertext field with the v1 version prefix', () => {
+      const payload = encryptAesGcm('x', freshKey());
+      expect(payload.ciphertext.startsWith('v1:')).toBe(true);
+    });
+
+    it('produces a base64 ciphertext body (no whitespace, valid charset)', () => {
+      const payload = encryptAesGcm('hello world', freshKey());
+      const body = payload.ciphertext.slice(3); // strip "v1:"
+      // Base64 alphabet plus '=' padding only.
+      expect(body).toMatch(/^[A-Za-z0-9+/=]+$/);
+      // Round-trip through Buffer must produce a non-empty buffer.
+      expect(Buffer.from(body, 'base64').length).toBeGreaterThan(0);
+    });
+  });
 });
