@@ -38,3 +38,15 @@ export class ReadOnlyViolation extends Error {
     this.name = 'ReadOnlyViolation';
   }
 }
+
+/**
+ * Canonical chat-to-SQL error categories surfaced to the outer chat agent.
+ * Defined here (not inline in the service) so the sanitizer + the result
+ * type stay aligned without a circular import.
+ */
+export type ChatToSqlError =
+  | 'read_only_violation'
+  | 'no_query_executed'
+  | 'connection_failed'
+  | 'timeout'
+  | 'internal_error';
