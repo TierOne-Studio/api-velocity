@@ -60,6 +60,21 @@ export class ReadOnlySqlDatabase extends SqlDatabase {
     this.lastExecutedSql = command.trim();
     this.lastExecutedRows = null;
 
+    // M2: AbortSignal vs statement_timeout
+    //
+    // The outer chat handler threads AbortSignal through the sub-agent
+    // (controller `on('close')` → service → sql-sub-agent.invoke) so a
+    // tab close unwinds the agent loop promptly. But once a query has
+    // been ISSUED to Postgres via `tx.query(command)` below, the signal
+    // CANNOT cancel it server-side — typeorm + node-postgres don't send
+    // `pg_cancel_backend()` on abort. The query runs to completion or
+    // to `SET LOCAL statement_timeout` (set above, ~5s by default).
+    //
+    // In practice this is fine: tab-close aborts unwind the JS side
+    // immediately; the orphaned server-side query is bounded by the
+    // statement timeout. A tighter "cancel mid-flight" defense would
+    // need an out-of-band session-id channel and is tracked as a
+    // separate concern.
     return this.appDataSource.transaction(async (tx) => {
       await tx.query('SET TRANSACTION READ ONLY');
       await tx.query(
