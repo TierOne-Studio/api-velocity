@@ -863,7 +863,10 @@ export class ChatAgentService {
     const results: AirweaveSearchResultSummary[] = [];
     searches.forEach((outcome, index) => {
       if (outcome.status === 'fulfilled') {
-        results.push(...outcome.value.results);
+        // Defensive: a provider returning undefined or an object without
+        // `.results` shouldn't crash the whole fallback path — treat it as
+        // an empty result set and continue.
+        results.push(...(outcome.value?.results ?? []));
       } else {
         console.warn('[ChatAgentService] fallback source search failed', {
           sourceId: params.sources[index]?.id,

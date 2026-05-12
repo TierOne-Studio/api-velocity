@@ -22,16 +22,23 @@
 import { jest } from '@jest/globals';
 import { AIMessage } from '@langchain/core/messages';
 
-// IMPORTANT: the mock MUST be registered before ChatAgentService is imported.
-// `jest.mock` is hoisted above `import`s by Jest's transformer, so this works
-// even though ChatAgentService appears above it in source order.
+// IMPORTANT: this repo runs jest in ESM mode (extensionsToTreatAsEsm: ['.ts']
+// + node --experimental-vm-modules). The legacy `jest.mock('langchain', ...)`
+// pattern from CJS does NOT work here — the static `import` of `langchain`
+// resolves to the real module before the mock factory is registered, real
+// `createAgent` runs, and the OpenAI HTTP call returns 401 on the fake key.
+// `jest.unstable_mockModule` + dynamic `import()` is the ESM-correct path.
 const createAgentMock = jest.fn();
-jest.mock('langchain', () => ({
+jest.unstable_mockModule('langchain', () => ({
   createAgent: (...args: unknown[]) => createAgentMock(...args),
 }));
 
-import { ChatAgentService } from './chat-agent.service';
-type ChatAgentServiceType = InstanceType<typeof ChatAgentService>;
+// ChatAgentService MUST be loaded dynamically AFTER the module mock above.
+// Static `import` would resolve `langchain` before the mock factory runs.
+type ChatAgentServiceType =
+  InstanceType<typeof import('./chat-agent.service').ChatAgentService>;
+let ChatAgentService:
+  typeof import('./chat-agent.service').ChatAgentService;
 
 import type { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
 import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
@@ -128,6 +135,10 @@ describe('ChatAgentService streaming — SQL fence sanitization (integration)', 
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
   let consoleInfoSpy: jest.SpiedFunction<typeof console.info>;
   let consoleWarnSpy: jest.SpiedFunction<typeof console.warn>;
+
+  beforeAll(async () => {
+    ({ ChatAgentService } = await import('./chat-agent.service'));
+  });
 
   beforeEach(() => {
     createAgentMock.mockReset();
