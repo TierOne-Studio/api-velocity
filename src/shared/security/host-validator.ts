@@ -72,9 +72,24 @@ export function isPrivateIpv6(ip: string): boolean {
   const lower = ip.toLowerCase();
   // Loopback ::1
   if (lower === '::1' || lower === '0:0:0:0:0:0:0:1') return true;
-  // v4-mapped ::ffff:a.b.c.d — check the v4 part.
+  // Unspecified / wildcard "any" address (security MED-4). On Linux,
+  // dialing [::]:5432 resolves to the local interface — SSRF-equivalent.
+  if (lower === '::' || lower === '0:0:0:0:0:0:0:0') return true;
+  // v4-mapped ::ffff:a.b.c.d (compressed form) — check the v4 part.
   const v4mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
   if (v4mapped) return isPrivateIpv4(v4mapped[1]);
+  // v4-mapped fully expanded: 0:0:0:0:0:ffff:c0a8:0101 (= 192.168.1.1)
+  // (security MED-4). The last 32 bits encode the IPv4 address as two
+  // 16-bit hex groups; reconstruct and check.
+  const v4mappedExpanded = lower.match(
+    /^0:0:0:0:0:ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/,
+  );
+  if (v4mappedExpanded) {
+    const hi = parseInt(v4mappedExpanded[1]!, 16);
+    const lo = parseInt(v4mappedExpanded[2]!, 16);
+    const dotted = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+    return isPrivateIpv4(dotted);
+  }
   // Unique-local fc00::/7 (fc.. or fd..)
   if (/^f[cd][0-9a-f]{2}:/.test(lower)) return true;
   // Link-local fe80::/10

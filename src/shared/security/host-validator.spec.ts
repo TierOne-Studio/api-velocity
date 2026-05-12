@@ -45,6 +45,15 @@ describe('host-validator', () => {
       ['febf::1', true],
       ['::ffff:127.0.0.1', true], // v4-mapped loopback
       ['::ffff:10.0.0.1', true], // v4-mapped private
+      // Security MED-4: wildcard / unspecified address
+      ['::', true],
+      ['0:0:0:0:0:0:0:0', true],
+      // Security MED-4: fully expanded v4-mapped form
+      ['0:0:0:0:0:ffff:c0a8:0101', true], // 192.168.1.1
+      ['0:0:0:0:0:ffff:7f00:0001', true], // 127.0.0.1
+      ['0:0:0:0:0:ffff:0a00:0005', true], // 10.0.0.5
+      ['0:0:0:0:0:ffff:a9fe:a9fe', true], // 169.254.169.254 (AWS metadata)
+      ['0:0:0:0:0:ffff:0808:0808', false], // 8.8.8.8 (public)
       ['2001:4860:4860::8888', false],
       ['2606:4700:4700::1111', false],
     ])('classifies %s as private=%s', (ip, expected) => {
