@@ -1,7 +1,12 @@
-import type {
-  SqlConnectionRow,
-  SqlConnectionStatus,
-} from '../api/dto/sql-connection.dto';
+import type { SqlConnectionRow } from '../api/dto/sql-connection.dto';
+
+/**
+ * M4: SqlConnectionStatus belongs to the domain — the repository port (this
+ * file) references it on the `updateStatus` method, and the lifecycle it
+ * encodes is part of the domain contract, not a transport concern. The
+ * api/dto layer re-exports this type for backward-compatible imports.
+ */
+export type SqlConnectionStatus = 'connecting' | 'ready' | 'error';
 
 export const SQL_CONNECTIONS_REPOSITORY = 'SQL_CONNECTIONS_REPOSITORY';
 
