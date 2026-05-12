@@ -37,6 +37,33 @@ const DENY_WORDS = [
   // Outbound network calls from inside the DB — exfil + SSRF primitive (C2).
   'DBLINK',
   'DBLINK_EXEC',
+  // Session-scoped configuration changes (security HIGH-1). Postgres'
+  // `set_config('foo', 'bar', false)` with the third arg false changes
+  // the setting for the WHOLE session. A relaxed `statement_timeout` set
+  // here survives the SET LOCAL reset our chokepoint relies on and
+  // applies to subsequent queries that share the pooled session.
+  'SET_CONFIG',
+  // Cooperative-lock contention DoS surface (security HIGH-2).
+  // The SET TRANSACTION READ ONLY guard doesn't reject pure lock calls.
+  'PG_ADVISORY_LOCK',
+  'PG_ADVISORY_XACT_LOCK',
+  'PG_ADVISORY_UNLOCK',
+  'PG_ADVISORY_UNLOCK_ALL',
+  // Schema size / metadata info leak — bypasses the allowed_tables H1
+  // allowlist by revealing the existence + magnitude of denied tables.
+  'PG_RELATION_SIZE',
+  'PG_TOTAL_RELATION_SIZE',
+  'PG_DATABASE_SIZE',
+  'PG_TABLESPACE_SIZE',
+  // Foreign-data-wrapper config leak — reveals FDW server hosts/ports.
+  'POSTGRES_FDW_GET_CONNECTIONS',
+  'POSTGRES_FDW_DISCONNECT',
+  'POSTGRES_FDW_DISCONNECT_ALL',
+  // WAL pollution — bypasses RO by writing logical-decoding messages.
+  'PG_LOGICAL_EMIT_MESSAGE',
+  // Defense-in-depth info-leak block — current_setting() reads any
+  // session GUC including possibly app-set ones the LLM shouldn't see.
+  'CURRENT_SETTING',
 ];
 
 const DENY_REGEX = new RegExp(`\\b(${DENY_WORDS.join('|')})\\b`, 'i');

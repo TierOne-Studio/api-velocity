@@ -67,6 +67,33 @@ describe('validateReadOnlySql', () => {
     // lo_import / lo_export — large-object filesystem I/O
     ["SELECT lo_import('/tmp/x')", /dangerous keyword/i],
     ["SELECT lo_export(1234,'/tmp/x')", /dangerous keyword/i],
+    // Security HIGH-1: set_config bypassed the SET regex because `_` is a
+    // word-char, so `\bSET\b` doesn't match in `set_config`. Now in deny-words.
+    [
+      "SELECT set_config('statement_timeout', '0', false)",
+      /dangerous keyword/i,
+    ],
+    // Security HIGH-2: lock-contention DoS surface
+    ['SELECT pg_advisory_lock(1)', /dangerous keyword/i],
+    ['SELECT pg_advisory_xact_lock(1)', /dangerous keyword/i],
+    ['SELECT pg_advisory_unlock(1)', /dangerous keyword/i],
+    ['SELECT pg_advisory_unlock_all()', /dangerous keyword/i],
+    // Security HIGH-2: schema-size info leak (bypasses allowed_tables)
+    ["SELECT pg_relation_size('secret_audit')", /dangerous keyword/i],
+    ["SELECT pg_total_relation_size('secret_audit')", /dangerous keyword/i],
+    ["SELECT pg_database_size('app')", /dangerous keyword/i],
+    ["SELECT pg_tablespace_size('pg_default')", /dangerous keyword/i],
+    // Security HIGH-2: FDW config leak
+    ['SELECT * FROM postgres_fdw_get_connections()', /dangerous keyword/i],
+    ["SELECT postgres_fdw_disconnect('srv')", /dangerous keyword/i],
+    ['SELECT postgres_fdw_disconnect_all()', /dangerous keyword/i],
+    // Security HIGH-2: WAL pollution (writes even under RO transaction)
+    [
+      "SELECT pg_logical_emit_message(true, 'tag', 'payload')",
+      /dangerous keyword/i,
+    ],
+    // Security defense-in-depth: session-GUC introspection
+    ["SELECT current_setting('app.tenant_id')", /dangerous keyword/i],
   ];
 
   for (const sql of allow) {
