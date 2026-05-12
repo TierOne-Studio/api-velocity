@@ -15,6 +15,14 @@ export class SqlConnectionsMigrationService implements OnModuleInit {
         name: 'sql_connections_001_create_org_sql_connection',
         up: () => this.createTable(),
       },
+      {
+        // H1a: per-connection table allowlist. NULL = no allowlist
+        // (sub-agent sees every table on the database — current behavior).
+        // Array of strings = explicit table names (schema-qualified
+        // or unqualified — see service-layer validation).
+        name: 'sql_connections_002_add_allowed_tables',
+        up: () => this.addAllowedTablesColumn(),
+      },
     ];
 
     let pending = 0;
@@ -66,10 +74,25 @@ export class SqlConnectionsMigrationService implements OnModuleInit {
   }
 
   /**
+   * H1a: per-connection table allowlist. Additive change — NULL preserves
+   * the prior behavior (sub-agent sees the full schema), so existing rows
+   * keep working without any data migration.
+   */
+  async addAllowedTablesColumn(): Promise<void> {
+    await this.db.query(
+      `ALTER TABLE org_sql_connection
+         ADD COLUMN IF NOT EXISTS allowed_tables JSONB NULL`,
+    );
+  }
+
+  /**
    * Reversible down-migration. Not wired into OnModuleInit — call explicitly
    * from a maintenance script (e.g. migration:revert) if you need it.
    */
   async down(): Promise<void> {
+    await this.db.query(
+      `ALTER TABLE org_sql_connection DROP COLUMN IF EXISTS allowed_tables`,
+    );
     await this.db.query(
       `DROP INDEX IF EXISTS idx_org_sql_connection_org_status`,
     );
