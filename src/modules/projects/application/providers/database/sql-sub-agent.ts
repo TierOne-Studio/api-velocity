@@ -51,7 +51,11 @@ export async function runSqlSubAgent(
   });
 
   const messages: BaseMessage[] = [new HumanMessage(question)];
-  const recursionLimit = Math.max(10, config.maxIterations * 4);
+  // H2: tightened cap on the inner sub-agent. The toolkit's typical flow
+  // (list_tables → info_sql_db → query_sql_db → return) needs ~5-8
+  // transitions; capping at max(8, maxIterations * 2) prevents a confused
+  // agent from chewing through 30+ tool calls before giving up.
+  const recursionLimit = Math.max(8, config.maxIterations * 2);
 
   const result = await agent.invoke(
     { messages } as Parameters<typeof agent.invoke>[0],

@@ -406,7 +406,11 @@ export class ChatAgentService {
         new HumanMessage(this.buildAgentUserMessage(params)),
       ];
 
-      const recursionLimit = Math.max(10, maxIterations * 4);
+      // H2: tightened cap. Was max(10, maxIterations * 4) — let a confused
+      // outer agent burn ~32 graph transitions on a typical config. Halved
+      // to max(8, maxIterations * 2). The outer agent's job is one or two
+      // tool calls plus a synthesis, so 16 transitions is plenty headroom.
+      const recursionLimit = Math.max(8, maxIterations * 2);
 
       const result = await agent.invoke(
         { messages } as Parameters<typeof agent.invoke>[0],
@@ -745,6 +749,13 @@ export class ChatAgentService {
       AGENT_TOOL_USAGE_PROTOCOL,
     ];
     if (hasDatabaseSource) {
+      // H2: structural capabilities chip — concrete tool menu with attached
+      // DB names enumerated, so the LLM routes off a named menu rather than
+      // pure intent classification under a prose-rules conflict. Goes BEFORE
+      // the routing protocol so the model has the chip in mind when reading
+      // the rules. Only emitted when a DB source is attached so the
+      // zero-DB-project prompt remains byte-identical to the pre-H2 version.
+      sections.push(this.buildCapabilitiesChip(params));
       sections.push(AGENT_DATABASE_ROUTING_PROTOCOL);
     }
     sections.push(
@@ -752,6 +763,32 @@ export class ChatAgentService {
     );
 
     return sections.join('\n\n');
+  }
+
+  /**
+   * H2: structural capability menu. Generates a one-liner per capability
+   * with concrete data (DB names) so the LLM has a named menu to route
+   * off, not just prose rules.
+   */
+  private buildCapabilitiesChip(params: GenerateReplyParams): string {
+    const dbSources = params.sources.filter(
+      (s): s is Extract<typeof s, { kind: 'database' }> =>
+        s.kind === 'database',
+    );
+    const dbNames = dbSources
+      .map((s) => s.config?.connectionName || s.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0);
+    const dbList = dbNames.length > 0 ? dbNames.join(', ') : '(unnamed)';
+    return [
+      '## Available capabilities',
+      '',
+      'You have these tools at your disposal for this conversation:',
+      '',
+      '- `search_knowledge_base` — semantic search over the project\'s indexed documents and code (Airweave-backed).',
+      `- \`query_database\` — natural-language read-only queries against the attached SQL database(s): ${dbList}.`,
+      '',
+      'Use the tool that fits the *shape of the answer* the user wants. The rules below detail when each applies; this menu is the concrete list of what you can call.',
+    ].join('\n');
   }
 
   /**

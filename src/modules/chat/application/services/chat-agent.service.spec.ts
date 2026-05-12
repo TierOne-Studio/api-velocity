@@ -397,6 +397,88 @@ describe('ChatAgentService', () => {
       expect(dbIdx).toBeGreaterThan(baseIdx);
     });
 
+    // H2: structural capabilities chip
+    it('emits the capabilities chip with DB names when DB sources attached', () => {
+      configService.getChatSystemPrompt.mockReturnValue('expert persona body');
+
+      const systemPrompt = (
+        service as unknown as {
+          buildAgentSystemPrompt: (params: {
+            organizationName: string;
+            projectName: string;
+            sources: Array<{
+              kind: string;
+              name?: string;
+              config?: { connectionName?: string };
+            }>;
+          }) => string;
+        }
+      ).buildAgentSystemPrompt({
+        organizationName: 'TierOne',
+        projectName: 'General',
+        sources: [
+          { kind: 'airweave_collection' },
+          {
+            kind: 'database',
+            name: 'prod-source',
+            config: { connectionName: 'prod-db' },
+          },
+          {
+            kind: 'database',
+            name: 'reporting-source',
+            config: { connectionName: 'reporting-db' },
+          },
+        ],
+      });
+
+      expect(systemPrompt).toContain('Available capabilities');
+      expect(systemPrompt).toContain('search_knowledge_base');
+      expect(systemPrompt).toContain('query_database');
+      // Concrete DB names appear in the chip so the LLM has a named menu.
+      expect(systemPrompt).toContain('prod-db');
+      expect(systemPrompt).toContain('reporting-db');
+      // Chip lands BEFORE the routing protocol so the model has the menu in
+      // mind when it reads the rules.
+      const chipIdx = systemPrompt.indexOf('Available capabilities');
+      const routingIdx = systemPrompt.indexOf('When the project has an attached database');
+      expect(chipIdx).toBeGreaterThanOrEqual(0);
+      expect(routingIdx).toBeGreaterThan(chipIdx);
+    });
+
+    it('falls back to the source.name when connectionName is missing', () => {
+      configService.getChatSystemPrompt.mockReturnValue('expert persona body');
+      const systemPrompt = (
+        service as unknown as {
+          buildAgentSystemPrompt: (params: unknown) => string;
+        }
+      ).buildAgentSystemPrompt({
+        organizationName: 'TierOne',
+        projectName: 'General',
+        sources: [
+          {
+            kind: 'database',
+            name: 'fallback-name',
+            config: {},
+          },
+        ],
+      });
+      expect(systemPrompt).toContain('fallback-name');
+    });
+
+    it('omits the capabilities chip when no DB source is attached (zero-DB byte-identical)', () => {
+      configService.getChatSystemPrompt.mockReturnValue('expert persona body');
+      const systemPrompt = (
+        service as unknown as {
+          buildAgentSystemPrompt: (params: unknown) => string;
+        }
+      ).buildAgentSystemPrompt({
+        organizationName: 'TierOne',
+        projectName: 'General',
+        sources: [{ kind: 'airweave_collection' }],
+      });
+      expect(systemPrompt).not.toContain('Available capabilities');
+    });
+
     it('instructs the agent NOT to emit a SQL code block after query_database', () => {
       // The SPA renders executed SQL from the sql_executed SSE event as a
       // collapsible panel. If the LLM also emits the SQL in its text reply,
