@@ -77,6 +77,126 @@ describe('ConfigService', () => {
     });
   });
 
+  describe('getAgentForbiddenDatabases (S4)', () => {
+    it('defaults to a single-element list containing DATABASE_URL', () => {
+      process.env.DATABASE_URL = 'postgres://u:p@app-db:5432/app';
+      delete process.env.AGENT_FORBIDDEN_DATABASES;
+      const cs = new ConfigService();
+      expect(cs.getAgentForbiddenDatabases()).toEqual([
+        'postgres://u:p@app-db:5432/app',
+      ]);
+    });
+
+    it('parses AGENT_FORBIDDEN_DATABASES as a comma-separated list', () => {
+      process.env.AGENT_FORBIDDEN_DATABASES =
+        'postgres://u:p@primary:5432/app, postgres://u:p@replica:5432/app';
+      const cs = new ConfigService();
+      expect(cs.getAgentForbiddenDatabases()).toEqual([
+        'postgres://u:p@primary:5432/app',
+        'postgres://u:p@replica:5432/app',
+      ]);
+    });
+
+    it('filters empty entries and trims whitespace', () => {
+      process.env.AGENT_FORBIDDEN_DATABASES =
+        '  postgres://u:p@a:5432/x ,, postgres://u:p@b:5432/y  ';
+      const cs = new ConfigService();
+      expect(cs.getAgentForbiddenDatabases()).toEqual([
+        'postgres://u:p@a:5432/x',
+        'postgres://u:p@b:5432/y',
+      ]);
+    });
+
+    it('returns empty list when neither env is set', () => {
+      delete process.env.DATABASE_URL;
+      delete process.env.AGENT_FORBIDDEN_DATABASES;
+      const cs = new ConfigService();
+      expect(cs.getAgentForbiddenDatabases()).toEqual([]);
+    });
+
+    it('AGENT_FORBIDDEN_DATABASES overrides DATABASE_URL default', () => {
+      process.env.DATABASE_URL = 'postgres://u:p@app-db:5432/app';
+      process.env.AGENT_FORBIDDEN_DATABASES =
+        'postgres://u:p@only-this:5432/x';
+      const cs = new ConfigService();
+      expect(cs.getAgentForbiddenDatabases()).toEqual([
+        'postgres://u:p@only-this:5432/x',
+      ]);
+    });
+  });
+
+  describe('boundedInt SQL_AGENT_* knobs (L2)', () => {
+    let warnSpy: jest.SpiedFunction<typeof console.warn>;
+    beforeEach(() => {
+      warnSpy = jest
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    it('uses the default silently when unset', () => {
+      delete process.env.SQL_AGENT_STATEMENT_TIMEOUT_MS;
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentStatementTimeoutMs()).toBe(5000);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('uses a valid value when set in range', () => {
+      process.env.SQL_AGENT_STATEMENT_TIMEOUT_MS = '7500';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentStatementTimeoutMs()).toBe(7500);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('warns + falls back when env is non-numeric', () => {
+      process.env.SQL_AGENT_STATEMENT_TIMEOUT_MS = 'abc';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentStatementTimeoutMs()).toBe(5000);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/SQL_AGENT_STATEMENT_TIMEOUT_MS.*not a positive integer/),
+      );
+    });
+
+    it('warns + falls back when env is below min (e.g. 0 disables timeout)', () => {
+      process.env.SQL_AGENT_STATEMENT_TIMEOUT_MS = '0';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentStatementTimeoutMs()).toBe(5000);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/SQL_AGENT_STATEMENT_TIMEOUT_MS=0.*outside.*range/),
+      );
+    });
+
+    it('warns + falls back when env is above max (e.g. 1h timeout)', () => {
+      process.env.SQL_AGENT_STATEMENT_TIMEOUT_MS = '3600000';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentStatementTimeoutMs()).toBe(5000);
+      expect(warnSpy).toHaveBeenCalled();
+    });
+
+    it('warns + falls back for negative values', () => {
+      process.env.SQL_AGENT_MAX_ROWS = '-1';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentMaxRows()).toBe(200);
+      expect(warnSpy).toHaveBeenCalled();
+    });
+
+    it('warns + falls back when SQL_AGENT_POOL_MAX is suspiciously large', () => {
+      process.env.SQL_AGENT_POOL_MAX = '10000';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentPoolMax()).toBe(2);
+      expect(warnSpy).toHaveBeenCalled();
+    });
+
+    it('honors a tightened SQL_AGENT_MAX_SQL_LENGTH', () => {
+      process.env.SQL_AGENT_MAX_SQL_LENGTH = '256';
+      const cs = new ConfigService();
+      expect(cs.getSqlAgentMaxSqlLength()).toBe(256);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getTrustedOrigins', () => {
     it('should read TRUSTED_ORIGINS from the environment', () => {
       process.env.TRUSTED_ORIGINS =
@@ -278,7 +398,7 @@ describe('ConfigService', () => {
       const prompt = configService.getChatSystemPrompt();
       expect(prompt).toContain('expert knowledge assistant');
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('CHAT_SYSTEM_PROMPT_PATH'),
+        expect.stringContaining('chat system prompt'),
         expect.objectContaining({ error: expect.any(String) }),
       );
     });
@@ -331,6 +451,20 @@ describe('ConfigService', () => {
       process.env.CHAT_AGENT_MAX_ITERATIONS = '0';
       const configService = new ConfigService();
       expect(configService.getChatAgentMaxIterations()).toBe(5);
+    });
+  });
+
+  describe('getSqlAgentSystemPrompt', () => {
+    it('instructs the SQL agent to quote mixed-case identifiers from schema inspection', () => {
+      delete process.env.SQL_AGENT_SYSTEM_PROMPT;
+      delete process.env.SQL_AGENT_SYSTEM_PROMPT_PATH;
+
+      const configService = new ConfigService();
+
+      const prompt = configService.getSqlAgentSystemPrompt();
+      expect(prompt).toContain('mixed-case or camelCase');
+      expect(prompt).toContain('"organizationId"');
+      expect(prompt).toContain('"createdAt"');
     });
   });
 
@@ -511,9 +645,13 @@ describe('ConfigService', () => {
   });
 
   describe('validateEnvironment', () => {
+      const validProjectSourceSecretKey =
+        'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=';
+
     it('should not throw when all required env vars are present', () => {
       process.env.AUTH_SECRET = 'secret';
       process.env.DATABASE_URL = 'postgresql://localhost/db';
+        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).not.toThrow();
     });
@@ -521,6 +659,7 @@ describe('ConfigService', () => {
     it('should throw when AUTH_SECRET is missing', () => {
       delete process.env.AUTH_SECRET;
       process.env.DATABASE_URL = 'postgresql://localhost/db';
+        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).toThrow(
         'Missing required environment variables: AUTH_SECRET',
@@ -530,17 +669,90 @@ describe('ConfigService', () => {
     it('should throw when DATABASE_URL is missing', () => {
       process.env.AUTH_SECRET = 'secret';
       delete process.env.DATABASE_URL;
+        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).toThrow(
         'Missing required environment variables: DATABASE_URL',
       );
     });
 
+      it('should throw when PROJECT_SOURCE_SECRET_KEY is missing', () => {
+        process.env.AUTH_SECRET = 'secret';
+        process.env.DATABASE_URL = 'postgresql://localhost/db';
+        delete process.env.PROJECT_SOURCE_SECRET_KEY;
+        const configService = new ConfigService();
+        expect(() => configService.validateEnvironment()).toThrow(
+          'Missing required environment variables: PROJECT_SOURCE_SECRET_KEY',
+        );
+      });
+
     it('should list all missing vars when multiple are absent', () => {
       delete process.env.AUTH_SECRET;
       delete process.env.DATABASE_URL;
+        delete process.env.PROJECT_SOURCE_SECRET_KEY;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).toThrow('AUTH_SECRET');
+    });
+
+      it('should throw when PROJECT_SOURCE_SECRET_KEY is invalid base64', () => {
+        process.env.AUTH_SECRET = 'secret';
+        process.env.DATABASE_URL = 'postgresql://localhost/db';
+        process.env.PROJECT_SOURCE_SECRET_KEY = 'invalid-key';
+        const configService = new ConfigService();
+        expect(() => configService.validateEnvironment()).toThrow(
+          'Invalid PROJECT_SOURCE_SECRET_KEY',
+        );
+      });
+
+      // C3a: previous-key validation during rotation window
+      it('passes validation when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is unset', () => {
+        process.env.AUTH_SECRET = 'secret';
+        process.env.DATABASE_URL = 'postgresql://localhost/db';
+        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+        delete process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS;
+        const cs = new ConfigService();
+        expect(() => cs.validateEnvironment()).not.toThrow();
+      });
+
+      it('passes validation when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is a valid base64 key', () => {
+        process.env.AUTH_SECRET = 'secret';
+        process.env.DATABASE_URL = 'postgresql://localhost/db';
+        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+        process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS =
+          validProjectSourceSecretKey;
+        const cs = new ConfigService();
+        expect(() => cs.validateEnvironment()).not.toThrow();
+      });
+
+      it('throws when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is set but invalid', () => {
+        process.env.AUTH_SECRET = 'secret';
+        process.env.DATABASE_URL = 'postgresql://localhost/db';
+        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+        process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS = 'not-a-key';
+        const cs = new ConfigService();
+        expect(() => cs.validateEnvironment()).toThrow(
+          /Invalid PROJECT_SOURCE_SECRET_KEY_PREVIOUS/,
+        );
+      });
+  });
+
+  describe('getProjectSourceSecretKeyPrevious (C3a)', () => {
+    it('returns null when unset', () => {
+      delete process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS;
+      const cs = new ConfigService();
+      expect(cs.getProjectSourceSecretKeyPrevious()).toBeNull();
+    });
+
+    it('returns null when set to whitespace', () => {
+      process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS = '   ';
+      const cs = new ConfigService();
+      expect(cs.getProjectSourceSecretKeyPrevious()).toBeNull();
+    });
+
+    it('returns the trimmed string when set', () => {
+      process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS = '  someValue  ';
+      const cs = new ConfigService();
+      expect(cs.getProjectSourceSecretKeyPrevious()).toBe('someValue');
     });
   });
 

@@ -158,6 +158,12 @@ export class AdminOrganizationsController {
     }
   }
 
+  private assertObject(value: unknown, label: string): void {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new HttpException(`${label} must be an object`, HttpStatus.BAD_REQUEST);
+    }
+  }
+
   /**
    * Create a new organization.
    * Managers can create organizations only when explicitly granted organization:create.

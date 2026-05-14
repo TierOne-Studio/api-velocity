@@ -9,7 +9,11 @@ describe('DataSourceRegistry', () => {
 
   beforeEach(() => {
     const airweave = new AirweaveCollectionProvider({} as never);
-    const database = new DatabaseSourceProvider();
+    const database = new DatabaseSourceProvider(
+      {} as never,
+      {} as never,
+      {} as never,
+    );
     const external = new ExternalSourceProvider();
 
     registry = new DataSourceRegistry(airweave, database, external);

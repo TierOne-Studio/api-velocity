@@ -145,6 +145,9 @@ export class ChatService {
       organizationName: organization.name,
       projectName,
       projectId: conversation.projectId,
+      orgId: conversation.organizationId,
+      userId: params.userId,
+      conversationId: conversation.id,
       sources,
       question: params.content,
       previousMessages: existingMessages.map((message) => ({
@@ -183,6 +186,7 @@ export class ChatService {
       conversationId: string;
       userId: string;
       content: string;
+      signal?: AbortSignal;
     },
   ): AsyncGenerator<
     | ChatStreamEvent
@@ -247,12 +251,16 @@ export class ChatService {
       organizationName: organization.name,
       projectName,
       projectId: conversation.projectId,
+      orgId: conversation.organizationId,
+      userId: params.userId,
+      conversationId: conversation.id,
       sources,
       question: params.content,
       previousMessages: existingMessages.map((message) => ({
         role: message.role,
         content: message.content,
       })),
+      signal: params.signal,
     });
 
     for await (const event of agentStream) {

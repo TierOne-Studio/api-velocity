@@ -10,6 +10,11 @@ import { createAgent } from 'langchain';
 import { ConfigService } from '../../../../shared/config';
 import type { AirweaveSearchResultSummary } from '../../../airweave/application/services/airweave.service';
 import { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
+import type {
+  AgentToolContext,
+  AgentToolEvent,
+  AgentToolPersistedCall,
+} from '../../../projects/application/providers/data-source-provider.interface';
 import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
 import {
   createSearchKnowledgeBaseTool,
@@ -20,12 +25,21 @@ type GenerateReplyParams = {
   organizationName: string;
   projectName: string;
   projectId: string;
+  orgId: string | null;
+  userId: string;
+  conversationId: string | null;
   sources: ProjectDataSource[];
   question: string;
   previousMessages: Array<{
     role: 'user' | 'assistant' | 'system';
     content: string;
   }>;
+  /**
+   * Optional abort signal from the HTTP transport. Forwarded to every
+   * provider tool via `AgentToolContext.signal` so long-running work
+   * (notably the SQL sub-agent) can cancel when the client disconnects.
+   */
+  signal?: AbortSignal;
 };
 
 type ChatReply = {
@@ -37,6 +51,16 @@ export type ChatStreamEvent =
   | { type: 'thinking' }
   | { type: 'searching'; query: string }
   | { type: 'chunk'; content: string }
+  | {
+      type: 'sql_executed';
+      connectionId: string;
+      connectionName: string;
+      sql: string;
+      rowCount: number;
+      rows: unknown[];
+      truncated: boolean;
+      durationMs: number;
+    }
   | { type: 'done'; reply: ChatReply };
 
 // Appended to the configured expert-persona system prompt only in the agent
@@ -57,6 +81,197 @@ You have access to a \`search_knowledge_base\` tool that queries this organizati
 
 Do not answer non-trivial organization-specific questions from memory — the tool is your only authoritative source for facts about this organization's code, docs, specs, and other indexed material.
 `.trim();
+
+// Appended AFTER the base tool-usage protocol when the project has at least
+// one attached database source. Routes between `search_knowledge_base` and
+// `query_database` by the *shape of the answer* the user wants, not by
+// keywords. A question like "how many users signed up last week?" must route
+// to the DB even though the word "database" never appears.
+const AGENT_DATABASE_ROUTING_PROTOCOL = `
+
+## When the project has an attached database
+
+**This section overrides the "always start with \`search_knowledge_base\`" rule above whenever the question is a facts-from-rows question.** You also have a \`query_database\` tool, and for those questions you must call it *first* — not after a round of \`search_knowledge_base\`.
+
+Route by the *shape of the answer* the user wants, not by keywords in the question. The user does NOT need to mention "database", "SQL", or a table name.
+
+**Call \`query_database\` FIRST (before any other tool) when the question is any of:**
+
+- A count, total, or aggregate: "how many users?", "how many orders last week", "total revenue", "average session length".
+- A "who / which / when / where" lookup over entities that typically live in tables (users, orders, sessions, events, subscriptions, customers, projects, etc.): "who signed up today?", "which order is largest?", "when was the last payment?".
+- A listing or filter: "list users created this month", "show failed payments", "top 10 customers by spend".
+- A concrete factual question about entity state: "is user X active?", "does order Y have a refund?".
+
+For any of the above, pass the user's question verbatim as the \`question\` argument — the inner sub-agent will inspect the schema and write the SQL. Do not pre-translate to SQL yourself. Do not ask the user for clarification before trying; the inner agent is good at disambiguating tables and columns.
+
+**Call \`search_knowledge_base\` (not \`query_database\`) when the question is about:**
+
+- How something is built, implemented, or architected.
+- What a function / class / module does, or where to find it.
+- Why a design choice was made, or what a spec/doc says.
+- Onboarding, setup, or operational procedures.
+
+**Ambiguous questions:** if a question could read either way (e.g. "tell me about our users" — overview docs vs. a row summary), try \`query_database\` first. Row counts and concrete values are more useful and more verifiable than doc snippets for most factual asks. You can always follow up with \`search_knowledge_base\` afterward if the rows alone don't cover the question.
+
+When you call \`query_database\`, cite the numbers you got back; never reshape them. When results are empty or the tool returns an error, say so plainly and consider falling back to \`search_knowledge_base\` for a complementary view.
+
+(L3: the "Answer format after query_database" guidance — prose only,
+no SQL fences, no meta-commentary — now lives in the tool description
+itself at \`src/modules/chat/prompts/query-database-tool-description.md\`.
+The LLM sees that text every time it considers calling the tool, which
+is the right scope for per-call output rules. The streaming-fence
+sanitizer in this file is the belt; the tool-description rule is the
+suspenders.)
+`.trim();
+
+// LLMs occasionally ignore the "do not include the SQL query" instruction and
+// emit a fenced code block containing SQL anyway. In practice the model uses
+// either ```sql ... ``` OR a bare ``` ... ``` fence (no language tag). When
+// the closing fence lands on the same line as prose (a common LLM bug), the
+// markdown parser never closes the fence and the whole rest of the reply
+// renders as a single code box with literal **markdown** bleeding through.
+// Since the executed SQL is already carried in metadata.sqlCalls and rendered
+// deterministically on the client via a dedicated panel, any SQL fence in
+// the prose is pure noise. This sanitizer strips it unconditionally but
+// leaves non-SQL fences (```js, ```python, etc.) intact.
+//
+// A fence is treated as SQL if: (a) the language tag is `sql`, OR (b) the
+// first non-whitespace token inside the block is one of the UNAMBIGUOUS
+// SQL DML/DDL keywords below. Ambiguous keywords (BEGIN, COMMIT, ROLLBACK)
+// overlap with Pascal / Plpgsql / Ada code-block bodies, so we require
+// them to be followed by SQL-shaped syntax to count as SQL (M3 tighten).
+//
+// Specifically:
+//   - `BEGIN` matches only when followed by TRANSACTION|WORK|`;` (the
+//     SQL-shape) — `\`\`\`pascal\nBEGIN someVar := 1` no longer false-
+//     positives.
+//   - `COMMIT`/`ROLLBACK` likewise allow optional TRANSACTION|WORK|`;`.
+//   - SELECT / INSERT / UPDATE / DELETE / WITH / CREATE / ALTER / DROP /
+//     TRUNCATE / MERGE / EXPLAIN / SHOW / USE / GRANT / REVOKE are
+//     considered uniquely SQL; matching is unconditional.
+const SQL_UNAMBIGUOUS =
+  '(?:SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|ALTER|DROP|TRUNCATE|MERGE|EXPLAIN|SHOW|USE|GRANT|REVOKE)';
+const SQL_AMBIGUOUS_WITH_SHAPE =
+  '(?:BEGIN|COMMIT|ROLLBACK)\\b\\s*(?:TRANSACTION|WORK|;)';
+const SQL_KEYWORDS = `(?:${SQL_UNAMBIGUOUS}|${SQL_AMBIGUOUS_WITH_SHAPE})`;
+const SQL_FENCE_OPEN = new RegExp(
+  `\`\`\`(?:sql\\b|[a-z]*\\s*\\n?\\s*${SQL_KEYWORDS}\\b)`,
+  'i',
+);
+const SQL_FENCE_CLOSED = new RegExp(
+  `\`\`\`(?:sql\\b|[a-z]*\\s*\\n?\\s*${SQL_KEYWORDS}\\b)[\\s\\S]*?\`\`\``,
+  'gi',
+);
+const SQL_FENCE_UNCLOSED = new RegExp(
+  `\`\`\`(?:sql\\b|[a-z]*\\s*\\n?\\s*${SQL_KEYWORDS}\\b)[\\s\\S]*$`,
+  'gi',
+);
+
+export function stripSqlFencesFromReply(content: string): string {
+  if (!content) return content;
+  let out = content;
+  // 1. Properly closed SQL fence (non-greedy so we stop at the FIRST closing
+  //    fence — this also catches the "closing fence glued to prose" bug.)
+  out = out.replace(SQL_FENCE_CLOSED, '');
+  // 2. Unclosed fence running to the end of the reply (defensive).
+  out = out.replace(SQL_FENCE_UNCLOSED, '');
+  // 3. Collapse the blank-line gaps left behind by the removed blocks.
+  out = out.replace(/\n{3,}/g, '\n\n').trim();
+  return out;
+}
+
+// Stateful counterpart for streaming. Each chunk is pushed through `push()`
+// and the stripper returns only the non-SQL tail it is certain about, keeping
+// a small lookahead buffer in case a fence marker straddles a chunk boundary.
+// `flush()` returns any remaining safe tail at end of stream.
+export function createStreamingSqlFenceStripper(): {
+  push(chunk: string): string;
+  flush(): string;
+} {
+  let buf = '';
+  let inFence = false;
+  // When we see a bare ``` we must buffer enough to decide whether it opens
+  // a SQL block (language tag "sql" OR first keyword inside is a SQL verb).
+  // ``` + optional tag + whitespace + longest SQL keyword ("ROLLBACK") easily
+  // fits in 40 chars. Keep generous headroom for models that indent the body.
+  const SQL_DECISION_WINDOW = 64;
+  // The anchored open regex: either ```sql, or ``` followed (optionally by a
+  // lowercase tag and whitespace) by an uppercase SQL keyword.
+  const anchoredOpen = new RegExp(
+    `^\`\`\`(?:sql\\b|[a-z]*\\s*\\n?\\s*${SQL_KEYWORDS}\\b)`,
+    'i',
+  );
+
+  return {
+    push(chunk: string): string {
+      buf += chunk;
+      let out = '';
+      while (buf.length > 0) {
+        if (inFence) {
+          const closeIdx = buf.indexOf('```');
+          if (closeIdx < 0) {
+            // Keep a small tail in case "```" spans chunks, drop the rest.
+            buf = buf.length > 2 ? buf.slice(-2) : buf;
+            return out;
+          }
+          // Skip through the closing fence and any language-tag-like residue.
+          buf = buf.slice(closeIdx + 3);
+          inFence = false;
+          continue;
+        }
+        // Find the next ``` (potential fence open) in the buffer.
+        const tickIdx = buf.indexOf('```');
+        if (tickIdx < 0) {
+          // No backticks at all — emit everything except a 2-char tail in case
+          // "```" straddles the next chunk.
+          if (buf.length > 2) {
+            out += buf.slice(0, buf.length - 2);
+            buf = buf.slice(buf.length - 2);
+          }
+          return out;
+        }
+        // Emit everything BEFORE the backticks immediately.
+        if (tickIdx > 0) {
+          out += buf.slice(0, tickIdx);
+          buf = buf.slice(tickIdx);
+        }
+        // Now buf starts with "```". Decide whether this opens a SQL block.
+        const m = anchoredOpen.exec(buf);
+        if (m) {
+          // Confirmed SQL fence — swallow the opener and enter fence mode.
+          buf = buf.slice(m[0].length);
+          inFence = true;
+          continue;
+        }
+        // Not (yet) a SQL fence. If we have enough characters after ``` to
+        // know for sure (or a second ``` has arrived), emit the ``` as safe
+        // content. Otherwise wait for more chunks.
+        const hasSecondFence = buf.indexOf('```', 3) >= 0;
+        if (buf.length >= SQL_DECISION_WINDOW || hasSecondFence) {
+          // Emit just the first ``` and re-loop; the tail may contain more.
+          out += '```';
+          buf = buf.slice(3);
+          continue;
+        }
+        // Need more data to decide. Hold buf, return what we have so far.
+        return out;
+      }
+      return out;
+    },
+    flush(): string {
+      if (inFence) {
+        // Unclosed fence — drop everything still buffered.
+        buf = '';
+        return '';
+      }
+      // At end of stream, if the buffer still starts with ``` that we were
+      // undecided about, commit to "not SQL" and emit as-is.
+      const tail = buf;
+      buf = '';
+      return tail;
+    },
+  };
+}
 
 @Injectable()
 export class ChatAgentService {
@@ -156,81 +371,138 @@ export class ChatAgentService {
     apiKey: string,
     params: GenerateReplyParams,
   ): Promise<ChatReply> {
-    const collectedSources: AirweaveSearchResultSummary[] = [];
-    const searchTool = createSearchKnowledgeBaseTool({
-      projectId: params.projectId,
-      sources: params.sources,
-      registry: this.registry,
-      sourcesSink: collectedSources,
-      resultLimit: this.configService.getChatAgentToolResultLimit(),
-      resultCharCap: this.configService.getChatAgentToolResultCharCap(),
-      searchTier: this.configService.getChatAgentSearchTier(),
-      retrievalStrategy: this.configService.getChatAgentRetrievalStrategy(),
-    });
+    const ctx = this.buildAgentContext(params);
+    try {
+      const collectedSources: AirweaveSearchResultSummary[] = [];
+      const searchTool = createSearchKnowledgeBaseTool({
+        projectId: params.projectId,
+        sources: params.sources,
+        registry: this.registry,
+        sourcesSink: collectedSources,
+        resultLimit: this.configService.getChatAgentToolResultLimit(),
+        resultCharCap: this.configService.getChatAgentToolResultCharCap(),
+        searchTier: this.configService.getChatAgentSearchTier(),
+        retrievalStrategy: this.configService.getChatAgentRetrievalStrategy(),
+      });
 
-    const systemPrompt = this.buildAgentSystemPrompt(params);
-    const maxIterations = this.configService.getChatAgentMaxIterations();
-
-    const agent = createAgent({
-      model: this.getOrCreateLlm(apiKey) as BaseChatModel,
-      tools: [searchTool],
-      systemPrompt,
-    });
-
-    const historyWindow = this.configService.getChatAgentHistoryWindow();
-    const historyMessages: BaseMessage[] = params.previousMessages
-      .slice(-historyWindow)
-      .map((message) =>
-        message.role === 'assistant'
-          ? new AIMessage(message.content)
-          : new HumanMessage(message.content),
+      const providerTools = this.registry.getAgentToolsFor(
+        params.sources,
+        ctx,
       );
-    const messages: BaseMessage[] = [
-      ...historyMessages,
-      new HumanMessage(this.buildAgentUserMessage(params)),
-    ];
 
-    const recursionLimit = Math.max(10, maxIterations * 4);
+      const systemPrompt = this.buildAgentSystemPrompt(params);
+      const maxIterations = this.configService.getChatAgentMaxIterations();
 
-    const result = await agent.invoke(
-      { messages } as Parameters<typeof agent.invoke>[0],
-      { recursionLimit },
-    );
+      const agent = createAgent({
+        model: this.getOrCreateLlm(apiKey) as BaseChatModel,
+        tools: [searchTool, ...providerTools],
+        systemPrompt,
+      });
 
-    const resultMessages = (result?.messages ?? []) as BaseMessage[];
-    const finalContent = this.extractFinalAssistantText(resultMessages);
-    if (!finalContent) {
-      throw new Error('Agent produced no assistant content');
+      const historyWindow = this.configService.getChatAgentHistoryWindow();
+      const historyMessages: BaseMessage[] = params.previousMessages
+        .slice(-historyWindow)
+        .map((message) =>
+          message.role === 'assistant'
+            ? new AIMessage(message.content)
+            : new HumanMessage(message.content),
+        );
+      const messages: BaseMessage[] = [
+        ...historyMessages,
+        new HumanMessage(this.buildAgentUserMessage(params)),
+      ];
+
+      // H2: tightened cap. Was max(10, maxIterations * 4) — let a confused
+      // outer agent burn ~32 graph transitions on a typical config. Halved
+      // to max(8, maxIterations * 2). The outer agent's job is one or two
+      // tool calls plus a synthesis, so 16 transitions is plenty headroom.
+      const recursionLimit = Math.max(8, maxIterations * 2);
+
+      const result = await agent.invoke(
+        { messages } as Parameters<typeof agent.invoke>[0],
+        { recursionLimit },
+      );
+
+      const resultMessages = (result?.messages ?? []) as BaseMessage[];
+      const rawFinalContent = this.extractFinalAssistantText(resultMessages);
+      if (!rawFinalContent) {
+        throw new Error('Agent produced no assistant content');
+      }
+      const finalContent = stripSqlFencesFromReply(rawFinalContent);
+
+      const toolCallCount = this.countToolMessages(resultMessages);
+      const maxSources = this.configService.getChatAgentMaxSources();
+      const uniqueSources = dedupeAndCapSources(collectedSources, maxSources);
+
+      const finalAiMsg = resultMessages
+        .filter((m) => m._getType() === 'ai')
+        .at(-1) as AIMessage | undefined;
+      const usageMeta = finalAiMsg?.usage_metadata as
+        | {
+            input_tokens?: number;
+            output_tokens?: number;
+            total_tokens?: number;
+          }
+        | undefined;
+      const promptTokens = usageMeta?.input_tokens ?? null;
+      const completionTokens = usageMeta?.output_tokens ?? null;
+      const totalTokens = usageMeta?.total_tokens ?? null;
+
+      return {
+        content: finalContent,
+        metadata: {
+          generator: 'langchain-agent',
+          sources: this.mapSources(uniqueSources),
+          resultCount: uniqueSources.length,
+          toolCallCount,
+          ...(ctx.persistedCalls.length > 0 && {
+            sqlCalls: ctx.persistedCalls,
+          }),
+          ...(totalTokens !== null && {
+            promptTokens,
+            completionTokens,
+            totalTokens,
+          }),
+        },
+      };
+    } finally {
+      await this.runCleanupCallbacks(ctx);
     }
+  }
 
-    const toolCallCount = this.countToolMessages(resultMessages);
-    const maxSources = this.configService.getChatAgentMaxSources();
-    const uniqueSources = dedupeAndCapSources(collectedSources, maxSources);
-
-    const finalAiMsg = resultMessages
-      .filter((m) => m._getType() === 'ai')
-      .at(-1) as AIMessage | undefined;
-    const usageMeta = finalAiMsg?.usage_metadata as
-      | { input_tokens?: number; output_tokens?: number; total_tokens?: number }
-      | undefined;
-    const promptTokens = usageMeta?.input_tokens ?? null;
-    const completionTokens = usageMeta?.output_tokens ?? null;
-    const totalTokens = usageMeta?.total_tokens ?? null;
-
+  private buildAgentContext(params: GenerateReplyParams): AgentToolContext {
+    // Caller-provided signal takes precedence so an HTTP client disconnect
+    // can cancel in-flight tools. When absent we still expose a never-aborted
+    // signal so tool code can rely on the field being present.
+    const signal = params.signal ?? new AbortController().signal;
     return {
-      content: finalContent,
-      metadata: {
-        generator: 'langchain-agent',
-        sources: this.mapSources(uniqueSources),
-        resultCount: uniqueSources.length,
-        toolCallCount,
-        ...(totalTokens !== null && {
-          promptTokens,
-          completionTokens,
-          totalTokens,
-        }),
-      },
+      orgId: params.orgId,
+      userId: params.userId,
+      conversationId: params.conversationId,
+      projectId: params.projectId,
+      signal,
+      eventSink: [] as AgentToolEvent[],
+      persistedCalls: [] as AgentToolPersistedCall[],
+      cleanupCallbacks: [],
     };
+  }
+
+  private async runCleanupCallbacks(ctx: AgentToolContext): Promise<void> {
+    for (const cb of ctx.cleanupCallbacks) {
+      try {
+        await cb();
+      } catch (error) {
+        console.warn('[ChatAgentService] cleanup callback failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  private drainSqlEvents(ctx: AgentToolContext): AgentToolEvent[] {
+    if (ctx.eventSink.length === 0) return [];
+    const drained = ctx.eventSink.splice(0, ctx.eventSink.length);
+    return drained;
   }
 
   /**
@@ -253,6 +525,8 @@ export class ChatAgentService {
       return;
     }
 
+    const ctx = this.buildAgentContext(params);
+    try {
     const collectedSources: AirweaveSearchResultSummary[] = [];
     const searchTool = createSearchKnowledgeBaseTool({
       projectId: params.projectId,
@@ -265,12 +539,13 @@ export class ChatAgentService {
       retrievalStrategy: this.configService.getChatAgentRetrievalStrategy(),
     });
 
+    const providerTools = this.registry.getAgentToolsFor(params.sources, ctx);
     const systemPrompt = this.buildAgentSystemPrompt(params);
     const maxIterations = this.configService.getChatAgentMaxIterations();
 
     const agent = createAgent({
       model: this.getOrCreateLlm(apiKey) as BaseChatModel,
-      tools: [searchTool],
+      tools: [searchTool, ...providerTools],
       systemPrompt,
     });
 
@@ -293,6 +568,11 @@ export class ChatAgentService {
     let finalContent = '';
     let toolCallCount = 0;
     let streamFinalAiMsg: AIMessage | undefined;
+    // Strips any ```sql ... ``` blocks token-by-token before yielding chunks
+    // so the live streamed reply never shows the code-block-swallowing bug.
+    // Final content is also run through the pure sanitizer below as a
+    // belt-and-suspenders against token-boundary edge cases.
+    const fenceStripper = createStreamingSqlFenceStripper();
 
     try {
       const stream = await agent.stream(
@@ -314,9 +594,12 @@ export class ChatAgentService {
 
         const messageType = this.getMessageType(message);
 
-        // Tool messages = search tool completed
+        // Tool messages = search tool completed; drain any pushed sql events.
         if (messageType === 'tool') {
           toolCallCount++;
+          for (const ev of this.drainSqlEvents(ctx)) {
+            yield ev;
+          }
           continue;
         }
 
@@ -345,13 +628,31 @@ export class ChatAgentService {
             // Only yield if this is new content (langgraph can re-emit full state)
             const isLanggraphNode = metadata?.langgraph_node !== undefined;
             if (isLanggraphNode) {
-              // In messages streamMode, each chunk is a delta token — accumulate
-              finalContent += text;
+              // In messages streamMode, each chunk is a delta token — accumulate.
+              // Route through the SQL-fence stripper so any ```sql ... ``` block
+              // is removed from both the streamed chunks and the accumulated
+              // final content before it ever reaches the client or DB.
               streamFinalAiMsg = aiMsg;
-              yield { type: 'chunk', content: text };
+              const safe = fenceStripper.push(text);
+              if (safe.length > 0) {
+                finalContent += safe;
+                yield { type: 'chunk', content: safe };
+              }
             }
           }
         }
+      }
+
+      // Flush any remaining non-SQL tail held back by the stripper.
+      const trailing = fenceStripper.flush();
+      if (trailing.length > 0) {
+        finalContent += trailing;
+        yield { type: 'chunk', content: trailing };
+      }
+
+      // Drain any residual sql events pushed after the final tool message.
+      for (const ev of this.drainSqlEvents(ctx)) {
+        yield ev;
       }
     } catch (streamError) {
       console.warn(
@@ -399,12 +700,18 @@ export class ChatAgentService {
     const streamTotalTokens = streamUsageMeta?.total_tokens ?? null;
 
     const reply: ChatReply = {
-      content: finalContent,
+      // Defensive pass: even though the streaming stripper handles chunks,
+      // a whole-string regex cleanup catches any token-boundary artifacts
+      // (stray backtick residue, double-blank lines).
+      content: stripSqlFencesFromReply(finalContent),
       metadata: {
         generator: 'langchain-agent',
         sources: this.mapSources(uniqueSources),
         resultCount: uniqueSources.length,
         toolCallCount,
+        ...(ctx.persistedCalls.length > 0 && {
+          sqlCalls: ctx.persistedCalls,
+        }),
         ...(streamTotalTokens !== null && {
           promptTokens: streamPromptTokens,
           completionTokens: streamCompletionTokens,
@@ -415,6 +722,9 @@ export class ChatAgentService {
 
     this.logReplySummary(reply, startedAt);
     yield { type: 'done', reply };
+    } finally {
+      await this.runCleanupCallbacks(ctx);
+    }
   }
 
   private fakeChunkContent(content: string, chunkSize = 120): string[] {
@@ -436,11 +746,55 @@ export class ChatAgentService {
    * which dense retrieval models match much better.
    */
   buildAgentSystemPrompt(params: GenerateReplyParams): string {
-    return [
+    const hasDatabaseSource = params.sources.some(
+      (source) => source.kind === 'database',
+    );
+
+    const sections: string[] = [
       this.configService.getChatSystemPrompt(),
       AGENT_TOOL_USAGE_PROTOCOL,
+    ];
+    if (hasDatabaseSource) {
+      // H2: structural capabilities chip — concrete tool menu with attached
+      // DB names enumerated, so the LLM routes off a named menu rather than
+      // pure intent classification under a prose-rules conflict. Goes BEFORE
+      // the routing protocol so the model has the chip in mind when reading
+      // the rules. Only emitted when a DB source is attached so the
+      // zero-DB-project prompt remains byte-identical to the pre-H2 version.
+      sections.push(this.buildCapabilitiesChip(params));
+      sections.push(AGENT_DATABASE_ROUTING_PROTOCOL);
+    }
+    sections.push(
       `## Context\n\nYou are answering questions for the organization: ${params.organizationName}, scoped to the project: ${params.projectName}. Every question is implicitly scoped to that project's configured data sources.`,
-    ].join('\n\n');
+    );
+
+    return sections.join('\n\n');
+  }
+
+  /**
+   * H2: structural capability menu. Generates a one-liner per capability
+   * with concrete data (DB names) so the LLM has a named menu to route
+   * off, not just prose rules.
+   */
+  private buildCapabilitiesChip(params: GenerateReplyParams): string {
+    const dbSources = params.sources.filter(
+      (s): s is Extract<typeof s, { kind: 'database' }> =>
+        s.kind === 'database',
+    );
+    const dbNames = dbSources
+      .map((s) => s.config?.connectionName || s.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0);
+    const dbList = dbNames.length > 0 ? dbNames.join(', ') : '(unnamed)';
+    return [
+      '## Available capabilities',
+      '',
+      'You have these tools at your disposal for this conversation:',
+      '',
+      '- `search_knowledge_base` — semantic search over the project\'s indexed documents and code (Airweave-backed).',
+      `- \`query_database\` — natural-language read-only queries against the attached SQL database(s): ${dbList}.`,
+      '',
+      'Use the tool that fits the *shape of the answer* the user wants. The rules below detail when each applies; this menu is the concrete list of what you can call.',
+    ].join('\n');
   }
 
   /**
@@ -552,7 +906,10 @@ export class ChatAgentService {
     const results: AirweaveSearchResultSummary[] = [];
     searches.forEach((outcome, index) => {
       if (outcome.status === 'fulfilled') {
-        results.push(...outcome.value.results);
+        // Defensive: a provider returning undefined or an object without
+        // `.results` shouldn't crash the whole fallback path — treat it as
+        // an empty result set and continue.
+        results.push(...(outcome.value?.results ?? []));
       } else {
         console.warn('[ChatAgentService] fallback source search failed', {
           sourceId: params.sources[index]?.id,

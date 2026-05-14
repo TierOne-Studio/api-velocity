@@ -7,7 +7,10 @@ export type AirweaveCollectionSourceConfig = {
   collectionName: string;
 };
 
-export type DatabaseSourceConfig = Record<string, unknown>;
+export type DatabaseSourceConfig = {
+  connectionId: string;
+  connectionName: string;
+};
 
 export type ExternalSourceConfig = Record<string, unknown>;
 
@@ -70,8 +73,14 @@ export type CreateAirweaveSourceInput = {
 
 export type CreateDatabaseSourceInput = {
   kind: 'database';
-  name: string;
-  config: DatabaseSourceConfig;
+  name?: string;
+  /**
+   * `connectionId` is the only field the external API (admin dialog / project
+   * form) submits. `connectionName` is populated server-side after resolving
+   * the org connection and is stored in `project_data_source.config` so the
+   * chat agent can surface it without an extra read.
+   */
+  config: { connectionId: string; connectionName?: string };
 };
 
 export type CreateExternalSourceInput = {
