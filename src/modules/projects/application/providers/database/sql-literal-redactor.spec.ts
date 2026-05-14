@@ -47,10 +47,25 @@ describe('redactSqlLiterals (M7)', () => {
     );
   });
 
-  it('preserves numeric literals (low PII risk; not in scope)', () => {
+  it('redacts numeric literals because debug SQL summaries may contain sensitive numeric identifiers', () => {
     expect(
       redactSqlLiterals(`SELECT * FROM events WHERE rating > 4 LIMIT 100`),
-    ).toBe(`SELECT * FROM events WHERE rating > 4 LIMIT 100`);
+    ).toBe(`SELECT * FROM events WHERE rating > <redacted> LIMIT <redacted>`);
+  });
+
+  it.each([
+    [`SELECT * FROM events WHERE delta = -42`, `SELECT * FROM events WHERE delta = <redacted>`],
+    [
+      `SELECT * FROM events WHERE score >= 98.6`,
+      `SELECT * FROM events WHERE score >= <redacted>`,
+    ],
+    [
+      `SELECT * FROM events WHERE ratio < 1.2e-3`,
+      `SELECT * FROM events WHERE ratio < <redacted>`,
+    ],
+    [`SELECT col1 FROM table2 WHERE id = 7`, `SELECT col1 FROM table2 WHERE id = <redacted>`],
+  ])('redacts numeric literal boundary shape %#', (input, expected) => {
+    expect(redactSqlLiterals(input)).toBe(expected);
   });
 
   it('preserves keywords and column names', () => {
@@ -59,7 +74,7 @@ describe('redactSqlLiterals (M7)', () => {
         `SELECT id, email, created_at FROM users ORDER BY id LIMIT 10`,
       ),
     ).toBe(
-      `SELECT id, email, created_at FROM users ORDER BY id LIMIT 10`,
+      `SELECT id, email, created_at FROM users ORDER BY id LIMIT <redacted>`,
     );
   });
 

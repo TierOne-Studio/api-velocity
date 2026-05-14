@@ -454,6 +454,20 @@ describe('ConfigService', () => {
     });
   });
 
+  describe('getSqlAgentSystemPrompt', () => {
+    it('instructs the SQL agent to quote mixed-case identifiers from schema inspection', () => {
+      delete process.env.SQL_AGENT_SYSTEM_PROMPT;
+      delete process.env.SQL_AGENT_SYSTEM_PROMPT_PATH;
+
+      const configService = new ConfigService();
+
+      const prompt = configService.getSqlAgentSystemPrompt();
+      expect(prompt).toContain('mixed-case or camelCase');
+      expect(prompt).toContain('"organizationId"');
+      expect(prompt).toContain('"createdAt"');
+    });
+  });
+
   describe('getChatAgentToolResultCharCap', () => {
     it('returns CHAT_AGENT_TOOL_RESULT_CHAR_CAP when set', () => {
       process.env.CHAT_AGENT_TOOL_RESULT_CHAR_CAP = '2000';

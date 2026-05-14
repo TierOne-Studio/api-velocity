@@ -1,6 +1,7 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { SqlToolkit } from '@langchain/classic/agents/toolkits/sql';
 import { createAgent } from 'langchain';
+import { tool } from '@langchain/core/tools';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
   AIMessage,
@@ -8,6 +9,8 @@ import {
   type BaseMessage,
 } from '@langchain/core/messages';
 import type { ReadOnlySqlDatabase } from './read-only-sql-database';
+
+type SqlToolkitTool = ReturnType<SqlToolkit['getTools']>[number];
 
 export type SubAgentConfig = {
   apiKey: string;
@@ -43,19 +46,24 @@ export async function runSqlSubAgent(
     db,
     llm as unknown as BaseChatModel,
   );
+  const rawTools = toolkit.getTools();
+  const identifierRepair = createPostgresIdentifierRepair();
+  const tools = rawTools.map((sqlTool) =>
+    wrapSqlToolWithIdentifierRepair(sqlTool, identifierRepair),
+  );
 
   const agent = createAgent({
     model: llm as unknown as BaseChatModel,
-    tools: toolkit.getTools(),
+    tools,
     systemPrompt: config.systemPrompt,
   });
 
   const messages: BaseMessage[] = [new HumanMessage(question)];
-  // H2: tightened cap on the inner sub-agent. The toolkit's typical flow
-  // (list_tables → info_sql_db → query_sql_db → return) needs ~5-8
-  // transitions; capping at max(8, maxIterations * 2) prevents a confused
-  // agent from chewing through 30+ tool calls before giving up.
-  const recursionLimit = Math.max(8, config.maxIterations * 2);
+  // The SQL toolkit can spend several graph transitions repairing generated
+  // SQL before producing the final assistant message. Keep the cap bounded,
+  // but leave room for: inspect schema -> check -> failed query -> repair ->
+  // successful query -> final answer.
+  const recursionLimit = Math.max(12, config.maxIterations * 3);
 
   const result = await agent.invoke(
     { messages } as Parameters<typeof agent.invoke>[0],
@@ -70,6 +78,160 @@ export async function runSqlSubAgent(
 
   const finalText = extractFinalAssistantText(resultMessages);
   return { finalText, messages: resultMessages, toolMessages };
+}
+
+function wrapSqlToolWithIdentifierRepair(
+  sqlTool: SqlToolkitTool,
+  identifierRepair: PostgresIdentifierRepair,
+): ReturnType<typeof tool> {
+  return tool(
+    async (input: unknown) => {
+      const toolInput = repairSqlToolInput(sqlTool.name, input, identifierRepair);
+      const output = await sqlTool.invoke(
+        toolInput as Parameters<typeof sqlTool.invoke>[0],
+      );
+      if (sqlTool.name === 'info-sql') {
+        identifierRepair.addFromSchemaInfo(output);
+      }
+      return output;
+    },
+    {
+      name: sqlTool.name,
+      description: sqlTool.description,
+      schema: sqlTool.schema,
+    },
+  );
+}
+
+type PostgresIdentifierRepair = {
+  addFromSchemaInfo(output: unknown): void;
+  repairSql(sql: string): string;
+};
+
+function createPostgresIdentifierRepair(): PostgresIdentifierRepair {
+  const mixedCaseIdentifiers = new Set<string>();
+  return {
+    addFromSchemaInfo(output: unknown): void {
+      if (typeof output !== 'string') return;
+      for (const identifier of extractQuotedMixedCaseIdentifiers(output)) {
+        mixedCaseIdentifiers.add(identifier);
+      }
+    },
+    repairSql(sql: string): string {
+      return repairPostgresMixedCaseIdentifiers(sql, mixedCaseIdentifiers);
+    },
+  };
+}
+
+function repairSqlToolInput(
+  toolName: string,
+  input: unknown,
+  identifierRepair: PostgresIdentifierRepair,
+): unknown {
+  if (toolName !== 'query-sql' && toolName !== 'query-checker') {
+    return input;
+  }
+  if (typeof input === 'string') {
+    return identifierRepair.repairSql(input);
+  }
+  if (!input || typeof input !== 'object') {
+    return input;
+  }
+  return Object.fromEntries(
+    Object.entries(input as Record<string, unknown>).map(([key, value]) => [
+      key,
+      typeof value === 'string' ? identifierRepair.repairSql(value) : value,
+    ]),
+  );
+}
+
+function extractQuotedMixedCaseIdentifiers(schemaInfo: string): string[] {
+  const identifiers = new Set<string>();
+  const quotedIdentifierPattern = /"((?:[^"]|"")*[A-Z](?:[^"]|"")*)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = quotedIdentifierPattern.exec(schemaInfo)) !== null) {
+    const identifier = match[1]?.replace(/""/g, '"') ?? '';
+    if (/^[A-Za-z_][A-Za-z0-9_$]*$/.test(identifier)) {
+      identifiers.add(identifier);
+    }
+  }
+  const bareMixedCaseIdentifierPattern =
+    /\b(?=[A-Za-z_][A-Za-z0-9_$]*\b)(?=[A-Za-z0-9_$]*[a-z])(?=[A-Za-z0-9_$]*[A-Z])[A-Za-z_][A-Za-z0-9_$]*\b/g;
+  while ((match = bareMixedCaseIdentifierPattern.exec(schemaInfo)) !== null) {
+    identifiers.add(match[0]);
+  }
+  return [...identifiers];
+}
+
+export function repairPostgresMixedCaseIdentifiers(
+  sql: string,
+  mixedCaseIdentifiers: Iterable<string>,
+): string {
+  const identifiers = [...mixedCaseIdentifiers]
+    .filter((identifier) => /[A-Z]/.test(identifier))
+    .sort((a, b) => b.length - a.length);
+  if (identifiers.length === 0) return sql;
+
+  const repairSegment = (segment: string) =>
+    identifiers.reduce(
+      (repaired, identifier) => replaceBareIdentifier(repaired, identifier),
+      segment,
+    );
+
+  let output = '';
+  let codeStart = 0;
+  for (let index = 0; index < sql.length; index++) {
+    const dollarTag = readDollarQuoteTag(sql, index);
+    if (dollarTag) {
+      output += repairSegment(sql.slice(codeStart, index));
+      const endIndex = sql.indexOf(dollarTag, index + dollarTag.length);
+      const literalEnd = endIndex === -1 ? sql.length : endIndex + dollarTag.length;
+      output += sql.slice(index, literalEnd);
+      index = literalEnd - 1;
+      codeStart = literalEnd;
+      continue;
+    }
+
+    const quote = sql[index];
+    if (quote !== "'" && quote !== '"') continue;
+
+    output += repairSegment(sql.slice(codeStart, index));
+    const literalEnd = readQuotedLiteralEnd(sql, index, quote);
+    output += sql.slice(index, literalEnd);
+    index = literalEnd - 1;
+    codeStart = literalEnd;
+  }
+
+  return output + repairSegment(sql.slice(codeStart));
+}
+
+function replaceBareIdentifier(sql: string, identifier: string): string {
+  const pattern = new RegExp(
+    `(?<![A-Za-z0-9_$"])${escapeRegExp(identifier)}(?![A-Za-z0-9_$"])`,
+    'g',
+  );
+  return sql.replace(pattern, `"${identifier.replace(/"/g, '""')}"`);
+}
+
+function readQuotedLiteralEnd(sql: string, startIndex: number, quote: string): number {
+  for (let index = startIndex + 1; index < sql.length; index++) {
+    if (sql[index] !== quote) continue;
+    if (sql[index + 1] === quote) {
+      index++;
+      continue;
+    }
+    return index + 1;
+  }
+  return sql.length;
+}
+
+function readDollarQuoteTag(sql: string, startIndex: number): string | null {
+  if (sql[startIndex] !== '$') return null;
+  return /^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/.exec(sql.slice(startIndex))?.[0] ?? null;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function extractFinalAssistantText(messages: BaseMessage[]): string {

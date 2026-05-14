@@ -9,9 +9,6 @@
  *
  * Does NOT redact:
  *   - Double-quoted identifiers (`"Col"`) — those are column / table names.
- *   - Numeric literals — common in LIMIT, ORDER BY, etc.; usually low PII
- *     risk for the chat-to-SQL flow but operators should treat the SQL
- *     metadata as best-effort scrubbing, not authoritative.
  *
  * If the input contains structurally unclosed quotes the redactor falls
  * back to redacting the whole tail as one literal — never echoes back
@@ -20,6 +17,7 @@
  */
 
 const REDACTED = "'<redacted>'";
+const REDACTED_NUMERIC = '<redacted>';
 
 export function redactSqlLiterals(sql: string): string {
   if (typeof sql !== 'string' || sql.length === 0) return sql;
@@ -83,6 +81,15 @@ export function redactSqlLiterals(sql: string): string {
       continue;
     }
 
+    if (isNumericLiteralStart(sql, i)) {
+      const numeric = /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(sql.slice(i));
+      if (numeric) {
+        out += REDACTED_NUMERIC;
+        i += numeric[0].length;
+        continue;
+      }
+    }
+
     // Double-quoted identifier: copy through verbatim.
     if (ch === '"') {
       const closeIdx = sql.indexOf('"', i + 1);
@@ -100,4 +107,20 @@ export function redactSqlLiterals(sql: string): string {
     i++;
   }
   return out;
+}
+
+function isNumericLiteralStart(sql: string, index: number): boolean {
+  const current = sql[index];
+  const next = sql[index + 1];
+  if (!/\d|-/.test(current ?? '')) return false;
+  if (current === '-' && !/\d/.test(next ?? '')) return false;
+
+  const previous = sql[index - 1];
+  if (previous && /[A-Za-z0-9_$]/.test(previous)) return false;
+
+  const candidate = /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(sql.slice(index))?.[0];
+  if (!candidate) return false;
+
+  const following = sql[index + candidate.length];
+  return !following || !/[A-Za-z0-9_$]/.test(following);
 }
