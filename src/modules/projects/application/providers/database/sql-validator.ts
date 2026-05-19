@@ -64,12 +64,78 @@ const DENY_WORDS = [
   // Defense-in-depth info-leak block — current_setting() reads any
   // session GUC including possibly app-set ones the LLM shouldn't see.
   'CURRENT_SETTING',
+  // Security HIGH-3: App-instance metadata-leak vectors.
+  // When the agent shares a Postgres INSTANCE with the application (Layer C
+  // host+port guard slated for removal in a follow-up slice), these system
+  // catalogs would leak role names, password hashes, live sessions, server
+  // config, and auth-file contents. Block them at the validator so the
+  // read-only transaction + role-grant defenses don't have to carry the full
+  // load. Word-boundary regex (`\b`) prevents false positives on identifier
+  // SUBSTRINGS (e.g. a column named `last_pg_user_id` does NOT match
+  // `PG_USER` because `_` is a `\w` character).
+  'PG_SHADOW',
+  'PG_AUTHID',
+  'PG_ROLES',
+  'PG_USER',
+  'PG_STAT_ACTIVITY',
+  'PG_STAT_REPLICATION',
+  'PG_SETTINGS',
+  'PG_HBA_FILE_RULES',
+  'PG_FILE_SETTINGS',
+  // Replication topology + connection-info leaks. `pg_subscription.subconninfo`
+  // can disclose connection-string credentials on older Postgres versions
+  // (before per-row redaction was tightened).
+  'PG_REPLICATION_SLOTS',
+  'PG_SUBSCRIPTION',
+  'PG_PUBLICATION',
+  // Function-form bypasses for the catalog views above. `pg_stat_activity`
+  // is itself a view over `pg_stat_get_activity()`; blocking the view but
+  // not the function would leave a trivial bypass. `pg_show_all_settings()`
+  // and `pg_show_all_file_settings()` are function forms of `pg_settings` /
+  // `pg_file_settings`. Word-boundary match works for both `name` and
+  // `name(` because `(` is a non-word char.
+  'PG_STAT_GET_ACTIVITY',
+  'PG_SHOW_ALL_SETTINGS',
+  'PG_SHOW_ALL_FILE_SETTINGS',
 ];
+
+/**
+ * Parameter names that `SHOW` MUST NOT reveal — filesystem paths, TLS material
+ * paths, Kerberos realm, replication conn-info, and password-encryption mode.
+ * Exported so the spec can loop over the full list and lock the contract.
+ */
+export const SHOW_SENSITIVE_PARAMS = [
+  'data_directory',
+  'hba_file',
+  'config_file',
+  'ident_file',
+  'external_pid_file',
+  'krb_server_keyfile',
+  'krb_realm',
+  'unix_socket_directories',
+  'ssl_cert_file',
+  'ssl_key_file',
+  'ssl_ca_file',
+  'ssl_crl_file',
+  'primary_conninfo',
+  'password_encryption',
+] as const;
 
 const DENY_REGEX = new RegExp(`\\b(${DENY_WORDS.join('|')})\\b`, 'i');
 const DO_REGEX = /\bDO\b/i;
 const SET_REGEX = /\bSET\b(?!\s+LOCAL\b)/i;
 const ALLOWED_START = /^(WITH|SELECT|SHOW|EXPLAIN)\b/i;
+// SHOW of filesystem/auth-config server parameters leaks operator-private
+// paths (data_directory, hba_file) and TLS material paths the chat agent
+// must never expose. `SHOW` itself stays in ALLOWED_START because benign
+// uses like `SHOW TIMEZONE`/`SHOW search_path` are part of the agent's
+// repertoire (referenced from the agent's system prompt). `SHOW ALL` is
+// always denied because it dumps every GUC including the sensitive ones —
+// it would be the trivial bypass of an explicit-param denylist.
+const SHOW_SENSITIVE_REGEX = new RegExp(
+  `\\bSHOW\\s+(?:ALL|${SHOW_SENSITIVE_PARAMS.join('|')})\\b`,
+  'i',
+);
 // CTE-write guard: WITH ... AS ( ... INSERT|UPDATE|DELETE ... )
 const CTE_WRITE_REGEX =
   /\bWITH\b[\s\S]*?\bAS\b[\s\S]*?\b(INSERT|UPDATE|DELETE)\b/i;
@@ -149,6 +215,13 @@ export function validateReadOnlySql(
 
   if (SET_REGEX.test(oneStatement)) {
     return { ok: false, reason: 'SET (other than SET LOCAL) is not allowed' };
+  }
+
+  if (SHOW_SENSITIVE_REGEX.test(oneStatement)) {
+    return {
+      ok: false,
+      reason: 'SHOW of sensitive server parameter is not allowed',
+    };
   }
 
   if (!ALLOWED_START.test(oneStatement)) {

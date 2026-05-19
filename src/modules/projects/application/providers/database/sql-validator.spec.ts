@@ -1,4 +1,8 @@
-import { stripComments, validateReadOnlySql } from './sql-validator';
+import {
+  SHOW_SENSITIVE_PARAMS,
+  stripComments,
+  validateReadOnlySql,
+} from './sql-validator';
 
 const limits = { maxSqlLength: 8192 };
 
@@ -17,6 +21,18 @@ describe('validateReadOnlySql', () => {
     'EXPLAIN SELECT 1',
     'SHOW TIMEZONE',
     '  SELECT 1  ;',
+    // SHOW of non-sensitive server parameters stays allowed.
+    'SHOW search_path',
+    'SHOW statement_timeout',
+    'SHOW server_version',
+    // Schema-introspection paths the agent legitimately uses MUST keep working.
+    'SELECT * FROM information_schema.columns WHERE table_name = $1',
+    'SELECT * FROM pg_catalog.pg_class',
+    'SELECT * FROM pg_catalog.pg_namespace',
+    // Column identifiers that contain a denylisted catalog name as a SUBSTRING
+    // must not false-positive (e.g. an audit table column called pg_user_id).
+    'SELECT last_pg_user_id FROM audit_log',
+    'SELECT pg_shadow_setting FROM tenant_config',
   ];
 
   const deny: Array<[string, RegExp]> = [
@@ -94,6 +110,41 @@ describe('validateReadOnlySql', () => {
     ],
     // Security defense-in-depth: session-GUC introspection
     ["SELECT current_setting('app.tenant_id')", /dangerous keyword/i],
+    // ── App-instance metadata-leak vectors (Slice 1 of Layer-C removal) ──
+    // System catalogs that leak app-DB role names, password hashes, sessions,
+    // server config, and auth-file paths when the agent dials the same
+    // Postgres INSTANCE as the application. Adding these to Layer A closes
+    // the gap before Layer C (the host+port guard) is removed in Slice 2.
+    ['SELECT * FROM pg_shadow', /dangerous keyword/i],
+    ['SELECT * FROM pg_authid', /dangerous keyword/i],
+    ['SELECT rolname FROM pg_roles', /dangerous keyword/i],
+    ['SELECT * FROM pg_user', /dangerous keyword/i],
+    ['SELECT * FROM pg_stat_activity', /dangerous keyword/i],
+    ['SELECT * FROM pg_stat_replication', /dangerous keyword/i],
+    ['SELECT name, setting FROM pg_settings LIMIT 5', /dangerous keyword/i],
+    ['SELECT * FROM pg_hba_file_rules', /dangerous keyword/i],
+    ['SELECT * FROM pg_file_settings', /dangerous keyword/i],
+    // Replication / publication / subscription catalogs (security MED #1).
+    ['SELECT * FROM pg_replication_slots', /dangerous keyword/i],
+    ['SELECT * FROM pg_subscription', /dangerous keyword/i],
+    ['SELECT * FROM pg_publication', /dangerous keyword/i],
+    // Function-form bypasses (security MED #3). `pg_stat_activity` is a view
+    // over `pg_stat_get_activity()`; blocking only the view leaves a hole.
+    ['SELECT * FROM pg_stat_get_activity(NULL)', /dangerous keyword/i],
+    ['SELECT * FROM pg_show_all_settings()', /dangerous keyword/i],
+    ['SELECT * FROM pg_show_all_file_settings()', /dangerous keyword/i],
+    // Schema-qualified, quoted, and case variants of the catalog reads.
+    ['SELECT * FROM pg_catalog.pg_shadow', /dangerous keyword/i],
+    ['SELECT * FROM "pg_shadow"', /dangerous keyword/i],
+    ['select * from PG_SHADOW', /dangerous keyword/i],
+    // SHOW ALL dumps every GUC including the sensitive ones — trivial
+    // bypass of an explicit-param denylist if not handled (QA HIGH #1).
+    ['SHOW ALL', /sensitive server parameter/i],
+    ['show all', /sensitive server parameter/i],
+    // Whitespace / tab / case variants on the SHOW guard.
+    ['SHOW  data_directory', /sensitive server parameter/i],
+    ['SHOW\tdata_directory', /sensitive server parameter/i],
+    ['show DATA_DIRECTORY', /sensitive server parameter/i],
   ];
 
   for (const sql of allow) {
@@ -126,5 +177,36 @@ describe('validateReadOnlySql', () => {
     // at the "allowed start" gate, which is correct for read-only user input.
     const verdict = validateReadOnlySql('SET LOCAL statement_timeout=1', limits);
     expect(verdict.ok).toBe(false);
+  });
+
+  // QA MED #2: enumerate every sensitive SHOW parameter so a future refactor
+  // that drops one from the regex fails loudly. The exported constant IS the
+  // contract; the spec proves each entry is enforced.
+  describe('SHOW_SENSITIVE_PARAMS contract', () => {
+    for (const param of SHOW_SENSITIVE_PARAMS) {
+      it(`denies SHOW ${param}`, () => {
+        const verdict = validateReadOnlySql(`SHOW ${param}`, limits);
+        expect(verdict.ok).toBe(false);
+        if (verdict.ok === false) {
+          expect(verdict.reason).toMatch(/sensitive server parameter/i);
+        }
+      });
+    }
+  });
+
+  // QA #3 (LOW, kept as a seat-belt): the `\b`-anchored denylist intentionally
+  // over-blocks catalog names that appear inside string literals — consistent
+  // with how CURRENT_SETTING / SET_CONFIG already behave. Pin the behavior so
+  // a future maintainer doesn't "fix" the false positive without weighing the
+  // bypass risk (LLM-emitted string literals containing catalog names).
+  it("over-blocks pg_shadow inside a string literal (documented tradeoff)", () => {
+    const verdict = validateReadOnlySql(
+      "SELECT 'pg_shadow info' AS topic",
+      limits,
+    );
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok === false) {
+      expect(verdict.reason).toMatch(/dangerous keyword/i);
+    }
   });
 });
