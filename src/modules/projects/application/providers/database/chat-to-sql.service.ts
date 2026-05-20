@@ -41,10 +41,7 @@ export class ChatToSqlService {
   constructor(private readonly configService: ConfigService) {}
 
   createFactory(): SqlDataSourceFactory {
-    return new SqlDataSourceFactory(
-      this.buildLimits(),
-      this.configService.getAgentForbiddenDatabases(),
-    );
+    return new SqlDataSourceFactory(this.buildLimits());
   }
 
   async askConnection(
