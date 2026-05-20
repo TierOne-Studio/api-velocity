@@ -1,8 +1,10 @@
 # ADR-0001 — Chat-to-SQL agent runs on a separate data plane from the application database
 
-**Status:** Accepted (2026-04, with `feature/natural-sql` PR)
+**Status:** Partially superseded (2026-05) by [ADR-010](../decisions/ADR-010-supersede-app-db-host-guard.md)
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-010](../decisions/ADR-010-supersede-app-db-host-guard.md) (host+port code-level guard removed; axes 1–3, 6–7 of the seven-axis separation now hold via the read-only contract instead — see ADR-010 § Decision)
+
+> **What changed:** axes 1–3 (DataSource instance / pool / credentials) and 6–7 (lifetime / config source-of-truth) are still enforced as written below. **Axis 4–5 (network + Postgres role)** now do all the work that the host+port guard used to provide. The `checkForbiddenAppDatabase` / `assertNotAppDatabase` code below is removed; `AGENT_FORBIDDEN_DATABASES` is no longer read. See ADR-010 for the threat-model trade-offs.
 
 ## Context
 
@@ -38,17 +40,17 @@ The chat-to-SQL agent path and the application's own database access **MUST NOT*
 **Code-level enforcement** of axes 1–3 and 6–7 lives in `SqlDataSourceFactory` (see `src/modules/projects/application/providers/database/sql-datasource.factory.ts`). The factory:
 
 - Is constructed per chat turn from `ChatToSqlService.createFactory()`.
-- Refuses to dial any host that matches an entry in `AGENT_FORBIDDEN_DATABASES` (defaults to `[DATABASE_URL]`) at `host + port` granularity, regardless of database name. Sibling DBs on the same physical instance are blocked.
-- Fails closed on a malformed forbidden URL (a security check that silently degrades on bad input is not a security check).
-- Refuses any host that resolves to a private / loopback / link-local / cloud-metadata IP (SSRF defense in depth; the connection tester goes through the same guard).
+- ~~Refuses to dial any host that matches an entry in `AGENT_FORBIDDEN_DATABASES` (defaults to `[DATABASE_URL]`) at `host + port` granularity, regardless of database name. Sibling DBs on the same physical instance are blocked.~~ **[Superseded by ADR-010 — guard removed. Replacement: SQL validator instance-metadata deny-list + `SET TRANSACTION READ ONLY` chokepoint + operator-provisioned `chat_app_reader` role + dial-time audit log.]**
+- ~~Fails closed on a malformed forbidden URL (a security check that silently degrades on bad input is not a security check).~~ **[Superseded by ADR-010 — no URL list anymore.]**
+- Refuses any host that resolves to a private / loopback / link-local / cloud-metadata IP (SSRF defense in depth; the connection tester goes through the same guard). **[Unchanged.]**
 
-Axes 4–5 (network segmentation, Postgres role) **cannot** be enforced from code. They're operational invariants documented in `docs/sql-connections-operations.md` and called out in the README / setup checklist.
+Axes 4–5 (network segmentation, Postgres role) **cannot** be enforced from code. They're operational invariants documented in `docs/sql-connections-operations.md` and called out in the README / setup checklist. **[After ADR-010, axes 4–5 do all the work that axis-3-enforcement-of-app-DB-segregation used to share with them — see ADR-010 § Decision.]**
 
 ## Consequences
 
 ### Positive
 
-- A confused-deputy escalation through the LLM cannot reach app auth/session state, because the agent path is structurally incapable of dialing the app DB.
+- ~~A confused-deputy escalation through the LLM cannot reach app auth/session state, because the agent path is structurally incapable of dialing the app DB.~~ **[Superseded by ADR-010 — the agent path CAN now dial the app DB. The confused-deputy bound is now: validator + RO transaction + role grants. See ADR-010 § Consequences/Negative for the specific tables at risk if an operator misuses this and the audit-log tripwire that catches it.]**
 - Resource starvation of the app pool by agent traffic is bounded by the agent's own per-request pool (`SQL_AGENT_POOL_MAX`, validated at boot).
 - Future security additions (per-org keys, KMS-managed credentials, RLS on attached DBs) can layer cleanly on top of the structural split.
 
@@ -67,8 +69,8 @@ Axes 4–5 (network segmentation, Postgres role) **cannot** be enforced from cod
 | Concern | Enforcement | Spec |
 |---|---|---|
 | SSRF host denylist | `assertSafeAgentHost` (shared) | `src/shared/security/host-validator.spec.ts` |
-| App DB host blocklist | `checkForbiddenAppDatabase` (host+port match) | `src/modules/projects/.../sql-datasource.factory.spec.ts` |
-| Multi-URL forbidden list | `AGENT_FORBIDDEN_DATABASES` env | `src/shared/config/config.service.spec.ts` |
+| ~~App DB host blocklist~~ | ~~`checkForbiddenAppDatabase`~~ — **removed in ADR-010** | — |
+| ~~Multi-URL forbidden list~~ | ~~`AGENT_FORBIDDEN_DATABASES` env~~ — **removed in ADR-010** | — |
 | Validator deny-list (SQL functions that cross the trust boundary) | `sql-validator.ts` | `sql-validator.spec.ts` |
 | Per-connection table allowlist | `org_sql_connection.allowed_tables` → `includesTables` | `read-only-sql-database.spec.ts` |
 | Inner-error scrubbing | `sanitizeAgentError` | `sql-error-sanitizer.spec.ts` |

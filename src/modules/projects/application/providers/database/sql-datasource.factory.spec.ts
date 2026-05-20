@@ -1,8 +1,5 @@
 import { UnsafeHostError } from '../../../../../shared/security/host-validator';
-import {
-  SqlDataSourceFactory,
-  checkForbiddenAppDatabase,
-} from './sql-datasource.factory';
+import { SqlDataSourceFactory } from './sql-datasource.factory';
 import type { ResolvedSqlConnection, SqlLimits } from './types';
 
 const limits: SqlLimits = {
@@ -42,7 +39,7 @@ describe('SqlDataSourceFactory (SSRF guard)', () => {
   ])(
     'refuses to build a DataSource for unsafe host %s',
     async (host) => {
-      const factory = new SqlDataSourceFactory(limits, []);
+      const factory = new SqlDataSourceFactory(limits);
       await expect(factory.get(conn(host))).rejects.toBeInstanceOf(
         UnsafeHostError,
       );
@@ -50,126 +47,20 @@ describe('SqlDataSourceFactory (SSRF guard)', () => {
   );
 });
 
-describe('checkForbiddenAppDatabase (S1+S2+S4)', () => {
-  it('allows when the forbidden list is empty', () => {
-    expect(
-      checkForbiddenAppDatabase([], {
-        host: 'public.example.com',
-        port: 5432,
-      }),
-    ).toEqual({ result: 'allow' });
-    expect(
-      checkForbiddenAppDatabase(null, {
-        host: 'public.example.com',
-        port: 5432,
-      }),
-    ).toEqual({ result: 'allow' });
-  });
+// TODO(2026-Q4): remove this breadcrumb once it's no longer surprising
+// the host+port app-DB guard tests are gone.
+//
+// The host+port forbidden-app-DB guard (checkForbiddenAppDatabase /
+// assertNotAppDatabase) was removed in ADR-010. The agent path now relies
+// on the SQL validator's instance-metadata deny-list, the SET TRANSACTION
+// READ ONLY chokepoint, and operator-provisioned SELECT-only Postgres role
+// grants. The SSRF tests above remain — they assert the other Layer-C-
+// adjacent defense (`assertSafeAgentHost`) is still wired into `factory.get()`.
 
-  it('forbids when host+port match the app DB (S1: regardless of database name)', () => {
-    const check = checkForbiddenAppDatabase(
-      ['postgres://u:p@app-db.internal:5432/app'],
-      { host: 'app-db.internal', port: 5432 },
-    );
-    expect(check.result).toBe('forbidden');
-  });
-
-  it('forbids a sibling database on the same physical instance (S1)', () => {
-    // Was the gap: old impl required database-name match too. Sibling DBs
-    // share the same physical Postgres, so dblink etc. cross trivially.
-    const check = checkForbiddenAppDatabase(
-      ['postgres://u:p@10.0.1.5:5432/app'],
-      { host: '10.0.1.5', port: 5432 },
-    );
-    expect(check.result).toBe('forbidden');
-  });
-
-  it('allows when host differs', () => {
-    const check = checkForbiddenAppDatabase(
-      ['postgres://u:p@app-db.internal:5432/app'],
-      { host: 'other-db.example.com', port: 5432 },
-    );
-    expect(check.result).toBe('allow');
-  });
-
-  it('allows when port differs', () => {
-    const check = checkForbiddenAppDatabase(
-      ['postgres://u:p@app-db.internal:5432/app'],
-      { host: 'app-db.internal', port: 6543 },
-    );
-    expect(check.result).toBe('allow');
-  });
-
-  it('compares host case-insensitively', () => {
-    const check = checkForbiddenAppDatabase(
-      ['postgres://u:p@APP-DB.INTERNAL:5432/app'],
-      { host: 'app-db.internal', port: 5432 },
-    );
-    expect(check.result).toBe('forbidden');
-  });
-
-  it('treats missing port in URL as 5432 (Postgres default)', () => {
-    const check = checkForbiddenAppDatabase(
-      ['postgres://u:p@app-db.internal/app'],
-      { host: 'app-db.internal', port: 5432 },
-    );
-    expect(check.result).toBe('forbidden');
-  });
-
-  it('S2: fails closed when any forbidden URL is malformed', () => {
-    const check = checkForbiddenAppDatabase(['not-a-url'], {
-      host: 'public.example.com',
-      port: 5432,
-    });
-    expect(check.result).toBe('invalid-forbidden-url');
-  });
-
-  it('S2: the factory refuses to dial when any forbidden URL is malformed', async () => {
-    const factory = new SqlDataSourceFactory(limits, ['not-a-url']);
-    await expect(factory.get(conn('public.example.com'))).rejects.toThrow(
-      /malformed; cannot verify/,
-    );
-  });
-
-  // S4 coverage
-  it('S4: forbids when matching any URL in the list (primary)', () => {
-    const check = checkForbiddenAppDatabase(
-      [
-        'postgres://u:p@primary.internal:5432/app',
-        'postgres://u:p@replica.internal:5432/app',
-      ],
-      { host: 'primary.internal', port: 5432 },
-    );
-    expect(check.result).toBe('forbidden');
-  });
-
-  it('S4: forbids when matching any URL in the list (replica)', () => {
-    const check = checkForbiddenAppDatabase(
-      [
-        'postgres://u:p@primary.internal:5432/app',
-        'postgres://u:p@replica.internal:5432/app',
-      ],
-      { host: 'replica.internal', port: 5432 },
-    );
-    expect(check.result).toBe('forbidden');
-  });
-
-  it('S4: allows when matching no URL in the list', () => {
-    const check = checkForbiddenAppDatabase(
-      [
-        'postgres://u:p@primary.internal:5432/app',
-        'postgres://u:p@replica.internal:5432/app',
-      ],
-      { host: 'public-db.example.com', port: 5432 },
-    );
-    expect(check.result).toBe('allow');
-  });
-
-  it('S4: a single malformed entry poisons the whole list (fail-closed)', () => {
-    const check = checkForbiddenAppDatabase(
-      ['postgres://u:p@primary.internal:5432/app', 'bad-url-entry'],
-      { host: 'public-db.example.com', port: 5432 },
-    );
-    expect(check.result).toBe('invalid-forbidden-url');
-  });
-});
+// ADR-010 added a structured dial-time audit log (`[agent.dial] connectionId=...
+// host=... port=... database=...`) in `SqlDataSourceFactory.get()` after the
+// SSRF guard passes. The log is the SRE-facing tripwire that replaces the
+// removed host+port guard. Unit-testing it via `jest.spyOn` on the imported
+// `assertSafeAgentHost` doesn't work under `node --experimental-vm-modules`
+// (the namespace is frozen in ESM). The structural assertion is deferred to
+// the testcontainer-based smoke test tracked in ADR-010 Follow-up #1.
