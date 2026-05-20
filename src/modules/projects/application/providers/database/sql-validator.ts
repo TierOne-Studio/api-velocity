@@ -66,13 +66,13 @@ const DENY_WORDS = [
   'CURRENT_SETTING',
   // Security HIGH-3: App-instance metadata-leak vectors.
   // When the agent shares a Postgres INSTANCE with the application (Layer C
-  // host+port guard slated for removal in a follow-up slice), these system
-  // catalogs would leak role names, password hashes, live sessions, server
-  // config, and auth-file contents. Block them at the validator so the
-  // read-only transaction + role-grant defenses don't have to carry the full
-  // load. Word-boundary regex (`\b`) prevents false positives on identifier
-  // SUBSTRINGS (e.g. a column named `last_pg_user_id` does NOT match
-  // `PG_USER` because `_` is a `\w` character).
+  // host+port guard removed in ADR-010), these system catalogs would leak
+  // role names, password hashes, live sessions, server config, and auth-file
+  // contents. Block them at the validator so the read-only transaction +
+  // role-grant defenses don't have to carry the full load. Word-boundary
+  // regex (`\b`) prevents false positives on identifier SUBSTRINGS (e.g. a
+  // column named `last_pg_user_id` does NOT match `PG_USER` because `_` is
+  // a `\w` character).
   'PG_SHADOW',
   'PG_AUTHID',
   'PG_ROLES',

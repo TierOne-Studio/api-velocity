@@ -1,86 +1,52 @@
+import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { assertSafeAgentHost } from '../../../../../shared/security/host-validator';
 import type { ResolvedSqlConnection, SqlLimits } from './types';
 
 /**
- * Pure-function helper exposed for unit testing. Returns `'allow'` when the
- * connection is safe to dial, `'forbidden'` when host+port match any
- * forbidden (application) database URL, and `'invalid-forbidden-url'` when
- * any forbidden URL is malformed (fail-closed, per S2).
- *
- * Notes vs. the prior `assertNotAppDatabase`:
- *   - S1: matches on host+port only. The old impl required `database` to
- *     match too, which let sibling databases on the same physical instance
- *     slip through (`postgres://...@10.0.1.5:5432/app_readonly` was treated
- *     as different from `.../app`, but `dblink` from one to the other was
- *     trivial).
- *   - S2: fails closed on malformed URL. The old impl silently allowed the
- *     connection through. A broken URL is a boot-time bug; the SQL agent
- *     path must NOT proceed without a valid app-DB identity to compare
- *     against.
- *   - S4: accepts a LIST of forbidden URLs (primary + replica + sibling
- *     instances). Empty list = no guard.
- *   - Hostname compare is case-insensitive.
- */
-export type ForbiddenAppDbCheck =
-  | { result: 'allow' }
-  | { result: 'forbidden'; reason: string }
-  | { result: 'invalid-forbidden-url'; reason: string };
-
-export function checkForbiddenAppDatabase(
-  forbiddenUrls: readonly string[] | null,
-  connection: { host: string; port: number },
-): ForbiddenAppDbCheck {
-  if (!forbiddenUrls || forbiddenUrls.length === 0) return { result: 'allow' };
-
-  const connHost = connection.host.trim().toLowerCase();
-  for (const forbiddenUrl of forbiddenUrls) {
-    let parsed: URL;
-    try {
-      parsed = new URL(forbiddenUrl);
-    } catch {
-      return {
-        result: 'invalid-forbidden-url',
-        reason: `Forbidden app-DB URL is malformed; cannot verify isolation: ${forbiddenUrl}`,
-      };
-    }
-    const appHost = parsed.hostname.toLowerCase();
-    const appPort = Number(parsed.port || '5432');
-    if (appHost === connHost && appPort === connection.port) {
-      return {
-        result: 'forbidden',
-        reason:
-          'Refusing to connect to the application database via a user SQL connection',
-      };
-    }
-  }
-  return { result: 'allow' };
-}
-
-/**
  * Request-scoped factory for TypeORM DataSources. One instance per chat turn.
  * Callers must `destroyAll()` in a `finally` block.
+ *
+ * The previous host+port app-DB guard (`checkForbiddenAppDatabase` /
+ * `assertNotAppDatabase`, with `AGENT_FORBIDDEN_DATABASES`-driven config)
+ * was removed in favor of a read-only contract enforced at three other
+ * layers:
+ *   - SQL validator deny-list including instance-metadata catalogs and
+ *     `SHOW`-sensitive parameters (`sql-validator.ts`);
+ *   - `SET TRANSACTION READ ONLY` chokepoint in `read-only-sql-database.ts`;
+ *   - operator-provisioned `SELECT`-only Postgres role grants on the agent
+ *     connection (documented in `docs/sql-connections-operations.md`).
+ * Rationale and threat-model trade-offs are recorded in ADR-010 (which
+ * supersedes ADR-0001's code-level Layer C enforcement).
+ *
+ * The SSRF guard (`assertSafeAgentHost`) is unchanged — it still blocks
+ * RFC1918 / loopback / link-local / cloud-metadata destinations regardless
+ * of the agent's read-only contract.
  */
 export class SqlDataSourceFactory {
+  private static readonly logger = new Logger('SqlDataSourceFactory');
   private readonly dataSources = new Map<string, DataSource>();
 
-  constructor(
-    private readonly limits: SqlLimits,
-    private readonly forbiddenUrls: readonly string[] = [],
-  ) {}
+  constructor(private readonly limits: SqlLimits) {}
 
   async get(connection: ResolvedSqlConnection): Promise<DataSource> {
     const cached = this.dataSources.get(connection.id);
     if (cached) return cached;
 
-    // Cheap in-memory check first (S1+S2): refuses dials at the app DB and
-    // fails closed on a malformed forbidden URL.
-    this.assertNotAppDatabase(connection);
-
     // SSRF guard (C1+S3): re-validate the host at every dial. DNS rebinding
     // between save-time and dial-time can change resolution; we revalidate
     // every time the chat agent attempts a query.
     await assertSafeAgentHost(connection.host);
+
+    // Audit log. ADR-010 removed the host+port app-DB guard; this log is
+    // the SRE-facing tripwire that replaces it. Pipe into a SIEM and alert
+    // on `host == <parsed DATABASE_URL host>` to catch operators who
+    // mis-configured a chat connection at the application DB. The log
+    // SHOULD NOT carry credentials, username, or SQL text — host/port/
+    // database/connectionId are sufficient to identify the dial.
+    SqlDataSourceFactory.logger.log(
+      `[agent.dial] connectionId=${connection.id} host=${connection.host} port=${connection.port} database=${connection.database}`,
+    );
 
     const ds = new DataSource({
       type: 'postgres',
@@ -109,16 +75,6 @@ export class SqlDataSourceFactory {
         ds.isInitialized ? ds.destroy().catch(() => undefined) : undefined,
       ),
     );
-  }
-
-  private assertNotAppDatabase(connection: ResolvedSqlConnection): void {
-    const check = checkForbiddenAppDatabase(this.forbiddenUrls, {
-      host: connection.host,
-      port: connection.port,
-    });
-    if (check.result === 'forbidden' || check.result === 'invalid-forbidden-url') {
-      throw new Error(check.reason);
-    }
   }
 
   private raceInit(ds: DataSource, timeoutMs: number): Promise<DataSource> {
