@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 import {
   ChatAgentService,
   createStreamingSqlFenceStripper,
+  stripJsonFencesFromReply,
   stripSqlFencesFromReply,
 } from './chat-agent.service';
 import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
@@ -497,6 +498,8 @@ describe('ChatAgentService', () => {
       const content = fs.readFileSync(file, 'utf8');
       expect(content).toMatch(/prose only/i);
       expect(content).toMatch(/do not include the sql query/i);
+      expect(content).toMatch(/do not paste raw tool output/i);
+      expect(content).toMatch(/```json fenced dump/i);
       expect(content).toMatch(/Answer format/i);
     });
   });
@@ -528,6 +531,38 @@ describe('ChatAgentService', () => {
 
       expect(llm1).not.toBe(llm2);
     });
+  });
+});
+
+describe('stripJsonFencesFromReply', () => {
+  it('removes a closed ```json block before prose', () => {
+    const rows =
+      '[{"user_name":"Ada","user_role":"admin"},{"user_name":"Bob","user_role":"manager"}]';
+    const input = `\`\`\`json\n${rows}\n\`\`\`\n\nHere is the summary table.`;
+    expect(stripJsonFencesFromReply(input)).toBe('Here is the summary table.');
+  });
+
+  it('removes a ```json block glued to prose after the closing fence', () => {
+    const input =
+      '```json\n[{"name":"x"}]\n```Here are the roles **per user**:';
+    expect(stripJsonFencesFromReply(input)).toBe(
+      'Here are the roles **per user**:',
+    );
+  });
+
+  it('is case-insensitive on the json fence tag', () => {
+    expect(stripJsonFencesFromReply('```JSON\n[]\n```\nDone.')).toBe('Done.');
+  });
+
+  it('removes an unclosed ```json block at end of reply', () => {
+    expect(stripJsonFencesFromReply('Intro:\n```json\n[{"a":1}]')).toBe(
+      'Intro:',
+    );
+  });
+
+  it('leaves ```js blocks alone', () => {
+    const input = 'Ex:\n```js\nconst x = {a:1};\n```\nEnd.';
+    expect(stripJsonFencesFromReply(input)).toBe(input);
   });
 });
 
@@ -630,6 +665,24 @@ describe('stripSqlFencesFromReply', () => {
 });
 
 describe('createStreamingSqlFenceStripper', () => {
+  it('with stripJsonWhen strips ```json split across chunks without leaking fence markers', () => {
+    const s = createStreamingSqlFenceStripper({
+      stripJsonWhen: () => true,
+    });
+    const chunks = ['``', '`json\n[{"x":1}]\n```', 'Visible prose'];
+    const out = chunks.map((c) => s.push(c)).join('') + s.flush();
+    expect(out).toBe('Visible prose');
+  });
+
+  it('with stripJsonWhen strips ```json delivered one token after opener across chunks', () => {
+    const s = createStreamingSqlFenceStripper({
+      stripJsonWhen: () => true,
+    });
+    const chunks = ['```', 'json\n', '[{"x":1}]\n', '```', 'Answer ', 'done.'];
+    const out = chunks.map((c) => s.push(c)).join('') + s.flush();
+    expect(out).toBe('Answer done.');
+  });
+
   it('strips a ```sql block delivered across multiple chunks', () => {
     const s = createStreamingSqlFenceStripper();
     // Token-at-a-time emission simulating an LLM stream

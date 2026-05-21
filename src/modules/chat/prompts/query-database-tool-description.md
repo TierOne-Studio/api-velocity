@@ -24,9 +24,16 @@ Use the returned rows to synthesize a natural-language answer for the user. Cite
 
 ## Answer format after calling this tool
 
-Reply with **prose only** — 1–3 short sentences that directly answer the question using values from `rows`. For multi-row results, a small markdown table is fine.
+Reply with **prose only** — one optional short sentence framing the answer, then the facts (do **not** print two similar introductions back-to-back). For multi-row results, use **one** markdown pipe table (`| column |`) — put a **blank line** before the table header row so it parses reliably.
 
 **Do NOT include the SQL query in your reply.** The application UI renders the executed SQL automatically from tool metadata as a separate, collapsible panel beneath your answer. Repeating the SQL in your text creates duplication and renders poorly.
+
+**Do NOT paste raw tool output.** The user already receives row data through the application; your message must be the synthesized answer only.
+
+Describe roles or counts in natural language—avoid quoting raw DB column names or pointing users at `'member'.'role'` unless they explicitly asked about schema.
+
+- Do **not** paste the JSON array/object of `rows`, or any ```json fenced dump of query results.
+- Do **not** narrate implementation details (how you joined tables, which columns you matched, or schema exploration steps). Go straight to the answer.
 
 ### Correct example
 
@@ -35,5 +42,7 @@ Reply with **prose only** — 1–3 short sentences that directly answer the que
 ### Incorrect examples (do NOT do this)
 
 - Pasting a ```sql fenced block with the query — the UI already shows it.
+- Pasting a ```json fenced block (or raw `[{...}]`) with row payloads — use prose or a markdown table instead.
+- Explaining "I joined table X with table Y on …" before the answer — omit that entirely.
 - Wrapping any part of the reply in a code fence.
 - Prefixing the answer with "I ran the query …" or other meta-commentary about tool use.
