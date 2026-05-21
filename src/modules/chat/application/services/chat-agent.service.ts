@@ -167,6 +167,12 @@ const SQL_FENCE_UNCLOSED = new RegExp(
   'gi',
 );
 
+// Models sometimes paste ```json ... ``` with the tool's row payload even though
+// the client already renders SQL + structured results. Strip json-tagged fences
+// only on replies that followed a DB query (see callers), analogous to SQL fences.
+const JSON_FENCE_CLOSED = /\`\`\`json\b[\s\S]*?\`\`\`/gi;
+const JSON_FENCE_UNCLOSED = /\`\`\`json\b[\s\S]*$/i;
+
 export function stripSqlFencesFromReply(content: string): string {
   if (!content) return content;
   let out = content;
@@ -180,16 +186,62 @@ export function stripSqlFencesFromReply(content: string): string {
   return out;
 }
 
+export function stripJsonFencesFromReply(content: string): string {
+  if (!content) return content;
+  let out = content.replace(JSON_FENCE_CLOSED, '');
+  out = out.replace(JSON_FENCE_UNCLOSED, '');
+  out = out.replace(/\n{3,}/g, '\n\n').trim();
+  return out;
+}
+
+function sanitizeDbAssistantReplyText(
+  raw: string,
+  hadPersistedSqlCalls: boolean,
+): string {
+  let out = stripSqlFencesFromReply(raw);
+  if (hadPersistedSqlCalls) {
+    out = stripJsonFencesFromReply(out);
+  }
+  return out;
+}
+
+function createStreamingDbReplyFenceStripper(ctx: {
+  persistedCalls: unknown[];
+}): {
+  push(chunk: string): string;
+  flush(): string;
+} {
+  return createStreamingSqlFenceStripper({
+    stripJsonWhen: () => ctx.persistedCalls.length > 0,
+  });
+}
+
+export type StreamingSqlFenceStripperOptions = {
+  /**
+   * When true, ```json … ``` fences are stripped like ```sql — evaluated on
+   * every chunk so JSON opens after `persistedCalls` fills mid-stream still work.
+   * Must be integrated into this stripper (not chained afterward): the SQL
+   * branch otherwise emits lone "```" while disambiguating, which flashes raw
+   * fences to the client token-by-token.
+   */
+  stripJsonWhen?: () => boolean;
+};
+
 // Stateful counterpart for streaming. Each chunk is pushed through `push()`
 // and the stripper returns only the non-SQL tail it is certain about, keeping
 // a small lookahead buffer in case a fence marker straddles a chunk boundary.
 // `flush()` returns any remaining safe tail at end of stream.
-export function createStreamingSqlFenceStripper(): {
+export function createStreamingSqlFenceStripper(
+  options?: StreamingSqlFenceStripperOptions,
+): {
   push(chunk: string): string;
   flush(): string;
 } {
+  const stripJsonWhen = options?.stripJsonWhen;
+  const jsonOpen = /^\`\`\`json\b/i;
   let buf = '';
-  let inFence = false;
+  let inSqlFence = false;
+  let inJsonFence = false;
   // When we see a bare ``` we must buffer enough to decide whether it opens
   // a SQL block (language tag "sql" OR first keyword inside is a SQL verb).
   // ``` + optional tag + whitespace + longest SQL keyword ("ROLLBACK") easily
@@ -207,7 +259,17 @@ export function createStreamingSqlFenceStripper(): {
       buf += chunk;
       let out = '';
       while (buf.length > 0) {
-        if (inFence) {
+        if (inJsonFence) {
+          const closeIdx = buf.indexOf('```');
+          if (closeIdx < 0) {
+            buf = buf.length > 2 ? buf.slice(-2) : buf;
+            return out;
+          }
+          buf = buf.slice(closeIdx + 3);
+          inJsonFence = false;
+          continue;
+        }
+        if (inSqlFence) {
           const closeIdx = buf.indexOf('```');
           if (closeIdx < 0) {
             // Keep a small tail in case "```" spans chunks, drop the rest.
@@ -216,7 +278,7 @@ export function createStreamingSqlFenceStripper(): {
           }
           // Skip through the closing fence and any language-tag-like residue.
           buf = buf.slice(closeIdx + 3);
-          inFence = false;
+          inSqlFence = false;
           continue;
         }
         // Find the next ``` (potential fence open) in the buffer.
@@ -240,8 +302,18 @@ export function createStreamingSqlFenceStripper(): {
         if (m) {
           // Confirmed SQL fence — swallow the opener and enter fence mode.
           buf = buf.slice(m[0].length);
-          inFence = true;
+          inSqlFence = true;
           continue;
+        }
+        // Tool-result JSON dumps: classify BEFORE emitting a lone "```", which
+        // would leak through SSE chunk-by-chunk while the model streams ```json.
+        if (stripJsonWhen?.()) {
+          const jm = jsonOpen.exec(buf);
+          if (jm) {
+            buf = buf.slice(jm[0].length);
+            inJsonFence = true;
+            continue;
+          }
         }
         // Not (yet) a SQL fence. If we have enough characters after ``` to
         // know for sure (or a second ``` has arrived), emit the ``` as safe
@@ -259,7 +331,7 @@ export function createStreamingSqlFenceStripper(): {
       return out;
     },
     flush(): string {
-      if (inFence) {
+      if (inSqlFence || inJsonFence) {
         // Unclosed fence — drop everything still buffered.
         buf = '';
         return '';
@@ -428,7 +500,10 @@ export class ChatAgentService {
       if (!rawFinalContent) {
         throw new Error('Agent produced no assistant content');
       }
-      const finalContent = stripSqlFencesFromReply(rawFinalContent);
+      const finalContent = sanitizeDbAssistantReplyText(
+        rawFinalContent,
+        ctx.persistedCalls.length > 0,
+      );
 
       const toolCallCount = this.countToolMessages(resultMessages);
       const maxSources = this.configService.getChatAgentMaxSources();
@@ -572,7 +647,7 @@ export class ChatAgentService {
     // so the live streamed reply never shows the code-block-swallowing bug.
     // Final content is also run through the pure sanitizer below as a
     // belt-and-suspenders against token-boundary edge cases.
-    const fenceStripper = createStreamingSqlFenceStripper();
+    const fenceStripper = createStreamingDbReplyFenceStripper(ctx);
 
     try {
       const stream = await agent.stream(
@@ -703,7 +778,10 @@ export class ChatAgentService {
       // Defensive pass: even though the streaming stripper handles chunks,
       // a whole-string regex cleanup catches any token-boundary artifacts
       // (stray backtick residue, double-blank lines).
-      content: stripSqlFencesFromReply(finalContent),
+      content: sanitizeDbAssistantReplyText(
+        finalContent,
+        ctx.persistedCalls.length > 0,
+      ),
       metadata: {
         generator: 'langchain-agent',
         sources: this.mapSources(uniqueSources),
