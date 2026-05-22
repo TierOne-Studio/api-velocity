@@ -5,12 +5,13 @@ import {
   stripJsonFencesFromReply,
   stripSqlFencesFromReply,
 } from './chat-agent.service';
-import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
-import type { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
+// Phase 4-lite: barrel import.
 import type {
+  ProjectDataSource,
+  DataSourceRegistry,
   DataSourceProvider,
   DataSourceSearchOptions,
-} from '../../../projects/application/providers/data-source-provider.interface';
+} from '../../../projects';
 import type { AirweaveSearchResponse } from '../../../airweave/application/services/airweave.service';
 
 type ChatReply = {

@@ -40,8 +40,11 @@ type ChatAgentServiceType =
 let ChatAgentService:
   typeof import('./chat-agent.service').ChatAgentService;
 
-import type { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
-import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
+// Phase 4-lite: barrel import.
+import type {
+  DataSourceRegistry,
+  ProjectDataSource,
+} from '../../../projects';
 
 function makeAirweaveSource(): ProjectDataSource {
   return {

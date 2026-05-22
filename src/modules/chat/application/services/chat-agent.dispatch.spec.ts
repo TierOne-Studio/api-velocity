@@ -21,13 +21,14 @@ import {
   resetCapturedTools,
 } from '../../../../shared/test-utils/agent-transcript-mock';
 import { registerPinMatcher } from '../../../../shared/test-utils/pin-matchers';
-import type { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
+// Phase 4-lite: barrel import.
 import type {
+  DataSourceRegistry,
   AgentToolContext,
   DataSourceProvider,
-} from '../../../projects/application/providers/data-source-provider.interface';
+  ProjectDataSource,
+} from '../../../projects';
 import type { AirweaveSearchResponse } from '../../../airweave/application/services/airweave.service';
-import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
 import type {
   ChatRouterService,
   RouterDecision,

@@ -9,13 +9,19 @@ import {
 import { createAgent } from 'langchain';
 import { ConfigService } from '../../../../shared/config';
 import type { AirweaveSearchResultSummary } from '../../../airweave/application/services/airweave.service';
-import { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
+// Phase 4-lite: imports from the projects MODULE BARREL (projects/index.ts)
+// instead of deep paths into projects/application/providers/...
+// Fixes the chat → projects directional smell (proposal §3.4's goal) without
+// requiring a full file move. The barrel is the public surface; deep imports
+// were a coupling smell. See Phase 4-lite commit message for the deviation
+// from the proposal's literal "move to data-sources/" plan.
 import type {
   AgentToolContext,
   AgentToolEvent,
   AgentToolPersistedCall,
-} from '../../../projects/application/providers/data-source-provider.interface';
-import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
+  ProjectDataSource,
+} from '../../../projects';
+import { DataSourceRegistry } from '../../../projects';
 import {
   createSearchKnowledgeBaseTool,
   dedupeAndCapSources,
