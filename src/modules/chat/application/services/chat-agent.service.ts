@@ -194,6 +194,79 @@ export function stripJsonFencesFromReply(content: string): string {
   return out;
 }
 
+// LLMs occasionally emit a markdown table immediately after prose without
+// the blank-line separator GitHub-flavored-markdown requires for the table
+// to render as a table. The result on the SPA is the table syntax getting
+// absorbed into the preceding paragraph as inline text — e.g.
+//
+//   "...45 questions.| User | Email |"   (no \n at all)
+//   "...45 questions.\n| User | Email |" (single \n, also not enough)
+//
+// Both should render as a table; the second one is what the markdown spec
+// SHOULD recognize but most renderers (including remark/rehype with their
+// default settings) require a true paragraph break (\n\n) before a table
+// header to treat it as a fresh block.
+//
+// Prompt-tuning this is unreliable — the model emits these patterns at
+// random token boundaries regardless of how loud the system prompt is.
+// The mechanical guarantee is to insert the missing blank line as a
+// post-processing pass on the assembled content.
+//
+// Implementation: line-based, NOT regex-only. An earlier regex-only
+// version over-matched the header-separator → data-row boundary in real
+// tables (e.g. `:|---|` would match as "prose char `:` then table line")
+// and inserted blank lines INSIDE tables, breaking them apart.
+//
+// Two passes:
+//   1. PRE-SPLIT mixed lines: any line containing "prose-text then
+//      table-syntax" (e.g. "foo.| User |") splits at the boundary
+//      into ["foo.", "| User |"].
+//   2. LINE WALK: ensure a blank line precedes any table line that
+//      follows a non-table, non-empty line. Consecutive table lines
+//      (header → separator → rows) are left glued together.
+//
+// Heuristic for "table line": trimmed line starts with `|` AND has at
+// least TWO pipes total. Avoids over-matching ordinary prose like
+// "Hello | World" (only one pipe).
+
+function isTableLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('|')) return false;
+  return (trimmed.match(/\|/g)?.length ?? 0) >= 2;
+}
+
+// "foo.| User | Email |" → ["foo.", "| User | Email |"]
+// "| header | only |"   → ["| header | only |"]  (unchanged)
+// "no table here"       → ["no table here"]      (unchanged)
+function splitLineAtTableStart(line: string): string[] {
+  // Match: non-pipe prose ($1) followed by a pipe segment containing
+  // at least two pipes ($2). Anchored to the start so we only split
+  // at the FIRST prose→table boundary in the line.
+  const m = line.match(/^([^|]+?)(\|[^\n]*\|)$/);
+  if (!m) return [line];
+  if ((m[2].match(/\|/g)?.length ?? 0) < 2) return [line];
+  if (m[1].trim() === '') return [line];
+  return [m[1], m[2]];
+}
+
+export function normalizeMarkdownTables(content: string): string {
+  if (!content) return content;
+  // Pass 1: split prose-then-table lines.
+  const split = content.split('\n').flatMap(splitLineAtTableStart);
+  // Pass 2: insert blank lines before new table blocks.
+  const out: string[] = [];
+  for (const line of split) {
+    if (isTableLine(line)) {
+      const prev = out[out.length - 1];
+      if (prev !== undefined && prev !== '' && !isTableLine(prev)) {
+        out.push('');
+      }
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
 function sanitizeDbAssistantReplyText(
   raw: string,
   hadPersistedSqlCalls: boolean,
@@ -202,6 +275,11 @@ function sanitizeDbAssistantReplyText(
   if (hadPersistedSqlCalls) {
     out = stripJsonFencesFromReply(out);
   }
+  // Table normalization runs LAST so it operates on the final, fence-
+  // stripped content. Always runs (not gated on hadPersistedSqlCalls) —
+  // models sometimes emit tables in non-DB responses too (e.g.
+  // search_knowledge_base summaries that list results in a table).
+  out = normalizeMarkdownTables(out);
   return out;
 }
 

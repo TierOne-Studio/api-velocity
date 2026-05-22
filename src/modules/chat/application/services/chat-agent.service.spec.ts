@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 import {
   ChatAgentService,
   createStreamingSqlFenceStripper,
+  normalizeMarkdownTables,
   stripJsonFencesFromReply,
   stripSqlFencesFromReply,
 } from './chat-agent.service';
@@ -800,5 +801,85 @@ describe('createStreamingSqlFenceStripper', () => {
     expect(out).not.toContain('BEGIN TRANSACTION');
     expect(out).toContain('I ran:');
     expect(out).toContain('Done.');
+  });
+});
+
+describe('normalizeMarkdownTables', () => {
+  // These cases pin the exact production failure modes captured in screenshots:
+  //   - "...questions.| User | Email |" (no newline at all between prose and table)
+  //   - "...questions.\n| User | Email |" (single newline; markdown needs two)
+  // Both render as unstyled inline text on the SPA because GitHub-flavored-
+  // markdown requires a blank line before a table header.
+
+  it('inserts a blank line when prose is directly glued to a table line', () => {
+    const input = 'There are 4 users.| User | Email |\n|---|---|\n| Ada | a@x |';
+    const out = normalizeMarkdownTables(input);
+    expect(out).toContain('There are 4 users.\n\n| User | Email |');
+    expect(out).toContain('|---|---|');
+    expect(out).toContain('| Ada | a@x |');
+  });
+
+  it('inserts a blank line when prose has only a single newline before a table line', () => {
+    const input = 'There are 4 users.\n| User | Email |\n|---|---|\n| Ada | a@x |';
+    const out = normalizeMarkdownTables(input);
+    expect(out).toContain('There are 4 users.\n\n| User | Email |');
+  });
+
+  it('is a no-op when the table is already properly separated', () => {
+    const input = 'There are 4 users.\n\n| User | Email |\n|---|---|\n| Ada | a@x |';
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  it('does NOT over-match a single inline pipe in prose ("Hello | World")', () => {
+    // Heuristic: table-like = at least TWO pipes on the same line. A lone
+    // inline pipe ("Hello | World") has zero or one trailing pipe and must
+    // pass through unchanged or this would corrupt prose.
+    const input = 'Hello | World';
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  it('does NOT insert duplicate blank lines on already-correct tables', () => {
+    // Regression guard: applying the regex multiple times must converge.
+    const input = 'Intro.\n\n| col1 | col2 |\n|---|---|\n| a | b |';
+    const once = normalizeMarkdownTables(input);
+    const twice = normalizeMarkdownTables(once);
+    expect(twice).toBe(once);
+  });
+
+  it('preserves consecutive table rows (does not insert blank lines between rows)', () => {
+    // Critical: only the FIRST table line should get a blank line inserted.
+    // Subsequent rows (header-separator, data rows) must remain glued
+    // together, otherwise the parser sees multiple single-row tables.
+    const input = 'Intro.\n\n| a | b |\n| 1 | 2 |\n| 3 | 4 |';
+    const out = normalizeMarkdownTables(input);
+    expect(out).toBe(input);
+  });
+
+  it('handles the exact production failure shape (multi-bullet then glued table)', () => {
+    // Reproduces the SPA screenshot from the bug report: 4 bullets then a
+    // markdown table fused onto the last bullet's trailing text.
+    const input = [
+      '- Ada (a@x): 7 chats, 45 questions',
+      '- Bob (b@x): 2 chats, 4 questions',
+      '- Charlie (c@x): 0 chats, 0 questions| User | Email | Chats | Questions |',
+      '|---|---|---:|---:|',
+      '| Ada | a@x | 7 | 45 |',
+    ].join('\n');
+    const out = normalizeMarkdownTables(input);
+    expect(out).toContain('0 chats, 0 questions\n\n| User | Email | Chats | Questions |');
+    expect(out).toContain('|---|---|---:|---:|');
+    expect(out).toContain('| Ada | a@x | 7 | 45 |');
+    // The header-separator and data row must remain glued (no blank lines
+    // inserted between them) — otherwise the table breaks into pieces.
+    expect(out).not.toMatch(/\|---\|---\|---:\|---:\|\n\n\| Ada/);
+  });
+
+  it('handles empty input', () => {
+    expect(normalizeMarkdownTables('')).toBe('');
+  });
+
+  it('handles prose-only content (no tables, no changes)', () => {
+    const input = 'There are 4 users in your database.';
+    expect(normalizeMarkdownTables(input)).toBe(input);
   });
 });
