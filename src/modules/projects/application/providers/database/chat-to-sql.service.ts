@@ -74,13 +74,18 @@ export class ChatToSqlService {
       // SqlToolkit. NULL/missing → undefined → SqlToolkit sees the entire
       // schema (preserves prior behavior). Array → SqlToolkit only sees
       // the listed tables in list_tables_sql_db / info_sql_db calls.
+      // Phase 1 (S2.2) — opt-in sample-row count for `info-sql` output
+      // (Copilot C6 fix). When SQL_AGENT_SAMPLE_ROWS is unset the
+      // getter returns null and we OMIT `sampleRowsInTableInfo` from
+      // the options object → SqlDatabase applies its built-in default
+      // (3). Setting SQL_AGENT_SAMPLE_ROWS=0 in env restores the
+      // refactor's intended optimization (no sample rows in info-sql).
+      // This matches PR #22's "default-off / zero behavior change on
+      // merge" contract.
+      const sampleRows = this.configService.getSqlAgentSampleRows();
       db = await ReadOnlySqlDatabase.fromDataSource(dataSource, limits, {
         includesTables: connection.allowedTables ?? undefined,
-        // Phase 1 (S2.2): operator-overridable sample-row count for
-        // `info-sql`. Default 0 — column types are usually enough; raising
-        // is opt-in via SQL_AGENT_SAMPLE_ROWS when a project's SQL
-        // accuracy regresses on sparsely-typed columns.
-        sampleRowsInTableInfo: this.configService.getSqlAgentSampleRows(),
+        ...(sampleRows !== null && { sampleRowsInTableInfo: sampleRows }),
       });
     } catch (error) {
       const sanitized = sanitizeAgentError(error);

@@ -155,6 +155,49 @@ describe('ConfigService', () => {
       expect(cs.getSqlAgentMaxSqlLength()).toBe(256);
       expect(warnSpy).not.toHaveBeenCalled();
     });
+
+    // Copilot PR #22 C6 regression guard: getSqlAgentSampleRows MUST
+    // return null when unset so the caller can omit the parameter and
+    // let the underlying SqlDatabase apply its own default (3). An
+    // earlier version returned 0 unconditionally — a silent behavior
+    // change on merge from "3 sample rows in info-sql" to "0 sample
+    // rows", contradicting the PR's default-off contract.
+    describe('getSqlAgentSampleRows (Copilot C6 contract)', () => {
+      it('returns null when SQL_AGENT_SAMPLE_ROWS is unset', () => {
+        delete process.env.SQL_AGENT_SAMPLE_ROWS;
+        const cs = new ConfigService();
+        expect(cs.getSqlAgentSampleRows()).toBeNull();
+      });
+
+      it('returns null when SQL_AGENT_SAMPLE_ROWS is empty string', () => {
+        process.env.SQL_AGENT_SAMPLE_ROWS = '';
+        const cs = new ConfigService();
+        expect(cs.getSqlAgentSampleRows()).toBeNull();
+      });
+
+      it('returns the explicit value when set to 0 (opt-in optimization)', () => {
+        process.env.SQL_AGENT_SAMPLE_ROWS = '0';
+        const cs = new ConfigService();
+        expect(cs.getSqlAgentSampleRows()).toBe(0);
+      });
+
+      it('returns the explicit value when set in range (1-10)', () => {
+        process.env.SQL_AGENT_SAMPLE_ROWS = '5';
+        const cs = new ConfigService();
+        expect(cs.getSqlAgentSampleRows()).toBe(5);
+      });
+
+      it('warns + returns the default (0) when env is above max', () => {
+        // boundedInt's fallback when out of range is the second arg (0
+        // here). This isn't ideal — out-of-range arguably should also
+        // be null — but it matches the pattern of the other safety-
+        // critical knobs. Operators get a warn so the issue surfaces.
+        process.env.SQL_AGENT_SAMPLE_ROWS = '999';
+        const cs = new ConfigService();
+        expect(cs.getSqlAgentSampleRows()).toBe(0);
+        expect(warnSpy).toHaveBeenCalled();
+      });
+    });
   });
 
   describe('getTrustedOrigins', () => {

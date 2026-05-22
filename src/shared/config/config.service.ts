@@ -399,14 +399,21 @@ export class ConfigService {
 
   /**
    * Phase 1 (S2.2) — number of sample rows the SqlToolkit's `info-sql` tool
-   * includes per table. `SqlDatabase` defaults this to 3, which is 500-1500
-   * tokens of low-signal noise per call. Column types alone are usually
-   * enough for SQL generation.
+   * includes per table. The library default is 3 (500-1500 tokens of
+   * low-signal noise per call). Setting `SQL_AGENT_SAMPLE_ROWS=0` is the
+   * recommended optimization (column types alone are usually enough for
+   * SQL generation), but is OPT-IN by env per PR #22's "default-off /
+   * zero behavior change on merge" contract (Copilot C6 fix).
    *
-   * Default 0 (no sample rows). Set higher (1-10) per environment if a
-   * specific project's SQL accuracy regresses. See proposal §3.2.2.
+   * Returns `null` when unset so the caller can omit the parameter and
+   * let `SqlDatabase` apply its own default (3). Set `SQL_AGENT_SAMPLE_ROWS`
+   * explicitly (0–10) to override.
    */
-  getSqlAgentSampleRows(): number {
+  getSqlAgentSampleRows(): number | null {
+    const raw = process.env.SQL_AGENT_SAMPLE_ROWS;
+    if (raw === undefined || raw.trim().length === 0) {
+      return null;
+    }
     return this.boundedInt('SQL_AGENT_SAMPLE_ROWS', 0, { min: 0, max: 10 });
   }
 
