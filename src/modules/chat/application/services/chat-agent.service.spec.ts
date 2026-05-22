@@ -65,6 +65,9 @@ describe('ChatAgentService', () => {
     getChatAgentHistoryWindow: any;
     getChatAgentSearchTier: any;
     getChatAgentRetrievalStrategy: any;
+    getChatRoutingRules: any;
+    getChatRouterEnabled: any;
+    getChatRouterConfidenceThreshold: any;
   };
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
   let consoleInfoSpy: jest.SpiedFunction<typeof console.info>;
@@ -98,6 +101,10 @@ describe('ChatAgentService', () => {
       getChatAgentHistoryWindow: jest.fn().mockReturnValue(6),
       getChatAgentSearchTier: jest.fn().mockReturnValue('classic'),
       getChatAgentRetrievalStrategy: jest.fn().mockReturnValue(undefined),
+      // Phase 3b additions (kept default-disabled for these legacy tests).
+      getChatRoutingRules: jest.fn().mockReturnValue('# RULES\n- SQL: counts.\n- RAG: docs.'),
+      getChatRouterEnabled: jest.fn().mockReturnValue(false),
+      getChatRouterConfidenceThreshold: jest.fn().mockReturnValue(0.7),
     };
     service = new ChatAgentService(registry, configService as never);
     consoleErrorSpy = jest

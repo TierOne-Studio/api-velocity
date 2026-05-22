@@ -9,8 +9,23 @@ import {
   type BaseMessage,
 } from '@langchain/core/messages';
 import type { ReadOnlySqlDatabase } from './read-only-sql-database';
+import type { SqlProgressCallback } from '../data-source-provider.interface';
 
 type SqlToolkitTool = ReturnType<SqlToolkit['getTools']>[number];
+
+/**
+ * Phase 3b (R / §3.6): connection identity for the streaming progress
+ * events `runSqlSubAgent` emits via the optional `onProgress` callback.
+ * The sub-agent doesn't know the connection's id/name itself — caller
+ * passes them through so events carry the metadata the SPA needs to
+ * label the progress row correctly when multiple connections are
+ * attached.
+ */
+export type SubAgentProgressContext = {
+  connectionId: string;
+  connectionName: string;
+  onProgress: SqlProgressCallback;
+};
 
 export type SubAgentConfig = {
   apiKey: string;
@@ -60,6 +75,18 @@ export async function runSqlSubAgent(
   question: string,
   config: SubAgentConfig,
   signal?: AbortSignal,
+  /**
+   * Phase 3b (R / §3.6): when provided, fires `sql_executing` via
+   * `progress.onProgress` right BEFORE each query-sql tool invocation
+   * actually runs against the DB. The chat-agent's streaming loop drains
+   * these events at the next outer-loop message boundary so the SPA
+   * surfaces progress chrome during the otherwise-silent sub-agent
+   * window.
+   *
+   * Optional and additive — when undefined (legacy callers), behavior
+   * is unchanged.
+   */
+  progress?: SubAgentProgressContext,
 ): Promise<SubAgentResult> {
   const llm = new ChatOpenAI({
     apiKey: config.apiKey,
@@ -80,9 +107,24 @@ export async function runSqlSubAgent(
     ? toolkit.getTools().filter((t) => t.name !== 'query-checker')
     : toolkit.getTools();
   const identifierRepair = createPostgresIdentifierRepair();
-  const tools = rawTools.map((sqlTool) =>
+  const repairedTools = rawTools.map((sqlTool) =>
     wrapSqlToolWithIdentifierRepair(sqlTool, identifierRepair),
   );
+  // Phase 3b (R / §3.6): wrap the query-sql tool ONCE MORE so each
+  // invocation fires `sql_executing` via the progress callback before
+  // db.run() actually executes. This is the synchronous push channel
+  // chosen in proposal §3.6 (over polling / async-iterator alternatives)
+  // because (a) it composes cleanly with the existing identifier-repair
+  // wrapper above, (b) it adds zero overhead when progress is undefined,
+  // and (c) callers control when the event surfaces via the same
+  // ctx.eventSink drain mechanism the chat-agent already runs.
+  const tools = progress
+    ? repairedTools.map((sqlTool) =>
+        sqlTool.name === 'query-sql'
+          ? wrapQuerySqlWithProgress(sqlTool, progress)
+          : sqlTool,
+      )
+    : repairedTools;
 
   // Phase 2 (S1): if ChatToSqlService pre-warmed the schema, splice it into
   // the system prompt so the agent knows tables + columns up front and can
@@ -121,6 +163,60 @@ export async function runSqlSubAgent(
 
   const finalText = extractFinalAssistantText(resultMessages);
   return { finalText, messages: resultMessages, toolMessages };
+}
+
+/**
+ * Phase 3b (R / §3.6) — wraps an already-identifier-repaired query-sql
+ * tool with a progress emitter that fires `sql_executing` JUST BEFORE
+ * the underlying tool runs. The emitter is synchronous (no await),
+ * matching the §3.6 push-channel choice. The SQL string surfaced to
+ * the SPA comes from the post-repair `toolInput` so what the user sees
+ * matches what hits the DB.
+ */
+function wrapQuerySqlWithProgress(
+  sqlTool: ReturnType<typeof tool>,
+  progress: SubAgentProgressContext,
+): ReturnType<typeof tool> {
+  return tool(
+    async (input: unknown) => {
+      const sql = extractSqlFromQueryToolInput(input);
+      progress.onProgress({
+        type: 'sql_executing',
+        connectionId: progress.connectionId,
+        connectionName: progress.connectionName,
+        sql,
+      });
+      // The inner `tool()` from @langchain/core returns a structured tool
+      // whose `.invoke` has a complex union signature (TConfig matrix). The
+      // cast collapses to "any input → any output" — fine because we're
+      // forwarding the same input we received from the outer agent loop.
+      const invoke = sqlTool.invoke as (input: unknown) => Promise<unknown>;
+      return invoke(input);
+    },
+    {
+      name: sqlTool.name,
+      description: sqlTool.description,
+      schema: sqlTool.schema,
+    },
+  );
+}
+
+/**
+ * Best-effort SQL extraction from the query-sql tool's input. The
+ * toolkit's input shape evolves (string vs {input: string} vs
+ * {query: string}); return an empty string when we can't recognize it
+ * rather than throwing — the `sql_executing` event is informational
+ * progress, NOT load-bearing for correctness.
+ */
+function extractSqlFromQueryToolInput(input: unknown): string {
+  if (typeof input === 'string') return input;
+  if (input && typeof input === 'object') {
+    const obj = input as Record<string, unknown>;
+    if (typeof obj.input === 'string') return obj.input;
+    if (typeof obj.query === 'string') return obj.query;
+    if (typeof obj.sql === 'string') return obj.sql;
+  }
+  return '';
 }
 
 function wrapSqlToolWithIdentifierRepair(

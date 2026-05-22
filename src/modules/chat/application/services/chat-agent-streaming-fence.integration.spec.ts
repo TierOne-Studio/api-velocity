@@ -115,6 +115,12 @@ function buildService(): ChatAgentServiceType {
     getChatAgentHistoryWindow: jest.fn().mockReturnValue(6),
     getChatAgentSearchTier: jest.fn().mockReturnValue('classic'),
     getChatAgentRetrievalStrategy: jest.fn().mockReturnValue(undefined),
+    // Phase 3b additions (router OFF — this spec exercises the agent path).
+    getChatRoutingRules: jest
+      .fn()
+      .mockReturnValue('# RULES\n- SQL: counts.\n- RAG: docs.'),
+    getChatRouterEnabled: jest.fn().mockReturnValue(false),
+    getChatRouterConfidenceThreshold: jest.fn().mockReturnValue(0.7),
   };
 
   return new ChatAgentService(registry, configService as never);

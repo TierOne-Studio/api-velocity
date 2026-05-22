@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
@@ -20,6 +20,7 @@ import {
   createSearchKnowledgeBaseTool,
   dedupeAndCapSources,
 } from './chat-agent-tools';
+import { ChatRouterService } from './chat-router.service';
 
 type GenerateReplyParams = {
   organizationName: string;
@@ -61,6 +62,20 @@ export type ChatStreamEvent =
       truncated: boolean;
       durationMs: number;
     }
+  // Phase 3b (R / §3.6): fire BEFORE sql_executed during SQL turns. Both
+  // are additive — older SPA consumers ignore unknown event types
+  // (verified during P0.5 spa-velocity audit at chatService.ts:88-115).
+  | {
+      type: 'sql_planning';
+      connectionId: string;
+      connectionName: string;
+    }
+  | {
+      type: 'sql_executing';
+      connectionId: string;
+      connectionName: string;
+      sql: string;
+    }
   | { type: 'done'; reply: ChatReply };
 
 // Appended to the configured expert-persona system prompt only in the agent
@@ -82,47 +97,26 @@ You have access to a \`search_knowledge_base\` tool that queries this organizati
 Do not answer non-trivial organization-specific questions from memory — the tool is your only authoritative source for facts about this organization's code, docs, specs, and other indexed material.
 `.trim();
 
-// Appended AFTER the base tool-usage protocol when the project has at least
-// one attached database source. Routes between `search_knowledge_base` and
-// `query_database` by the *shape of the answer* the user wants, not by
-// keywords. A question like "how many users signed up last week?" must route
-// to the DB even though the word "database" never appears.
-const AGENT_DATABASE_ROUTING_PROTOCOL = `
-
-## When the project has an attached database
-
-**This section overrides the "always start with \`search_knowledge_base\`" rule above whenever the question is a facts-from-rows question.** You also have a \`query_database\` tool, and for those questions you must call it *first* — not after a round of \`search_knowledge_base\`.
-
-Route by the *shape of the answer* the user wants, not by keywords in the question. The user does NOT need to mention "database", "SQL", or a table name.
-
-**Call \`query_database\` FIRST (before any other tool) when the question is any of:**
-
-- A count, total, or aggregate: "how many users?", "how many orders last week", "total revenue", "average session length".
-- A "who / which / when / where" lookup over entities that typically live in tables (users, orders, sessions, events, subscriptions, customers, projects, etc.): "who signed up today?", "which order is largest?", "when was the last payment?".
-- A listing or filter: "list users created this month", "show failed payments", "top 10 customers by spend".
-- A concrete factual question about entity state: "is user X active?", "does order Y have a refund?".
-
-For any of the above, pass the user's question verbatim as the \`question\` argument — the inner sub-agent will inspect the schema and write the SQL. Do not pre-translate to SQL yourself. Do not ask the user for clarification before trying; the inner agent is good at disambiguating tables and columns.
-
-**Call \`search_knowledge_base\` (not \`query_database\`) when the question is about:**
-
-- How something is built, implemented, or architected.
-- What a function / class / module does, or where to find it.
-- Why a design choice was made, or what a spec/doc says.
-- Onboarding, setup, or operational procedures.
-
-**Ambiguous questions:** if a question could read either way (e.g. "tell me about our users" — overview docs vs. a row summary), try \`query_database\` first. Row counts and concrete values are more useful and more verifiable than doc snippets for most factual asks. You can always follow up with \`search_knowledge_base\` afterward if the rows alone don't cover the question.
-
-When you call \`query_database\`, cite the numbers you got back; never reshape them. When results are empty or the tool returns an error, say so plainly and consider falling back to \`search_knowledge_base\` for a complementary view.
-
-(L3: the "Answer format after query_database" guidance — prose only,
-no SQL fences, no meta-commentary — now lives in the tool description
-itself at \`src/modules/chat/prompts/query-database-tool-description.md\`.
-The LLM sees that text every time it considers calling the tool, which
-is the right scope for per-call output rules. The streaming-fence
-sanitizer in this file is the belt; the tool-description rule is the
-suspenders.)
-`.trim();
+// Phase 3b (R / SSoT): the routing TAXONOMY (which buckets exist, what
+// counts as SQL vs RAG vs Ambiguous) now lives in
+// `src/modules/chat/prompts/chat-routing-rules.md` as the single source
+// of truth (consumed by BOTH ChatRouterService and the agent prompt
+// builder below — see `buildAgentRoutingProtocol`). The agent-specific
+// tool-use directives that the previous inline constant carried
+// (verbatim-question, cite-numbers, follow-up-on-empty, fences-in-tool-
+// description) are now composed around the loaded taxonomy at runtime.
+//
+// Why the rules file and not the constant: with the router on (P3b
+// dispatcher) the classifier needs the same bucket definitions, written
+// as taxonomy not as tool-use prose. One file, two consumers, one set
+// of bucket definitions — SSoT.
+//
+// The "Answer format after query_database" guidance (prose only, no SQL
+// fences, no meta-commentary) lives in
+// `src/modules/chat/prompts/query-database-tool-description.md`. The LLM
+// sees that text every time it considers calling the tool. The
+// streaming-fence sanitizer in this file is the belt; the tool-
+// description rule is the suspenders.
 
 // LLMs occasionally ignore the "do not include the SQL query" instruction and
 // emit a fenced code block containing SQL anyway. In practice the model uses
@@ -353,6 +347,15 @@ export class ChatAgentService {
   constructor(
     private readonly registry: DataSourceRegistry,
     private readonly configService: ConfigService,
+    // Phase 3b (R): optional injection so existing specs that wire only
+    // (registry, configService) keep working. The dispatcher in
+    // `dispatchRoute` is the single place that uses it; when missing
+    // AND the router flag is on, the dispatcher logs a warning and
+    // falls through to the agent path (fail-safe rather than fail-loud
+    // because the consequence is "router optimization not applied", not
+    // a correctness bug).
+    @Optional()
+    private readonly chatRouter?: ChatRouterService,
   ) {}
 
   private getOrCreateLlm(apiKey: string): ChatOpenAI {
@@ -586,6 +589,55 @@ export class ChatAgentService {
     }
   }
 
+  /**
+   * Phase 3b (R) — chooses how this chat turn is executed.
+   *
+   * Returns `{ kind: 'agent' }` (the legacy agent path) when:
+   *   - CHAT_ROUTER_ENABLED is false (default), OR
+   *   - ChatRouterService is not wired (e.g. older test fixtures), OR
+   *   - the classifier returned route='agent' (genuinely ambiguous), OR
+   *   - the classifier returned route='sql'|'rag' but with confidence
+   *     below CHAT_ROUTER_CONFIDENCE_PCT, OR
+   *   - the classifier threw / returned malformed output (its own safe
+   *     fallback maps that to route='agent' with confidence=0).
+   *
+   * Returns `{ kind: 'sql', decision }` or `{ kind: 'rag', decision }`
+   * when the classifier was confident. The streaming entry point then
+   * dispatches to `runSqlRoute` / `runRagRoute` which bypass createAgent
+   * for the LLM-call reduction.
+   *
+   * Fail-fast: no retry on classifier failure. The agent path is the
+   * safety net for everything below the confidence threshold; double-
+   * classifying wastes tokens.
+   */
+  private async dispatchRoute(
+    params: GenerateReplyParams,
+    apiKey: string,
+  ): Promise<
+    | { kind: 'agent' }
+    | { kind: 'sql' | 'rag'; decision: import('./chat-router.service').RouterDecision }
+  > {
+    if (!this.configService.getChatRouterEnabled()) {
+      return { kind: 'agent' };
+    }
+    if (!this.chatRouter) {
+      console.warn(
+        '[ChatAgentService] CHAT_ROUTER_ENABLED is true but ChatRouterService is not injected; falling through to agent path',
+      );
+      return { kind: 'agent' };
+    }
+    const decision = await this.chatRouter.classify({
+      question: params.question,
+      apiKey,
+      sources: params.sources,
+    });
+    const threshold = this.configService.getChatRouterConfidenceThreshold();
+    if (decision.route === 'agent' || decision.confidence < threshold) {
+      return { kind: 'agent' };
+    }
+    return { kind: decision.route, decision };
+  }
+
   private buildAgentContext(params: GenerateReplyParams): AgentToolContext {
     // Caller-provided signal takes precedence so an HTTP client disconnect
     // can cancel in-flight tools. When absent we still expose a never-aborted
@@ -622,6 +674,265 @@ export class ChatAgentService {
   }
 
   /**
+   * Phase 3b (R) — direct route execution for SQL turns. Bypasses
+   * `createAgent` (no agent graph, no tool-decision LLM call). Saves
+   * ~1 outer-agent LLM call per turn vs the legacy agent path.
+   *
+   * Sequence:
+   *   1. Build ctx, find `query_database` provider tool.
+   *   2. Yield `searching` to signal the SPA we're querying.
+   *   3. Invoke the tool directly. This populates ctx.eventSink with
+   *      `sql_executed` and ctx.persistedCalls with the audit entry,
+   *      same side effects as the agent path. Phase 3b's sql_planning /
+   *      sql_executing callback events (proposal §3.6) fire from inside
+   *      runSqlSubAgent and bubble through ctx.eventSink — drained
+   *      below before synthesis chunks start.
+   *   4. Drain ctx.eventSink → yield every event in order.
+   *   5. Synthesize the answer via llm.stream() — yield chunks.
+   *   6. Yield `done` with metadata (generator='router-sql').
+   *
+   * On tool error: yield a `done` event with an error-shape reply
+   * (generator='router-sql-error'). No retry; the agent path is not
+   * a fallback here because the router has already committed to SQL —
+   * a tool failure is the user's signal that the query path is broken.
+   */
+  private async *runSqlRoute(
+    params: GenerateReplyParams,
+    apiKey: string,
+    decision: import('./chat-router.service').RouterDecision,
+  ): AsyncGenerator<ChatStreamEvent> {
+    const ctx = this.buildAgentContext(params);
+    try {
+      const providerTools = this.registry.getAgentToolsFor(params.sources, ctx);
+      const queryDbTool = providerTools.find((t) => t.name === 'query_database');
+      if (!queryDbTool) {
+        // Router said SQL but no query_database tool was contributed.
+        // Possible if sources changed between router classification and
+        // execution. Fall back to a plain error reply rather than
+        // pretending the route is valid.
+        yield {
+          type: 'done',
+          reply: {
+            content:
+              'The router selected a SQL route but no database tool is available for this project.',
+            metadata: { generator: 'router-sql-error' },
+          },
+        };
+        return;
+      }
+      yield { type: 'searching', query: params.question };
+      try {
+        await queryDbTool.invoke({
+          question: params.question,
+          source_id: decision.sourceId,
+        });
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        yield {
+          type: 'done',
+          reply: {
+            content: `Sorry — the database query failed: ${msg}`,
+            metadata: {
+              generator: 'router-sql-error',
+              ...(ctx.persistedCalls.length > 0 && {
+                sqlCalls: ctx.persistedCalls,
+              }),
+            },
+          },
+        };
+        return;
+      }
+      // Drain sql_planning / sql_executing / sql_executed events the tool
+      // pushed (sub-agent fires sql_planning + sql_executing via the
+      // onSqlProgress callback wired in Phase 3b §3.6).
+      for (const ev of this.drainSqlEvents(ctx)) {
+        yield ev;
+      }
+      // Synthesize the prose answer. Build a minimal synthesis prompt
+      // around the recorded persistedCalls so the LLM has the SQL +
+      // outcome without us re-running the query.
+      const synthSystemPrompt = this.buildAgentSystemPrompt(params);
+      const llm = this.getOrCreateLlm(apiKey);
+      const synthUserMessage = this.buildRouterSqlSynthesisUserMessage(
+        params,
+        ctx,
+      );
+      yield { type: 'thinking' };
+      let finalContent = '';
+      const fenceStripper = createStreamingDbReplyFenceStripper(ctx);
+      try {
+        const stream = await llm.stream([
+          new HumanMessage(`${synthSystemPrompt}\n\n${synthUserMessage}`),
+        ]);
+        for await (const chunk of stream) {
+          const text = this.stringifyMessageContent(chunk.content);
+          if (text.length === 0) continue;
+          const safe = fenceStripper.push(text);
+          if (safe.length === 0) continue;
+          finalContent += safe;
+          yield { type: 'chunk', content: safe };
+        }
+        const trailing = fenceStripper.flush();
+        if (trailing.length > 0) {
+          finalContent += trailing;
+          yield { type: 'chunk', content: trailing };
+        }
+      } catch (error) {
+        console.error('[ChatAgentService] router-sql synthesis failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Surface a degraded reply rather than crashing the stream.
+        const degraded = ctx.persistedCalls
+          .map(
+            (call) =>
+              `Ran SQL on ${call.connectionName}: ${call.rowCount} row(s).`,
+          )
+          .join('\n');
+        finalContent = degraded || 'The database query ran but synthesis failed.';
+        yield { type: 'chunk', content: finalContent };
+      }
+      const reply: ChatReply = {
+        content: sanitizeDbAssistantReplyText(
+          finalContent,
+          ctx.persistedCalls.length > 0,
+        ),
+        metadata: {
+          generator: 'router-sql',
+          routerConfidence: decision.confidence,
+          ...(ctx.persistedCalls.length > 0 && {
+            sqlCalls: ctx.persistedCalls,
+          }),
+        },
+      };
+      this.logReplySummary(reply, Date.now());
+      yield { type: 'done', reply };
+    } finally {
+      await this.runCleanupCallbacks(ctx);
+    }
+  }
+
+  /**
+   * Phase 3b (R) — direct route execution for RAG turns. Bypasses
+   * `createAgent`. Same pattern as `runSqlRoute` but invokes the search
+   * tool directly and yields `searching` once for the single retrieval.
+   *
+   * Saves ~1 LLM call vs the agent path (no tool-decision step).
+   */
+  private async *runRagRoute(
+    params: GenerateReplyParams,
+    apiKey: string,
+    decision: import('./chat-router.service').RouterDecision,
+  ): AsyncGenerator<ChatStreamEvent> {
+    const ctx = this.buildAgentContext(params);
+    try {
+      const collectedSources: AirweaveSearchResultSummary[] = [];
+      const searchTool = createSearchKnowledgeBaseTool({
+        projectId: params.projectId,
+        sources: params.sources,
+        registry: this.registry,
+        sourcesSink: collectedSources,
+        resultLimit: this.configService.getChatAgentToolResultLimit(),
+        resultCharCap: this.configService.getChatAgentToolResultCharCap(),
+        searchTier: this.configService.getChatAgentSearchTier(),
+        retrievalStrategy: this.configService.getChatAgentRetrievalStrategy(),
+      });
+      yield { type: 'searching', query: params.question };
+      let searchResult: string;
+      try {
+        const raw = await searchTool.invoke({ query: params.question });
+        searchResult = typeof raw === 'string' ? raw : JSON.stringify(raw);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        yield {
+          type: 'done',
+          reply: {
+            content: `Sorry — the knowledge base search failed: ${msg}`,
+            metadata: { generator: 'router-rag-error' },
+          },
+        };
+        return;
+      }
+      const maxSources = this.configService.getChatAgentMaxSources();
+      const uniqueSources = dedupeAndCapSources(collectedSources, maxSources);
+      const synthSystemPrompt = this.buildAgentSystemPrompt(params);
+      const llm = this.getOrCreateLlm(apiKey);
+      const synthUserMessage = this.buildRouterRagSynthesisUserMessage(
+        params,
+        searchResult,
+      );
+      yield { type: 'thinking' };
+      let finalContent = '';
+      try {
+        const stream = await llm.stream([
+          new HumanMessage(`${synthSystemPrompt}\n\n${synthUserMessage}`),
+        ]);
+        for await (const chunk of stream) {
+          const text = this.stringifyMessageContent(chunk.content);
+          if (text.length === 0) continue;
+          finalContent += text;
+          yield { type: 'chunk', content: text };
+        }
+      } catch (error) {
+        console.error('[ChatAgentService] router-rag synthesis failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        finalContent =
+          uniqueSources.length > 0
+            ? `Found ${uniqueSources.length} relevant source(s) but synthesis failed.`
+            : 'No relevant sources were found and synthesis failed.';
+        yield { type: 'chunk', content: finalContent };
+      }
+      const reply: ChatReply = {
+        content: finalContent,
+        metadata: {
+          generator: 'router-rag',
+          routerConfidence: decision.confidence,
+          sources: this.mapSources(uniqueSources),
+          resultCount: uniqueSources.length,
+        },
+      };
+      this.logReplySummary(reply, Date.now());
+      yield { type: 'done', reply };
+    } finally {
+      await this.runCleanupCallbacks(ctx);
+    }
+  }
+
+  private buildRouterSqlSynthesisUserMessage(
+    params: GenerateReplyParams,
+    ctx: AgentToolContext,
+  ): string {
+    const callsSummary = ctx.persistedCalls
+      .map(
+        (call) =>
+          `- Connection: ${call.connectionName} (id=${call.connectionId})\n  SQL: ${call.sql}\n  Rows: ${call.rowCount}${call.truncated ? ' (truncated)' : ''}`,
+      )
+      .join('\n');
+    return [
+      `User question: ${params.question}`,
+      '',
+      'Database query was executed. Results:',
+      callsSummary,
+      '',
+      'The full result rows are also available via the executed SQL (the SPA renders them in a structured panel). Provide a concise prose answer to the user that cites the numbers from the results. Do NOT restate the SQL; do NOT include code fences.',
+    ].join('\n');
+  }
+
+  private buildRouterRagSynthesisUserMessage(
+    params: GenerateReplyParams,
+    searchResult: string,
+  ): string {
+    return [
+      `User question: ${params.question}`,
+      '',
+      'Knowledge base search results:',
+      searchResult,
+      '',
+      'Synthesize a concise expert answer grounded only in the search results above. If the results are insufficient, say so plainly.',
+    ].join('\n');
+  }
+
+  /**
    * Streaming version of generateAgentReply. Uses agent.stream() to yield
    * events in real time as the agent reasons, calls tools, and generates
    * the final answer. Falls back to generateAgentReply + fake chunking
@@ -638,6 +949,22 @@ export class ChatAgentService {
         yield { type: 'chunk', content: chunk };
       }
       yield { type: 'done', reply: fallback };
+      return;
+    }
+
+    // Phase 3b (R): dispatcher branch. When the router is off or
+    // unconfident, this returns { kind: 'agent' } and the existing
+    // streaming flow below runs unchanged (zero-risk for the default
+    // path). When the router classifies confidently, dispatch to the
+    // direct-route handler which bypasses createAgent and saves one
+    // outer-agent LLM call.
+    const dispatch = await this.dispatchRoute(params, apiKey);
+    if (dispatch.kind === 'sql') {
+      yield* this.runSqlRoute(params, apiKey, dispatch.decision);
+      return;
+    }
+    if (dispatch.kind === 'rag') {
+      yield* this.runRagRoute(params, apiKey, dispatch.decision);
       return;
     }
 
@@ -881,7 +1208,10 @@ export class ChatAgentService {
       // the rules. Only emitted when a DB source is attached so the
       // zero-DB-project prompt remains byte-identical to the pre-H2 version.
       sections.push(this.buildCapabilitiesChip(params));
-      sections.push(AGENT_DATABASE_ROUTING_PROTOCOL);
+      // Phase 3b (R / SSoT): replaces the inline AGENT_DATABASE_ROUTING_PROTOCOL
+      // constant. Loads the SSoT taxonomy from chat-routing-rules.md and
+      // wraps it with the agent-specific tool-use directives.
+      sections.push(this.buildAgentRoutingProtocol());
     }
     sections.push(
       `## Context\n\nYou are answering questions for the organization: ${params.organizationName}, scoped to the project: ${params.projectName}. Every question is implicitly scoped to that project's configured data sources.`,
@@ -913,6 +1243,46 @@ export class ChatAgentService {
       `- \`query_database\` — natural-language read-only queries against the attached SQL database(s): ${dbList}.`,
       '',
       'Use the tool that fits the *shape of the answer* the user wants. The rules below detail when each applies; this menu is the concrete list of what you can call.',
+    ].join('\n');
+  }
+
+  /**
+   * Phase 3b (R / SSoT) — agent-specific wrapper around the
+   * classifier-neutral routing taxonomy loaded from
+   * `chat-routing-rules.md`. Combines:
+   *
+   *   1. A short heading framing the bucket choice as a tool-call decision.
+   *   2. The taxonomy verbatim (SSoT — same text loaded by
+   *      ChatRouterService for the classifier prompt; drift is
+   *      asserted-against in chat-agent.dispatch.spec.ts).
+   *   3. Agent-only tool-use directives that translate each bucket into
+   *      a concrete tool call. These rules used to live inside the
+   *      AGENT_DATABASE_ROUTING_PROTOCOL constant in this file — moving
+   *      them here keeps them next to the wrapper that uses them
+   *      without polluting the rules file (which has to stay
+   *      consumer-neutral so the router can use it too).
+   *
+   * If any tool-use rule from the original constant is dropped during a
+   * future edit, the SSoT spec (chat-agent.dispatch.spec.ts) catches the
+   * regression because it enumerates each behavioral assertion as a
+   * fixture.
+   */
+  private buildAgentRoutingProtocol(): string {
+    const rules = this.configService.getChatRoutingRules();
+    return [
+      '## When the project has an attached database',
+      '',
+      'You have a `query_database` tool in addition to `search_knowledge_base`. Route each question per the taxonomy below.',
+      '',
+      rules,
+      '',
+      '## Tool-use directives (agent-specific)',
+      '',
+      '- For **SQL bucket** questions, call `query_database` FIRST (before `search_knowledge_base`). Pass the user\'s question verbatim as the `question` argument — the inner sub-agent will inspect the schema and write the SQL. Do not pre-translate to SQL yourself; do not ask the user for clarification before trying.',
+      '- For **RAG bucket** questions, call `search_knowledge_base`.',
+      '- For the **Ambiguous bucket**, try `query_database` first; if results are empty, follow up with `search_knowledge_base` for a complementary view.',
+      '',
+      'When you call `query_database`, cite the numbers you got back; never reshape them. When results are empty or the tool returns an error, say so plainly and consider falling back to `search_knowledge_base` for a complementary view.',
     ].join('\n');
   }
 

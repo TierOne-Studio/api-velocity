@@ -89,6 +89,12 @@ export function createQueryDatabaseTool(
         resolved,
         question,
         ctx.signal,
+        // Phase 3b (R / §3.6): forward sql_planning / sql_executing
+        // events from ChatToSqlService and the sub-agent into the same
+        // ctx.eventSink the chat-agent streaming loop drains. Additive —
+        // legacy SPAs that don't recognize these types ignore them
+        // (verified during P0.5 spa-velocity audit).
+        (event) => ctx.eventSink.push(event),
       );
 
       if (outcome.ok === false) {

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '../../../../../shared/config';
+import type { SqlProgressCallback } from '../data-source-provider.interface';
 import { ReadOnlySqlDatabase } from './read-only-sql-database';
 import { sanitizeAgentError } from './sql-error-sanitizer';
 import { SqlDataSourceFactory } from './sql-datasource.factory';
@@ -49,6 +50,19 @@ export class ChatToSqlService {
     connection: ResolvedSqlConnection,
     question: string,
     signal?: AbortSignal,
+    /**
+     * Phase 3b (R / §3.6): optional progress callback. When provided,
+     * fires `sql_planning` here (before the sub-agent starts) and
+     * `sql_executing` from inside the sub-agent (wrapped query-sql
+     * tool). Both events are pushed via the same `onProgress` callback
+     * — the caller (chat-agent's runSqlRoute or query-database-tool
+     * wrapper) routes them into `ctx.eventSink` so the streaming loop
+     * surfaces them at the next outer-loop message boundary.
+     *
+     * Optional and additive — legacy callers omit it and behavior is
+     * byte-identical to before P3b.
+     */
+    onProgress?: SqlProgressCallback,
   ): Promise<ChatToSqlResult> {
     const startedAt = Date.now();
     const limits = this.buildLimits();
@@ -131,6 +145,20 @@ export class ChatToSqlService {
         }
       }
 
+      // Phase 3b (R / §3.6): emit sql_planning BEFORE the sub-agent starts.
+      // This surfaces "I'm about to think about your SQL question" to the
+      // SPA during the otherwise-silent sub-agent latency window. Caller's
+      // onProgress (when provided) routes the event into ctx.eventSink so
+      // the chat-agent streaming loop drains it at the next message
+      // boundary.
+      if (onProgress) {
+        onProgress({
+          type: 'sql_planning',
+          connectionId: connection.id,
+          connectionName: connection.name,
+        });
+      }
+
       const subAgent = await runSqlSubAgent(
         db,
         question,
@@ -150,6 +178,15 @@ export class ChatToSqlService {
           prewarmedSchema,
         },
         signal,
+        // Phase 3b (R / §3.6): forward the same callback so the wrapped
+        // query-sql tool can fire sql_executing right before db.run.
+        onProgress
+          ? {
+              connectionId: connection.id,
+              connectionName: connection.name,
+              onProgress,
+            }
+          : undefined,
       );
 
       const sql = db.lastExecutedSql;

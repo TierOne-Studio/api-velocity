@@ -190,6 +190,14 @@ function buildConfigService(opts: { apiKey: string | null }) {
     getChatAgentSearchTier: jest.fn().mockReturnValue('classic'),
     getChatAgentRetrievalStrategy: jest.fn().mockReturnValue(undefined),
     getQueryDatabaseToolDescription: jest.fn().mockReturnValue('fake desc'),
+    // Phase 3b additions (router OFF — pin spec exercises agent path
+    // unchanged. Critical: the matcher allows sql_planning/sql_executing
+    // as optional events so pins survive both off and on).
+    getChatRoutingRules: jest
+      .fn()
+      .mockReturnValue('# RULES\n- SQL: counts.\n- RAG: docs.'),
+    getChatRouterEnabled: jest.fn().mockReturnValue(false),
+    getChatRouterConfidenceThreshold: jest.fn().mockReturnValue(0.7),
   };
 }
 
