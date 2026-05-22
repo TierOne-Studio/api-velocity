@@ -4,6 +4,7 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import {
   AIMessage,
   HumanMessage,
+  SystemMessage,
   type BaseMessage,
 } from '@langchain/core/messages';
 import { createAgent } from 'langchain';
@@ -859,8 +860,15 @@ export class ChatAgentService {
       let finalContent = '';
       const fenceStripper = createStreamingDbReplyFenceStripper(ctx);
       try {
+        // Copilot C2 fix: use SystemMessage + HumanMessage rather than
+        // concatenating both into a single HumanMessage. The agent path
+        // (createAgent.systemPrompt) materializes the system prompt as a
+        // proper system-role message; router-sql synthesis must match
+        // that shape or instruction adherence and prompt-cache eligibility
+        // diverge between the two paths.
         const stream = await llm.stream([
-          new HumanMessage(`${synthSystemPrompt}\n\n${synthUserMessage}`),
+          new SystemMessage(synthSystemPrompt),
+          new HumanMessage(synthUserMessage),
         ]);
         for await (const chunk of stream) {
           const text = this.stringifyMessageContent(chunk.content);
@@ -974,8 +982,11 @@ export class ChatAgentService {
       yield { type: 'thinking' };
       let finalContent = '';
       try {
+        // Copilot C4 fix: SystemMessage + HumanMessage — see runSqlRoute
+        // synthesis above for the rationale (agent-path parity).
         const stream = await llm.stream([
-          new HumanMessage(`${synthSystemPrompt}\n\n${synthUserMessage}`),
+          new SystemMessage(synthSystemPrompt),
+          new HumanMessage(synthUserMessage),
         ]);
         for await (const chunk of stream) {
           const text = this.stringifyMessageContent(chunk.content);
