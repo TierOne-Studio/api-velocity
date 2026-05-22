@@ -27,6 +27,21 @@ export type SubAgentConfig = {
    * `ConfigService.getSqlAgentDropCheckerEnabled()` in `ChatToSqlService`.
    */
   dropCheckerEnabled?: boolean;
+  /**
+   * Phase 2 (S1) — when present, the rendered schema text (from
+   * `db.getTableInfo()`) is prepended to `systemPrompt` so the agent
+   * starts with full schema context. Combined with the prompt rule in
+   * `sql-tool-usage.md`, this lets the agent skip `list-sql` / `info-sql`
+   * on the typical turn — saving ~2 LLM round-trips.
+   *
+   * When undefined, the agent runs as today (must discover schema via
+   * tool calls). Wired from `ChatToSqlService` only when
+   * `SQL_AGENT_PREWARM_SCHEMA_ENABLED=true`. See proposal §3.1.
+   *
+   * SoC: schema fetching is a DB-read concern owned by `ChatToSqlService`.
+   * `runSqlSubAgent` just receives the rendered text as data.
+   */
+  prewarmedSchema?: string;
 };
 
 export type SubAgentResult = {
@@ -69,10 +84,21 @@ export async function runSqlSubAgent(
     wrapSqlToolWithIdentifierRepair(sqlTool, identifierRepair),
   );
 
+  // Phase 2 (S1): if ChatToSqlService pre-warmed the schema, splice it into
+  // the system prompt so the agent knows tables + columns up front and can
+  // skip the discovery tool calls. Empty/whitespace strings degrade
+  // gracefully (treated as "no pre-warm provided"). The "DO NOT re-fetch"
+  // header is the contract enforced by the matching rule in
+  // sql-tool-usage.md — when the agent sees this header it skips
+  // list_tables_sql_db / info_sql_db on the typical turn.
+  const systemPrompt = config.prewarmedSchema?.trim()
+    ? `${config.systemPrompt}\n\n## Schema (already loaded — DO NOT re-fetch)\n${config.prewarmedSchema}`
+    : config.systemPrompt;
+
   const agent = createAgent({
     model: llm as unknown as BaseChatModel,
     tools,
-    systemPrompt: config.systemPrompt,
+    systemPrompt,
   });
 
   const messages: BaseMessage[] = [new HumanMessage(question)];

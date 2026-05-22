@@ -410,6 +410,24 @@ export class ConfigService {
     return this.boundedInt('SQL_AGENT_SAMPLE_ROWS', 0, { min: 0, max: 10 });
   }
 
+  /**
+   * Phase 2 (S1) — when true, ChatToSqlService fetches the connection's
+   * schema via `db.getTableInfo()` (deterministic, no LLM) BEFORE invoking
+   * the sub-agent and injects it into the sub-agent's system prompt. The
+   * sub-agent then skips `list_tables_sql_db` / `info_sql_db` on the
+   * typical turn (saving ~2 LLM round-trips per SQL turn).
+   *
+   * The SqlToolkit's discovery tools remain callable as a fallback if
+   * the agent decides the prewarmed schema is incomplete (it's not
+   * removed from the toolkit set — just made redundant).
+   *
+   * Default false. Flip per-environment after validating against pin
+   * tests + staging telemetry. See proposal §3.1.
+   */
+  getSqlAgentPrewarmSchemaEnabled(): boolean {
+    return process.env.SQL_AGENT_PREWARM_SCHEMA_ENABLED === 'true';
+  }
+
   getSqlAgentSystemPrompt(): string {
     return this.loadPrompt({
       envInline: process.env.SQL_AGENT_SYSTEM_PROMPT?.trim(),

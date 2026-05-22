@@ -101,6 +101,36 @@ export class ChatToSqlService {
     const maxIterations = this.configService.getSqlAgentMaxIterations();
 
     try {
+      // Phase 2 (S1): pre-warm the schema deterministically when enabled.
+      // `db.getTableInfo()` (no argument) returns the full schema scoped
+      // by the connection's `includesTables` allowlist — the library
+      // already filters internally (verified in
+      // node_modules/@langchain/classic/dist/sql_db.cjs:70). No wrapper
+      // helper is needed; `getTableInfo` is the canonical source.
+      //
+      // Fail-fast: a schema-read failure surfaces (sanitizeAgentError +
+      // explicit error code below). Do NOT silently fall back to the
+      // discovery path — operators need to see DB connectivity issues
+      // immediately rather than as a slow degraded turn. See
+      // docs/langchain-agent-refactor-proposal.md §3.1.
+      let prewarmedSchema: string | undefined;
+      if (this.configService.getSqlAgentPrewarmSchemaEnabled()) {
+        try {
+          prewarmedSchema = await db.getTableInfo();
+        } catch (error) {
+          const sanitized = sanitizeAgentError(error);
+          this.logger.warn(
+            `chat-to-sql schema pre-warm failed [code=${sanitized.code}]: ${sanitized.serverDetail}`,
+          );
+          return {
+            ok: false,
+            error: sanitized.message,
+            code: sanitized.code,
+            durationMs: Date.now() - startedAt,
+          };
+        }
+      }
+
       const subAgent = await runSqlSubAgent(
         db,
         question,
@@ -115,6 +145,9 @@ export class ChatToSqlService {
           // first-attempt SQL accuracy is good enough that the checker's
           // pre-validation LLM call is wasted overhead.
           dropCheckerEnabled: this.configService.getSqlAgentDropCheckerEnabled(),
+          // Phase 2 (S1): undefined when flag off — preserves today's
+          // behavior. Set to the rendered schema string when flag on.
+          prewarmedSchema,
         },
         signal,
       );
