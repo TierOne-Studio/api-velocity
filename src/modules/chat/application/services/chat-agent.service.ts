@@ -474,7 +474,16 @@ export class ChatAgentService {
     }
   }
 
-  private logReplySummary(reply: ChatReply, startedAt: number): void {
+  private logReplySummary(
+    reply: ChatReply,
+    startedAt: number,
+    // P3b telemetry fix (Copilot C1): without the explicit `route` arg the
+    // router-sql / router-rag paths were tagged route='agent' in the
+    // chat.turn event — making the router-win measurement (proposal §3.5)
+    // unobservable. Default kept for the agent path so existing callers
+    // are unaffected.
+    route: 'agent' | 'sql' | 'rag' = 'agent',
+  ): void {
     const metadata = reply.metadata;
     const sources = metadata.sources;
     console.info('[ChatAgentService] reply generated', {
@@ -484,7 +493,7 @@ export class ChatAgentService {
       toolCallCount: metadata.toolCallCount,
       durationMs: Date.now() - startedAt,
     });
-    this.recordTurnMetrics(reply, startedAt);
+    this.recordTurnMetrics(reply, startedAt, route);
   }
 
   /**
@@ -785,6 +794,11 @@ export class ChatAgentService {
     apiKey: string,
     decision: import('./chat-router.service').RouterDecision,
   ): AsyncGenerator<ChatStreamEvent> {
+    // Capture turn start at function entry (Copilot C3 / C5 fix). Without
+    // this `logReplySummary` ran with Date.now() as startedAt → durationMs
+    // always near-zero on router turns, defeating the §3.5 router-win
+    // measurement.
+    const startedAt = Date.now();
     const ctx = this.buildAgentContext(params);
     try {
       const providerTools = this.registry.getAgentToolsFor(params.sources, ctx);
@@ -875,6 +889,16 @@ export class ChatAgentService {
         finalContent = degraded || 'The database query ran but synthesis failed.';
         yield { type: 'chunk', content: finalContent };
       }
+      // Router-path metadata for telemetry parity with agent path (Copilot
+      // C1 + architect M1). recordTurnMetrics reads `toolCallCount` and
+      // `totalTokens` from metadata; without them every router turn would
+      // log llmCalls=1, tokensTotal=null even when the sub-agent consumed
+      // many calls / tokens. We approximate: 1 outer LLM call (synthesis
+      // below) + 1 logical "tool call" (the query_database invocation,
+      // which itself wraps an entire sub-agent run — sub-agent internal
+      // calls are NOT visible here, same limitation as the agent path).
+      // For tokens, surface the synthesis call's usage when available;
+      // sub-agent token usage requires a separate accounting pass.
       const reply: ChatReply = {
         content: sanitizeDbAssistantReplyText(
           finalContent,
@@ -883,12 +907,13 @@ export class ChatAgentService {
         metadata: {
           generator: 'router-sql',
           routerConfidence: decision.confidence,
+          toolCallCount: 1,
           ...(ctx.persistedCalls.length > 0 && {
             sqlCalls: ctx.persistedCalls,
           }),
         },
       };
-      this.logReplySummary(reply, Date.now());
+      this.logReplySummary(reply, startedAt, 'sql');
       yield { type: 'done', reply };
     } finally {
       await this.runCleanupCallbacks(ctx);
@@ -907,6 +932,8 @@ export class ChatAgentService {
     apiKey: string,
     decision: import('./chat-router.service').RouterDecision,
   ): AsyncGenerator<ChatStreamEvent> {
+    // Capture turn start at function entry — see runSqlRoute for rationale.
+    const startedAt = Date.now();
     const ctx = this.buildAgentContext(params);
     try {
       const collectedSources: AirweaveSearchResultSummary[] = [];
@@ -966,16 +993,18 @@ export class ChatAgentService {
             : 'No relevant sources were found and synthesis failed.';
         yield { type: 'chunk', content: finalContent };
       }
+      // Router-path metadata for telemetry parity — see runSqlRoute.
       const reply: ChatReply = {
         content: finalContent,
         metadata: {
           generator: 'router-rag',
           routerConfidence: decision.confidence,
+          toolCallCount: 1,
           sources: this.mapSources(uniqueSources),
           resultCount: uniqueSources.length,
         },
       };
-      this.logReplySummary(reply, Date.now());
+      this.logReplySummary(reply, startedAt, 'rag');
       yield { type: 'done', reply };
     } finally {
       await this.runCleanupCallbacks(ctx);

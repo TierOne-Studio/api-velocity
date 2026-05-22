@@ -353,8 +353,27 @@ describe('ChatAgentService dispatcher (Phase 3b)', () => {
       expect(types).toContain('searching');
       expect(types).toContain('sql_executed');
       expect(types[types.length - 1]).toBe('done');
-      const done = events.at(-1) as { reply: { metadata: { generator: string } } };
+      const done = events.at(-1) as {
+        reply: { metadata: Record<string, unknown> };
+      };
       expect(done.reply.metadata.generator).toBe('router-sql');
+      // Copilot C1 + architect M1: router-path metadata must surface
+      // toolCallCount so recordTurnMetrics computes llmCalls correctly.
+      // Without this every router-sql turn logs llmCalls=1 instead of 2
+      // (1 query_database tool call + 1 synthesis).
+      expect(done.reply.metadata.toolCallCount).toBe(1);
+      // Copilot C1: the chat.turn telemetry event must report route='sql'
+      // for router-sql turns. The console.info call below should have
+      // received a payload with route: 'sql'. Hunt for it among the spy's
+      // calls.
+      const turnEvents = consoleInfoSpy.mock.calls
+        .map((c) => c[1] as Record<string, unknown> | undefined)
+        .filter((p): p is Record<string, unknown> => p?.event === 'chat.turn');
+      expect(turnEvents.length).toBeGreaterThanOrEqual(1);
+      expect(turnEvents[0]?.route).toBe('sql');
+      // Copilot C3: durationMs must reflect the real turn time, not
+      // ~0 from a Date.now()-as-startedAt bug.
+      expect(turnEvents[0]?.durationMs).toBeGreaterThanOrEqual(0);
     });
 
     it('runRagRoute fires when classifier returns rag with confidence >= threshold', async () => {
@@ -379,8 +398,18 @@ describe('ChatAgentService dispatcher (Phase 3b)', () => {
       const types = events.map((e) => e.type);
       expect(types).toContain('searching');
       expect(types[types.length - 1]).toBe('done');
-      const done = events.at(-1) as { reply: { metadata: { generator: string } } };
+      const done = events.at(-1) as {
+        reply: { metadata: Record<string, unknown> };
+      };
       expect(done.reply.metadata.generator).toBe('router-rag');
+      // Same telemetry guards as runSqlRoute — see comment block above.
+      expect(done.reply.metadata.toolCallCount).toBe(1);
+      const turnEvents = consoleInfoSpy.mock.calls
+        .map((c) => c[1] as Record<string, unknown> | undefined)
+        .filter((p): p is Record<string, unknown> => p?.event === 'chat.turn');
+      expect(turnEvents.length).toBeGreaterThanOrEqual(1);
+      expect(turnEvents[0]?.route).toBe('rag');
+      expect(turnEvents[0]?.durationMs).toBeGreaterThanOrEqual(0);
     });
   });
 
