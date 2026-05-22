@@ -118,10 +118,16 @@ export async function runSqlSubAgent(
   // wrapper above, (b) it adds zero overhead when progress is undefined,
   // and (c) callers control when the event surfaces via the same
   // ctx.eventSink drain mechanism the chat-agent already runs.
+  // Pass identifierRepair into the progress wrapper (Copilot C7 fix). The
+  // wrapper applies the SAME repair logic before extracting SQL for the
+  // sql_executing event, so what the SPA shows matches what hits the DB.
+  // Without this, the event surfaced the LLM's raw SQL (pre-repair) while
+  // the actual query was post-repair — visible drift on schemas with
+  // mixed-case Postgres identifiers.
   const tools = progress
     ? repairedTools.map((sqlTool) =>
         sqlTool.name === 'query-sql'
-          ? wrapQuerySqlWithProgress(sqlTool, progress)
+          ? wrapQuerySqlWithProgress(sqlTool, progress, identifierRepair)
           : sqlTool,
       )
     : repairedTools;
@@ -169,9 +175,17 @@ export async function runSqlSubAgent(
  * Phase 3b (R / §3.6) — wraps an already-identifier-repaired query-sql
  * tool with a progress emitter that fires `sql_executing` JUST BEFORE
  * the underlying tool runs. The emitter is synchronous (no await),
- * matching the §3.6 push-channel choice. The SQL string surfaced to
- * the SPA comes from the input the agent passes (post-repair) so what
- * the user sees matches what hits the DB.
+ * matching the §3.6 push-channel choice.
+ *
+ * IMPORTANT — Copilot C7 fix (post-PR-#22-review): the wrapper applies
+ * the SAME identifier-repair to the input before extracting the SQL
+ * for the event. Without this, sql_executing surfaced the LLM's raw
+ * pre-repair input (e.g. `SELECT * FROM userTable`) while the actual
+ * query that hit the DB was post-repair (`SELECT * FROM "userTable"`).
+ * The repair is idempotent (proven by repairPostgresMixedCaseIdentifiers'
+ * negative lookbehind/lookahead — already-quoted identifiers are
+ * skipped) so the inner identifier-repair wrapper running the same
+ * repair again is harmless redundant work, not a bug.
  *
  * REGRESSION HISTORY (post-P3b production fix):
  *   The first implementation re-wrapped the tool with another `tool()`
@@ -196,6 +210,7 @@ export async function runSqlSubAgent(
 function wrapQuerySqlWithProgress(
   sqlTool: ReturnType<typeof tool>,
   progress: SubAgentProgressContext,
+  identifierRepair: PostgresIdentifierRepair,
 ): ReturnType<typeof tool> {
   return new Proxy(sqlTool, {
     get(target, prop, receiver) {
@@ -203,7 +218,16 @@ function wrapQuerySqlWithProgress(
         // Returned arrow function captures `target` (the actual tool
         // object) so `target.invoke(input)` below preserves `this`.
         return async (input: unknown) => {
-          const sql = extractSqlFromQueryToolInput(input);
+          // Copilot C7: apply identifier repair BEFORE emitting so the
+          // SPA sees the same SQL the DB receives. The inner repair
+          // wrapper will repair again (idempotent — already-quoted
+          // identifiers pass through unchanged).
+          const repairedInput = repairSqlToolInput(
+            'query-sql',
+            input,
+            identifierRepair,
+          );
+          const sql = extractSqlFromQueryToolInput(repairedInput);
           progress.onProgress({
             type: 'sql_executing',
             connectionId: progress.connectionId,
@@ -212,7 +236,10 @@ function wrapQuerySqlWithProgress(
           });
           // Method call on `target` — preserves `this` binding inside
           // @langchain/core's Runnable.invoke. See REGRESSION HISTORY
-          // above for what happens when this binding is lost.
+          // above for what happens when this binding is lost. We pass
+          // the ORIGINAL `input` here (not `repairedInput`) so the
+          // inner repair wrapper's contract is unchanged — it expects
+          // raw input from the agent.
           return (target as { invoke: (i: unknown) => Promise<unknown> }).invoke(
             input,
           );

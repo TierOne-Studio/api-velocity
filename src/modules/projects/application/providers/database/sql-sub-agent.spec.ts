@@ -302,6 +302,82 @@ describe('runSqlSubAgent', () => {
       });
     });
 
+    // Copilot C7 regression guard. Before this fix the progress wrapper
+    // extracted SQL from the LLM's raw input (pre-repair) while the
+    // identifier-repair wrapper rewrote it inside `target.invoke`. The
+    // SPA's sql_executing event then surfaced a DIFFERENT string than
+    // what hit the DB — confusing UX on Postgres schemas with mixed-case
+    // identifiers. The fix passes identifierRepair into the progress
+    // wrapper and applies the same repair before emitting.
+    it('emits sql_executing with the post-repair SQL (matches what the DB receives)', async () => {
+      // Two tool calls in order: info-sql (teaches the repair about
+      // mixed-case identifiers) → query-sql (the wrapper should now
+      // emit the *repaired* SQL).
+      mockToolkitTools = [
+        {
+          name: 'info-sql',
+          description: 'schema info',
+          schema: z.string(),
+          invoke: jest.fn(async () =>
+            [
+              'CREATE TABLE public.member (',
+              '  "userId" text,',
+              '  "organizationId" text',
+              ');',
+            ].join('\n'),
+          ),
+        },
+        {
+          name: 'query-sql',
+          description: 'query',
+          schema: z.string(),
+          invoke: jest.fn(async () => '[]'),
+        },
+      ];
+
+      const onProgress = jest.fn();
+      await runSqlSubAgent(
+        {} as never,
+        'q',
+        {
+          apiKey: 'sk-test',
+          model: 'gpt-test',
+          systemPrompt: 'prompt',
+          maxIterations: 8,
+        },
+        undefined,
+        {
+          connectionId: 'conn-1',
+          connectionName: 'prod-db',
+          onProgress,
+        },
+      );
+
+      // Warm the repair cache by invoking info-sql first (mirrors how
+      // the real agent learns identifiers from schema before running
+      // query-sql).
+      await capturedAgentTools
+        .find((t) => t.name === 'info-sql')
+        ?.invoke('member');
+      // Then invoke query-sql with PRE-repair SQL.
+      const wrappedQuerySql = capturedAgentTools.find(
+        (t) => t.name === 'query-sql',
+      );
+      await wrappedQuerySql!.invoke(
+        'SELECT m.userId, m.organizationId FROM member m',
+      );
+
+      // The emitted SQL must match the post-repair form (identifiers
+      // quoted) — same string that the underlying tool ends up running.
+      const sqlExecutingCalls = onProgress.mock.calls
+        .map((c) => c[0] as { type: string; sql?: string })
+        .filter((p) => p.type === 'sql_executing');
+      expect(sqlExecutingCalls.length).toBe(1);
+      expect(sqlExecutingCalls[0]?.sql).toBe(
+        'SELECT m."userId", m."organizationId" FROM member m',
+      );
+    });
+
     it('does NOT wrap when progress is undefined (preserves legacy callers)', async () => {
       mockToolkitTools = [
         {
