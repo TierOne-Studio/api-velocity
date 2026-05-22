@@ -397,6 +397,47 @@ export class ChatAgentService {
       toolCallCount: metadata.toolCallCount,
       durationMs: Date.now() - startedAt,
     });
+    this.recordTurnMetrics(reply, startedAt);
+  }
+
+  /**
+   * Canonical per-turn telemetry event (per docs/langchain-agent-refactor-proposal.md
+   * §3.5). Emitted alongside `logReplySummary` so dashboards can parse a stable
+   * shape without depending on the informal operational log above.
+   *
+   * IMPORTANT (per proposal §3.5 + ISP discipline):
+   *   `route` is a LOCAL variable, NOT a field on `AgentToolContext`. The ctx
+   *   shape is unchanged by this refactor — see proposal §11 verification log.
+   *   For P0 every turn is `'agent'`. P3 (router) will pass the dispatcher's
+   *   chosen route at the call site.
+   *
+   * `llmCalls` is approximated as `toolCallCount + 1` (each tool call implies
+   * an outer-agent LLM round-trip; +1 for final synthesis). Sub-agent internal
+   * LLM calls are NOT counted here — that requires the progress callback added
+   * in P3b. See docs/refactor-baseline-metrics.md for the gap analysis and
+   * how P1/P2 wins surface (or don't) in this single metric.
+   *
+   * `tokensTotal` is the outer agent's final-message `usage_metadata.total_tokens`
+   * when available; null otherwise. Same scope caveat as `llmCalls`.
+   */
+  private recordTurnMetrics(
+    reply: ChatReply,
+    startedAt: number,
+    route: 'agent' | 'sql' | 'rag' = 'agent',
+  ): void {
+    const metadata = reply.metadata;
+    const toolCallCount =
+      typeof metadata.toolCallCount === 'number' ? metadata.toolCallCount : 0;
+    const tokensTotal =
+      typeof metadata.totalTokens === 'number' ? metadata.totalTokens : null;
+    console.info('[ChatAgentService] chat.turn', {
+      event: 'chat.turn',
+      route,
+      llmCalls: toolCallCount + 1,
+      durationMs: Date.now() - startedAt,
+      tokensTotal,
+      generator: metadata.generator,
+    });
   }
 
   /**
