@@ -182,6 +182,159 @@ describe('runSqlSubAgent', () => {
     });
   });
 
+  describe('Phase 3b progress wrapper (regression guard)', () => {
+    // CRITICAL: this suite reproduces the production regression caught
+    // post-P3b where `wrapQuerySqlWithProgress` detached `this` from
+    // `sqlTool.invoke` via `const invoke = sqlTool.invoke as ...`. The
+    // detached method, when called, tried to read `this.defaultConfig`
+    // on undefined and crashed every SQL chat turn with
+    //   "TypeError: Cannot read properties of undefined (reading 'defaultConfig')"
+    //
+    // Pre-fix, every existing sql-sub-agent spec was green because none
+    // passed a `progress` arg — the buggy wrapper was unreachable in
+    // tests. These specs DO pass progress AND then actually invoke the
+    // captured wrapped tool, so they fail loudly if the bug returns.
+
+    it('preserves `this` binding when invoking the underlying query-sql tool', async () => {
+      // Use a class-method invoke to expose the binding bug. A plain
+      // jest.fn() would still work even with `this` lost — we need a
+      // method that reads `this.something` to assert the binding.
+      class FakeToolkitQueryTool {
+        public readonly defaultConfig = { canary: 'ok' };
+        public readonly name = 'query-sql';
+        public readonly description = 'query';
+        public readonly schema = z.string();
+        public readonly invokeMock = jest.fn(async (_input: unknown) => '[]');
+        async invoke(input: unknown): Promise<unknown> {
+          // Reads `this.defaultConfig` — fails if `this` is undefined,
+          // mirroring the runtime crash path inside @langchain/core's
+          // Runnable.invoke.
+          if (!this.defaultConfig) {
+            throw new TypeError(
+              "Cannot read properties of undefined (reading 'defaultConfig')",
+            );
+          }
+          return this.invokeMock(input);
+        }
+      }
+      const fakeQuery = new FakeToolkitQueryTool();
+      mockToolkitTools = [fakeQuery as unknown as (typeof mockToolkitTools)[number]];
+
+      const onProgress = jest.fn();
+
+      await runSqlSubAgent(
+        {} as never,
+        'q',
+        {
+          apiKey: 'sk-test',
+          model: 'gpt-test',
+          systemPrompt: 'prompt',
+          maxIterations: 8,
+        },
+        undefined,
+        {
+          connectionId: 'conn-1',
+          connectionName: 'prod-db',
+          onProgress,
+        },
+      );
+
+      const wrappedQuerySql = capturedAgentTools.find(
+        (t) => t.name === 'query-sql',
+      );
+      expect(wrappedQuerySql).toBeDefined();
+
+      // Bug repro: pre-fix this throws the defaultConfig TypeError.
+      // Post-fix it resolves to the fake's empty result.
+      await expect(wrappedQuerySql!.invoke('SELECT 1')).resolves.toBeDefined();
+
+      expect(fakeQuery.invokeMock).toHaveBeenCalledWith('SELECT 1');
+    });
+
+    it('fires sql_executing before the underlying tool runs', async () => {
+      const order: string[] = [];
+      mockToolkitTools = [
+        {
+          name: 'query-sql',
+          description: 'query',
+          schema: z.string(),
+          invoke: jest.fn(async () => {
+            order.push('underlying-invoke');
+            return '[]';
+          }),
+        },
+      ];
+
+      const onProgress = jest.fn().mockImplementation(() => {
+        order.push('sql_executing');
+      });
+
+      await runSqlSubAgent(
+        {} as never,
+        'q',
+        {
+          apiKey: 'sk-test',
+          model: 'gpt-test',
+          systemPrompt: 'prompt',
+          maxIterations: 8,
+        },
+        undefined,
+        {
+          connectionId: 'conn-1',
+          connectionName: 'prod-db',
+          onProgress,
+        },
+      );
+
+      const wrappedQuerySql = capturedAgentTools.find(
+        (t) => t.name === 'query-sql',
+      );
+      await wrappedQuerySql!.invoke('SELECT 1');
+
+      // Order MUST be: progress event THEN underlying invoke. The SPA
+      // needs the planning chrome to appear before the query runs.
+      expect(order).toEqual(['sql_executing', 'underlying-invoke']);
+      expect(onProgress).toHaveBeenCalledWith({
+        type: 'sql_executing',
+        connectionId: 'conn-1',
+        connectionName: 'prod-db',
+        sql: 'SELECT 1',
+      });
+    });
+
+    it('does NOT wrap when progress is undefined (preserves legacy callers)', async () => {
+      mockToolkitTools = [
+        {
+          name: 'query-sql',
+          description: 'query',
+          schema: z.string(),
+          invoke: jest.fn(async () => '[]'),
+        },
+      ];
+
+      const onProgress = jest.fn();
+
+      // No progress arg → wrapQuerySqlWithProgress should not run.
+      await runSqlSubAgent(
+        {} as never,
+        'q',
+        {
+          apiKey: 'sk-test',
+          model: 'gpt-test',
+          systemPrompt: 'prompt',
+          maxIterations: 8,
+        },
+      );
+
+      const wrappedQuerySql = capturedAgentTools.find(
+        (t) => t.name === 'query-sql',
+      );
+      await wrappedQuerySql!.invoke('SELECT 1');
+
+      expect(onProgress).not.toHaveBeenCalled();
+    });
+  });
+
   it('propagates wrapped SQL tool failures', async () => {
     const queryInvoke = jest.fn<(input: unknown) => Promise<unknown>>(async () => {
       throw new Error('column m.userid does not exist password=super-secret');

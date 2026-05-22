@@ -170,35 +170,57 @@ export async function runSqlSubAgent(
  * tool with a progress emitter that fires `sql_executing` JUST BEFORE
  * the underlying tool runs. The emitter is synchronous (no await),
  * matching the §3.6 push-channel choice. The SQL string surfaced to
- * the SPA comes from the post-repair `toolInput` so what the user sees
- * matches what hits the DB.
+ * the SPA comes from the input the agent passes (post-repair) so what
+ * the user sees matches what hits the DB.
+ *
+ * REGRESSION HISTORY (post-P3b production fix):
+ *   The first implementation re-wrapped the tool with another `tool()`
+ *   call and reused `sqlTool.schema`. That had TWO bugs in production:
+ *   (1) detached `this` when calling sqlTool.invoke via a const-bound
+ *       function reference — @langchain/core's Runnable read
+ *       `this.defaultConfig` on undefined and crashed every SQL turn.
+ *   (2) schema-shape mismatch — feeding a DynamicTool's z.string()
+ *       schema back into `tool(...)` resurfaced as a structured-input
+ *       expectation, so plain-string inputs got rejected before reaching
+ *       the underlying tool.
+ *
+ *   The Proxy approach below sidesteps BOTH bugs by NOT re-creating the
+ *   tool at all. Only `.invoke` is intercepted; every other property
+ *   (name, description, schema, _getType, etc.) passes through to the
+ *   original object. The `target.invoke(input)` call inside the
+ *   intercept preserves `this` because it's a real method call on the
+ *   underlying tool — same pattern as the existing
+ *   `wrapSqlToolWithIdentifierRepair` which calls `sqlTool.invoke(...)`
+ *   as a method.
  */
 function wrapQuerySqlWithProgress(
   sqlTool: ReturnType<typeof tool>,
   progress: SubAgentProgressContext,
 ): ReturnType<typeof tool> {
-  return tool(
-    async (input: unknown) => {
-      const sql = extractSqlFromQueryToolInput(input);
-      progress.onProgress({
-        type: 'sql_executing',
-        connectionId: progress.connectionId,
-        connectionName: progress.connectionName,
-        sql,
-      });
-      // The inner `tool()` from @langchain/core returns a structured tool
-      // whose `.invoke` has a complex union signature (TConfig matrix). The
-      // cast collapses to "any input → any output" — fine because we're
-      // forwarding the same input we received from the outer agent loop.
-      const invoke = sqlTool.invoke as (input: unknown) => Promise<unknown>;
-      return invoke(input);
+  return new Proxy(sqlTool, {
+    get(target, prop, receiver) {
+      if (prop === 'invoke') {
+        // Returned arrow function captures `target` (the actual tool
+        // object) so `target.invoke(input)` below preserves `this`.
+        return async (input: unknown) => {
+          const sql = extractSqlFromQueryToolInput(input);
+          progress.onProgress({
+            type: 'sql_executing',
+            connectionId: progress.connectionId,
+            connectionName: progress.connectionName,
+            sql,
+          });
+          // Method call on `target` — preserves `this` binding inside
+          // @langchain/core's Runnable.invoke. See REGRESSION HISTORY
+          // above for what happens when this binding is lost.
+          return (target as { invoke: (i: unknown) => Promise<unknown> }).invoke(
+            input,
+          );
+        };
+      }
+      return Reflect.get(target, prop, receiver);
     },
-    {
-      name: sqlTool.name,
-      description: sqlTool.description,
-      schema: sqlTool.schema,
-    },
-  );
+  });
 }
 
 /**
