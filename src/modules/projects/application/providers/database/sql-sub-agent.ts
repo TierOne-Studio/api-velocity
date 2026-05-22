@@ -17,6 +17,16 @@ export type SubAgentConfig = {
   model: string;
   systemPrompt: string;
   maxIterations: number;
+  /**
+   * Phase 1 (S2.1) — when true, the `query-checker` tool is filtered out
+   * of the SqlToolkit set exposed to the sub-agent. Saves one LLM call per
+   * SQL turn that would have invoked the checker; query syntax errors are
+   * handled via the agent's existing repair loop instead.
+   *
+   * Defaults to `false` (preserves today's behavior). Wired from
+   * `ConfigService.getSqlAgentDropCheckerEnabled()` in `ChatToSqlService`.
+   */
+  dropCheckerEnabled?: boolean;
 };
 
 export type SubAgentResult = {
@@ -46,7 +56,14 @@ export async function runSqlSubAgent(
     db,
     llm as unknown as BaseChatModel,
   );
-  const rawTools = toolkit.getTools();
+  // Phase 1 (S2.1): optionally drop `query-checker`. It performs an extra
+  // LLM round-trip to lint SQL before execution; for SELECT-only queries
+  // the error from `query-sql` is a sufficient signal to repair on the
+  // next iteration. Gate behind `dropCheckerEnabled` so the change is
+  // opt-in per environment and the legacy behavior remains the default.
+  const rawTools = config.dropCheckerEnabled
+    ? toolkit.getTools().filter((t) => t.name !== 'query-checker')
+    : toolkit.getTools();
   const identifierRepair = createPostgresIdentifierRepair();
   const tools = rawTools.map((sqlTool) =>
     wrapSqlToolWithIdentifierRepair(sqlTool, identifierRepair),

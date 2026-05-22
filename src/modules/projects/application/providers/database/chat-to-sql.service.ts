@@ -62,6 +62,11 @@ export class ChatToSqlService {
       // the listed tables in list_tables_sql_db / info_sql_db calls.
       db = await ReadOnlySqlDatabase.fromDataSource(dataSource, limits, {
         includesTables: connection.allowedTables ?? undefined,
+        // Phase 1 (S2.2): operator-overridable sample-row count for
+        // `info-sql`. Default 0 — column types are usually enough; raising
+        // is opt-in via SQL_AGENT_SAMPLE_ROWS when a project's SQL
+        // accuracy regresses on sparsely-typed columns.
+        sampleRowsInTableInfo: this.configService.getSqlAgentSampleRows(),
       });
     } catch (error) {
       const sanitized = sanitizeAgentError(error);
@@ -99,7 +104,18 @@ export class ChatToSqlService {
       const subAgent = await runSqlSubAgent(
         db,
         question,
-        { apiKey, model, systemPrompt, maxIterations },
+        {
+          apiKey,
+          model,
+          systemPrompt,
+          maxIterations,
+          // Phase 1 (S2.1): operator-overridable. Defaults to false (keeps
+          // the legacy `query-checker` LLM call in the loop). Flip via
+          // SQL_AGENT_DROP_CHECKER_ENABLED=true once telemetry confirms
+          // first-attempt SQL accuracy is good enough that the checker's
+          // pre-validation LLM call is wasted overhead.
+          dropCheckerEnabled: this.configService.getSqlAgentDropCheckerEnabled(),
+        },
         signal,
       );
 

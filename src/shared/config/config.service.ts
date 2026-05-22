@@ -383,6 +383,33 @@ export class ConfigService {
     return process.env.SQL_AGENT_MODEL?.trim() || null;
   }
 
+  /**
+   * Phase 1 (S2.1) — when true, removes the `query-checker` tool from the
+   * SqlToolkit set exposed to the sub-agent. The checker performs an extra
+   * LLM call to lint SQL before execution; for SELECT-only queries with a
+   * one-shot repair path, the error from `query-sql` is enough.
+   *
+   * Default false — preserves today's behavior. Flip per-environment when
+   * you want the LLM-call reduction. See docs/langchain-agent-refactor-proposal.md
+   * §3.2.1.
+   */
+  getSqlAgentDropCheckerEnabled(): boolean {
+    return process.env.SQL_AGENT_DROP_CHECKER_ENABLED === 'true';
+  }
+
+  /**
+   * Phase 1 (S2.2) — number of sample rows the SqlToolkit's `info-sql` tool
+   * includes per table. `SqlDatabase` defaults this to 3, which is 500-1500
+   * tokens of low-signal noise per call. Column types alone are usually
+   * enough for SQL generation.
+   *
+   * Default 0 (no sample rows). Set higher (1-10) per environment if a
+   * specific project's SQL accuracy regresses. See proposal §3.2.2.
+   */
+  getSqlAgentSampleRows(): number {
+    return this.boundedInt('SQL_AGENT_SAMPLE_ROWS', 0, { min: 0, max: 10 });
+  }
+
   getSqlAgentSystemPrompt(): string {
     return this.loadPrompt({
       envInline: process.env.SQL_AGENT_SYSTEM_PROMPT?.trim(),

@@ -14,6 +14,7 @@ jest.unstable_mockModule('@langchain/classic/sql_db', () => {
       appDataSource: unknown;
       includesTables?: string[];
       ignoreTables?: string[];
+      sampleRowsInTableInfo?: number;
     }) {
       capturedFromDataSourceParams.push({ ...params });
       return new SqlDatabase(params.appDataSource);
@@ -149,6 +150,37 @@ describe('ReadOnlySqlDatabase', () => {
       });
       const last = capturedFromDataSourceParams.at(-1)!;
       expect(last.ignoreTables).toEqual(['migrations']);
+    });
+
+    // Phase 1 (S2.2): sampleRowsInTableInfo plumbed through to the parent
+    // `SqlDatabase.fromDataSourceParams`. Default behavior (undefined =>
+    // parent's own default of 3) preserved; explicit 0 from ConfigService
+    // suppresses sample rows in `info-sql` output.
+    it('passes sampleRowsInTableInfo when provided', async () => {
+      const { ds } = buildFakeDataSource();
+      await ReadOnlySqlDatabase.fromDataSource(ds as never, limits, {
+        sampleRowsInTableInfo: 0,
+      });
+      const last = capturedFromDataSourceParams.at(-1)!;
+      expect(last.sampleRowsInTableInfo).toBe(0);
+    });
+
+    it('passes non-zero sampleRowsInTableInfo when provided', async () => {
+      const { ds } = buildFakeDataSource();
+      await ReadOnlySqlDatabase.fromDataSource(ds as never, limits, {
+        sampleRowsInTableInfo: 3,
+      });
+      const last = capturedFromDataSourceParams.at(-1)!;
+      expect(last.sampleRowsInTableInfo).toBe(3);
+    });
+
+    it('omits sampleRowsInTableInfo when not provided (parent default applies)', async () => {
+      const { ds } = buildFakeDataSource();
+      await ReadOnlySqlDatabase.fromDataSource(ds as never, limits, {
+        includesTables: ['users'],
+      });
+      const last = capturedFromDataSourceParams.at(-1)!;
+      expect(last.sampleRowsInTableInfo).toBeUndefined();
     });
   });
 });

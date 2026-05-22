@@ -34,12 +34,24 @@ export class ReadOnlySqlDatabase extends SqlDatabase {
   static async fromDataSource(
     appDataSource: DataSource,
     limits: SqlLimits,
-    options?: { includesTables?: string[]; ignoreTables?: string[] },
+    options?: {
+      includesTables?: string[];
+      ignoreTables?: string[];
+      /**
+       * Phase 1 (S2.2) — number of sample rows the parent `SqlDatabase`
+       * includes per table in `info-sql`/`getTableInfo()` output. Defaults
+       * to the parent's own default (3) when undefined. ChatToSqlService
+       * passes 0 by default (via SQL_AGENT_SAMPLE_ROWS env) to keep prompt
+       * tokens lean for sub-agent SQL generation.
+       */
+      sampleRowsInTableInfo?: number;
+    },
   ): Promise<ReadOnlySqlDatabase> {
     const instance = await SqlDatabase.fromDataSourceParams({
       appDataSource,
       includesTables: options?.includesTables,
       ignoreTables: options?.ignoreTables,
+      sampleRowsInTableInfo: options?.sampleRowsInTableInfo,
     });
     Object.setPrototypeOf(instance, ReadOnlySqlDatabase.prototype);
     const ro = instance as ReadOnlySqlDatabase;
