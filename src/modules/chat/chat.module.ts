@@ -7,6 +7,7 @@ import { DatabaseModule } from '../../shared/infrastructure/database/database.mo
 import { ConfigService } from '../../shared/config/config.service';
 import { ChatController } from './api/controllers/chat.controller';
 import { ChatAgentService } from './application/services/chat-agent.service';
+import { ChatRouterService } from './application/services/chat-router.service';
 import { ChatService } from './application/services/chat.service';
 import { ChatDatabaseRepository } from './infrastructure/persistence/repositories/chat.database-repository';
 import { CHAT_REPOSITORY } from './domain/repositories/chat.repository.interface';
@@ -35,6 +36,10 @@ import { ChatMigrationService } from './chat.migration';
   providers: [
     ChatService,
     ChatAgentService,
+    // Phase 3a (R): registered but no consumer wires it yet. P3b adds the
+    // dispatcher branch in ChatAgentService that conditionally calls
+    // chatRouter.classify(...) when CHAT_ROUTER_ENABLED=true.
+    ChatRouterService,
     ChatMigrationService,
     { provide: CHAT_REPOSITORY, useClass: ChatDatabaseRepository },
   ],

@@ -428,6 +428,88 @@ export class ConfigService {
     return process.env.SQL_AGENT_PREWARM_SCHEMA_ENABLED === 'true';
   }
 
+  /**
+   * Phase 3a (R) — when true, ChatAgentService consults ChatRouterService
+   * to classify each turn BEFORE running the agent. High-confidence
+   * sql / rag routes call the corresponding tool directly (saving the
+   * outer-agent's tool-decision LLM round-trip). Low confidence or
+   * route=='agent' falls through to today's agentic loop unchanged.
+   *
+   * Default false. P3a ships the service in isolation; P3b wires the
+   * dispatcher and flips this flag on per environment. See proposal §3.3.
+   */
+  getChatRouterEnabled(): boolean {
+    return process.env.CHAT_ROUTER_ENABLED === 'true';
+  }
+
+  /**
+   * Phase 3a (R) — operator-specified router model. Per the model
+   * fallback chain (proposal §3.0):
+   *   `getChatRouterModel() ?? getOpenAiModel()` → built-in default.
+   * Returns null when unset so callers chain explicitly. Set to a
+   * small/cheap model (gpt-X-mini, etc) for per-turn classification —
+   * the bigger model is for synthesis, not classification.
+   */
+  getChatRouterModel(): string | null {
+    return process.env.CHAT_ROUTER_MODEL?.trim() || null;
+  }
+
+  /**
+   * Phase 3a (R) — confidence threshold above which the dispatcher
+   * takes the router's chosen route. Below this threshold, fall
+   * through to the agent fallback path. Stored as a 0-100 percent for
+   * env legibility; the getter returns the 0-1 fraction.
+   *
+   * Default 70 (0.7). Bounded 0-100.
+   */
+  getChatRouterConfidenceThreshold(): number {
+    return (
+      this.boundedInt('CHAT_ROUTER_CONFIDENCE_PCT', 70, { min: 0, max: 100 }) /
+      100
+    );
+  }
+
+  /**
+   * Phase 3a (R) — loads the classifier-neutral routing taxonomy from
+   * `chat-routing-rules.md`. This is the SSoT: both the router's
+   * classifier prompt and (in P3b) the agent's tool-use prompt embed
+   * this exact text via composition. Drift between consumers is caught
+   * by the SSoT assertion test in chat-router.service.spec.ts.
+   */
+  getChatRoutingRules(): string {
+    return this.loadPrompt({
+      envInline: process.env.CHAT_ROUTING_RULES?.trim(),
+      envPath: process.env.CHAT_ROUTING_RULES_PATH?.trim(),
+      fileCandidates: [
+        resolve(process.cwd(), 'dist/modules/chat/prompts/chat-routing-rules.md'),
+        resolve(process.cwd(), 'src/modules/chat/prompts/chat-routing-rules.md'),
+      ],
+      fallback:
+        '# Routing taxonomy (built-in fallback)\n\n- SQL: counts/listings/entity-state from tables.\n- RAG: explanations/docs/specs.\n- Ambiguous → prefer SQL.',
+      cacheKey: 'chat-routing-rules',
+    });
+  }
+
+  /**
+   * Phase 3a (R) — loads the router classifier prompt
+   * (`chat-router-system.md`). The router service injects the routing
+   * rules (loaded separately above) where the prompt has the
+   * `{{ROUTING_RULES}}` placeholder.
+   */
+  getChatRouterSystemPrompt(): string {
+    return this.loadPrompt({
+      envInline: process.env.CHAT_ROUTER_SYSTEM_PROMPT?.trim(),
+      envPath: process.env.CHAT_ROUTER_SYSTEM_PROMPT_PATH?.trim(),
+      fileCandidates: [
+        resolve(process.cwd(), 'dist/modules/chat/prompts/chat-router-system.md'),
+        resolve(process.cwd(), 'src/modules/chat/prompts/chat-router-system.md'),
+      ],
+      fallback:
+        'Classify the question into {sql, rag, agent}. Respond with strict JSON: {"route","confidence","reasoning"}.\n\n{{ROUTING_RULES}}',
+      cacheKey: 'chat-router-system',
+    });
+  }
+
   getSqlAgentSystemPrompt(): string {
     return this.loadPrompt({
       envInline: process.env.SQL_AGENT_SYSTEM_PROMPT?.trim(),
