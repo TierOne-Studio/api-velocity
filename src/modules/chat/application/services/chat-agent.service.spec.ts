@@ -2,15 +2,16 @@ import { jest } from '@jest/globals';
 import {
   ChatAgentService,
   createStreamingSqlFenceStripper,
+  normalizeMarkdownTables,
   stripJsonFencesFromReply,
   stripSqlFencesFromReply,
 } from './chat-agent.service';
-import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
-import type { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
 import type {
+  ProjectDataSource,
+  DataSourceRegistry,
   DataSourceProvider,
   DataSourceSearchOptions,
-} from '../../../projects/application/providers/data-source-provider.interface';
+} from '../../../projects';
 import type { AirweaveSearchResponse } from '../../../airweave/application/services/airweave.service';
 
 type ChatReply = {
@@ -65,6 +66,9 @@ describe('ChatAgentService', () => {
     getChatAgentHistoryWindow: any;
     getChatAgentSearchTier: any;
     getChatAgentRetrievalStrategy: any;
+    getChatRoutingRules: any;
+    getChatRouterEnabled: any;
+    getChatRouterConfidenceThreshold: any;
   };
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
   let consoleInfoSpy: jest.SpiedFunction<typeof console.info>;
@@ -98,6 +102,10 @@ describe('ChatAgentService', () => {
       getChatAgentHistoryWindow: jest.fn().mockReturnValue(6),
       getChatAgentSearchTier: jest.fn().mockReturnValue('classic'),
       getChatAgentRetrievalStrategy: jest.fn().mockReturnValue(undefined),
+      // Router defaults disabled for these tests.
+      getChatRoutingRules: jest.fn().mockReturnValue('# RULES\n- SQL: counts.\n- RAG: docs.'),
+      getChatRouterEnabled: jest.fn().mockReturnValue(false),
+      getChatRouterConfidenceThreshold: jest.fn().mockReturnValue(0.7),
     };
     service = new ChatAgentService(registry, configService as never);
     consoleErrorSpy = jest
@@ -398,7 +406,6 @@ describe('ChatAgentService', () => {
       expect(dbIdx).toBeGreaterThan(baseIdx);
     });
 
-    // H2: structural capabilities chip
     it('emits the capabilities chip with DB names when DB sources attached', () => {
       configService.getChatSystemPrompt.mockReturnValue('expert persona body');
 
@@ -480,13 +487,13 @@ describe('ChatAgentService', () => {
       expect(systemPrompt).not.toContain('Available capabilities');
     });
 
-    it('keeps the "do not emit SQL" guidance in the tool description file (L3)', async () => {
-      // L3: the "Answer format after query_database" rule moved out of
-      // the system prompt and into the tool description bundled with
-      // query-database-tool-description.md. The LLM sees it every time
-      // it considers calling the tool, which is the right scope for
-      // per-call output rules. Test the .md file directly so this
-      // assertion doesn't depend on the configService mock surface.
+    it('keeps the "do not emit SQL" guidance in the tool description file', async () => {
+      // The "Answer format after query_database" rule lives in the tool
+      // description bundled with query-database-tool-description.md.
+      // The LLM sees it every time it considers calling the tool, which
+      // is the right scope for per-call output rules. Test the .md file
+      // directly so this assertion doesn't depend on the configService
+      // mock surface.
       const fs = await import('node:fs');
       const path = await import('node:path');
       const url = await import('node:url');
@@ -619,8 +626,8 @@ describe('stripSqlFencesFromReply', () => {
     expect(stripSqlFencesFromReply('')).toBe('');
   });
 
-  // M3: tightened to require SQL-shaped follow-up for ambiguous keywords
-  it('M3: preserves a pascal-tagged block whose body uses BEGIN as a Pascal keyword', () => {
+  // Ambiguous keywords require a SQL-shaped follow-up to be treated as SQL.
+  it('preserves a pascal-tagged block whose body uses BEGIN as a Pascal keyword', () => {
     const input = [
       'Here is the Pascal example:',
       '```pascal',
@@ -635,7 +642,7 @@ describe('stripSqlFencesFromReply', () => {
     expect(stripSqlFencesFromReply(input)).toBe(input);
   });
 
-  it('M3: still strips a bare ``` block whose BEGIN IS SQL-shaped', () => {
+  it('still strips a bare ``` block whose BEGIN IS SQL-shaped', () => {
     const input = [
       'I ran:',
       '```',
@@ -651,13 +658,13 @@ describe('stripSqlFencesFromReply', () => {
     expect(out).toContain('Done.');
   });
 
-  it('M3: still strips an explicit ```sql block even with bare BEGIN inside', () => {
+  it('still strips an explicit ```sql block even with bare BEGIN inside', () => {
     // The sql tag is the canonical match — body shape doesn't matter.
     const input = '```sql\nBEGIN\nSELECT 1;\n```\nResult.';
     expect(stripSqlFencesFromReply(input)).toBe('Result.');
   });
 
-  it('M3: preserves a bash block where a SQL-keyword-looking identifier appears', () => {
+  it('preserves a bash block where a SQL-keyword-looking identifier appears', () => {
     // Pure non-SQL: language tag is bash, no SQL fingerprint in the body.
     const input = '```bash\nROLLBACK_TIMEOUT=5 ./run.sh\n```\nDone.';
     expect(stripSqlFencesFromReply(input)).toBe(input);
@@ -737,11 +744,10 @@ describe('createStreamingSqlFenceStripper', () => {
     expect(out).toBe('Found 4 rows.');
   });
 
-  // qa MED-1: M3 ambiguous-keyword tightening through the streaming path.
-  // `stripSqlFencesFromReply` has dedicated M3 tests; the streaming version
-  // shares SQL_KEYWORDS but has its own state machine + 64-char lookahead
-  // window. Same logical rule deserves coverage on both implementations.
-  it('M3 streaming: preserves a ```pascal block with BEGIN as a Pascal keyword (token-by-token)', () => {
+  // The streaming stripper has its own state machine + 64-char lookahead
+  // window, so the ambiguous-keyword tightening needs coverage on both
+  // the batch and the streaming implementations.
+  it('streaming: preserves a ```pascal block with BEGIN as a Pascal keyword (token-by-token)', () => {
     const s = createStreamingSqlFenceStripper();
     // Emit the Pascal block one chunk at a time so the decision happens
     // during the streaming window-fill, not after the whole block is buffered.
@@ -762,7 +768,7 @@ describe('createStreamingSqlFenceStripper', () => {
     expect(out).toContain('That is the example.');
   });
 
-  it('M3 streaming: preserves a ```bash block with a SQL-keyword-shaped identifier', () => {
+  it('streaming: preserves a ```bash block with a SQL-keyword-shaped identifier', () => {
     const s = createStreamingSqlFenceStripper();
     const chunks = [
       'Run: ',
@@ -777,7 +783,7 @@ describe('createStreamingSqlFenceStripper', () => {
     expect(out).toContain('Done.');
   });
 
-  it('M3 streaming: still strips a bare ``` block with SQL-shaped BEGIN', () => {
+  it('streaming: still strips a bare ``` block with SQL-shaped BEGIN', () => {
     const s = createStreamingSqlFenceStripper();
     const chunks = [
       'I ran:\n',
@@ -792,5 +798,148 @@ describe('createStreamingSqlFenceStripper', () => {
     expect(out).not.toContain('BEGIN TRANSACTION');
     expect(out).toContain('I ran:');
     expect(out).toContain('Done.');
+  });
+});
+
+describe('normalizeMarkdownTables', () => {
+  // These cases pin the exact production failure modes captured in screenshots:
+  //   - "...questions.| User | Email |" (no newline at all between prose and table)
+  //   - "...questions.\n| User | Email |" (single newline; markdown needs two)
+  // Both render as unstyled inline text on the SPA because GitHub-flavored-
+  // markdown requires a blank line before a table header.
+
+  it('inserts a blank line when prose is directly glued to a table line', () => {
+    const input = 'There are 4 users.| User | Email |\n|---|---|\n| Ada | a@x |';
+    const out = normalizeMarkdownTables(input);
+    expect(out).toContain('There are 4 users.\n\n| User | Email |');
+    expect(out).toContain('|---|---|');
+    expect(out).toContain('| Ada | a@x |');
+  });
+
+  it('inserts a blank line when prose has only a single newline before a table line', () => {
+    const input = 'There are 4 users.\n| User | Email |\n|---|---|\n| Ada | a@x |';
+    const out = normalizeMarkdownTables(input);
+    expect(out).toContain('There are 4 users.\n\n| User | Email |');
+  });
+
+  it('is a no-op when the table is already properly separated', () => {
+    const input = 'There are 4 users.\n\n| User | Email |\n|---|---|\n| Ada | a@x |';
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  it('does NOT over-match a single inline pipe in prose ("Hello | World")', () => {
+    // Heuristic: table-like = at least TWO pipes on the same line. A lone
+    // inline pipe ("Hello | World") has zero or one trailing pipe and must
+    // pass through unchanged or this would corrupt prose.
+    const input = 'Hello | World';
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  it('does NOT insert duplicate blank lines on already-correct tables', () => {
+    // Regression guard: applying the regex multiple times must converge.
+    const input = 'Intro.\n\n| col1 | col2 |\n|---|---|\n| a | b |';
+    const once = normalizeMarkdownTables(input);
+    const twice = normalizeMarkdownTables(once);
+    expect(twice).toBe(once);
+  });
+
+  it('preserves consecutive table rows (does not insert blank lines between rows)', () => {
+    // Critical: only the FIRST table line should get a blank line inserted.
+    // Subsequent rows (header-separator, data rows) must remain glued
+    // together, otherwise the parser sees multiple single-row tables.
+    const input = 'Intro.\n\n| a | b |\n| 1 | 2 |\n| 3 | 4 |';
+    const out = normalizeMarkdownTables(input);
+    expect(out).toBe(input);
+  });
+
+  it('handles the exact production failure shape (multi-bullet then glued table)', () => {
+    // Reproduces the SPA screenshot from the bug report: 4 bullets then a
+    // markdown table fused onto the last bullet's trailing text.
+    const input = [
+      '- Ada (a@x): 7 chats, 45 questions',
+      '- Bob (b@x): 2 chats, 4 questions',
+      '- Charlie (c@x): 0 chats, 0 questions| User | Email | Chats | Questions |',
+      '|---|---|---:|---:|',
+      '| Ada | a@x | 7 | 45 |',
+    ].join('\n');
+    const out = normalizeMarkdownTables(input);
+    expect(out).toContain('0 chats, 0 questions\n\n| User | Email | Chats | Questions |');
+    expect(out).toContain('|---|---|---:|---:|');
+    expect(out).toContain('| Ada | a@x | 7 | 45 |');
+    // The header-separator and data row must remain glued (no blank lines
+    // inserted between them) — otherwise the table breaks into pieces.
+    expect(out).not.toMatch(/\|---\|---\|---:\|---:\|\n\n\| Ada/);
+  });
+
+  it('handles empty input', () => {
+    expect(normalizeMarkdownTables('')).toBe('');
+  });
+
+  it('handles prose-only content (no tables, no changes)', () => {
+    const input = 'There are 4 users in your database.';
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  // Regression guards for splitLineAtTableStart: prose like
+  // "a | b | c |" must not be misclassified as a table just because it
+  // has multiple pipes and ends in `|`. A GFM separator row
+  // (e.g. `|---|---|`) on the next line is required before treating any
+  // line as a table header. Prose passes through untouched.
+
+  it('does NOT split prose ending in multiple pipes when no separator row follows', () => {
+    const input = 'columns: name | email | status |';
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  it('does NOT split prose ending in pipe (no following line at all)', () => {
+    const input = 'a | b | c |';
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  it('does split prose-then-table when a separator row follows on the next line', () => {
+    // Confirms the legitimate case (prose glued to a real table header
+    // with a separator beneath it) still gets normalized.
+    const input =
+      'Here are the rows:| User | Email |\n|---|---|\n| Ada | a@x |';
+    const out = normalizeMarkdownTables(input);
+    expect(out).toContain('Here are the rows:\n\n| User | Email |');
+    expect(out).toContain('|---|---|');
+    expect(out).toContain('| Ada | a@x |');
+  });
+
+  it('does NOT insert blank line before a one-row "table" that has no separator (treats as prose)', () => {
+    // The model occasionally emits a single pipe-delimited line without a
+    // separator row. Per GFM this isn't a table; treating it as prose is
+    // safer than synthesizing a missing header. With the separator-row
+    // guard, the line stays as-is and renders as plain text (which is
+    // what markdown does without a separator anyway).
+    const input = 'Intro.\n| no separator | follows |';
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  it('isTableSeparator: accepts standard, colon-aligned, and tight forms', () => {
+    // White-box assertion via end-to-end behavior: the splitter should
+    // recognize all three separator styles as valid headers-of-tables.
+    const cases = [
+      '| Col |\n| --- |\n| val |',
+      '| Col |\n|:---|\n| val |',
+      '| Col |\n|---:|\n| val |',
+      '| Col |\n|:---:|\n| val |',
+      '| A | B |\n|---|---|\n| 1 | 2 |',
+    ];
+    for (const input of cases) {
+      // Each case is already valid markdown (no prose before the header).
+      // The normalizer should be a no-op — the separator-row detector
+      // must accept all of these as valid separators.
+      expect(normalizeMarkdownTables(input)).toBe(input);
+    }
+  });
+
+  it('does NOT mistake a non-separator pipe-line as a separator (e.g. "|a-b|c|")', () => {
+    // Edge case: a row whose cells happen to start with `-` should NOT
+    // be treated as a separator row.
+    const input = 'Intro.\n| a-b | c |\n| 1 | 2 |';
+    // No separator row anywhere → no normalization.
+    expect(normalizeMarkdownTables(input)).toBe(input);
   });
 });

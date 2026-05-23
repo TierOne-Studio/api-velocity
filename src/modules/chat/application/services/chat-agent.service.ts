@@ -1,25 +1,30 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
   AIMessage,
   HumanMessage,
+  SystemMessage,
   type BaseMessage,
 } from '@langchain/core/messages';
 import { createAgent } from 'langchain';
 import { ConfigService } from '../../../../shared/config';
 import type { AirweaveSearchResultSummary } from '../../../airweave/application/services/airweave.service';
-import { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
+// Imports from the projects MODULE BARREL (projects/index.ts) — the barrel
+// is the public surface for the projects module; deep imports into
+// projects/application/providers/... are a coupling smell.
 import type {
   AgentToolContext,
   AgentToolEvent,
   AgentToolPersistedCall,
-} from '../../../projects/application/providers/data-source-provider.interface';
-import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
+  ProjectDataSource,
+} from '../../../projects';
+import { DataSourceRegistry } from '../../../projects';
 import {
   createSearchKnowledgeBaseTool,
   dedupeAndCapSources,
 } from './chat-agent-tools';
+import { ChatRouterService } from './chat-router.service';
 
 type GenerateReplyParams = {
   organizationName: string;
@@ -61,6 +66,20 @@ export type ChatStreamEvent =
       truncated: boolean;
       durationMs: number;
     }
+  // sql_planning and sql_executing fire BEFORE sql_executed during SQL
+  // turns. All three are additive — older SPA consumers ignore unknown
+  // event types.
+  | {
+      type: 'sql_planning';
+      connectionId: string;
+      connectionName: string;
+    }
+  | {
+      type: 'sql_executing';
+      connectionId: string;
+      connectionName: string;
+      sql: string;
+    }
   | { type: 'done'; reply: ChatReply };
 
 // Appended to the configured expert-persona system prompt only in the agent
@@ -82,47 +101,18 @@ You have access to a \`search_knowledge_base\` tool that queries this organizati
 Do not answer non-trivial organization-specific questions from memory — the tool is your only authoritative source for facts about this organization's code, docs, specs, and other indexed material.
 `.trim();
 
-// Appended AFTER the base tool-usage protocol when the project has at least
-// one attached database source. Routes between `search_knowledge_base` and
-// `query_database` by the *shape of the answer* the user wants, not by
-// keywords. A question like "how many users signed up last week?" must route
-// to the DB even though the word "database" never appears.
-const AGENT_DATABASE_ROUTING_PROTOCOL = `
-
-## When the project has an attached database
-
-**This section overrides the "always start with \`search_knowledge_base\`" rule above whenever the question is a facts-from-rows question.** You also have a \`query_database\` tool, and for those questions you must call it *first* — not after a round of \`search_knowledge_base\`.
-
-Route by the *shape of the answer* the user wants, not by keywords in the question. The user does NOT need to mention "database", "SQL", or a table name.
-
-**Call \`query_database\` FIRST (before any other tool) when the question is any of:**
-
-- A count, total, or aggregate: "how many users?", "how many orders last week", "total revenue", "average session length".
-- A "who / which / when / where" lookup over entities that typically live in tables (users, orders, sessions, events, subscriptions, customers, projects, etc.): "who signed up today?", "which order is largest?", "when was the last payment?".
-- A listing or filter: "list users created this month", "show failed payments", "top 10 customers by spend".
-- A concrete factual question about entity state: "is user X active?", "does order Y have a refund?".
-
-For any of the above, pass the user's question verbatim as the \`question\` argument — the inner sub-agent will inspect the schema and write the SQL. Do not pre-translate to SQL yourself. Do not ask the user for clarification before trying; the inner agent is good at disambiguating tables and columns.
-
-**Call \`search_knowledge_base\` (not \`query_database\`) when the question is about:**
-
-- How something is built, implemented, or architected.
-- What a function / class / module does, or where to find it.
-- Why a design choice was made, or what a spec/doc says.
-- Onboarding, setup, or operational procedures.
-
-**Ambiguous questions:** if a question could read either way (e.g. "tell me about our users" — overview docs vs. a row summary), try \`query_database\` first. Row counts and concrete values are more useful and more verifiable than doc snippets for most factual asks. You can always follow up with \`search_knowledge_base\` afterward if the rows alone don't cover the question.
-
-When you call \`query_database\`, cite the numbers you got back; never reshape them. When results are empty or the tool returns an error, say so plainly and consider falling back to \`search_knowledge_base\` for a complementary view.
-
-(L3: the "Answer format after query_database" guidance — prose only,
-no SQL fences, no meta-commentary — now lives in the tool description
-itself at \`src/modules/chat/prompts/query-database-tool-description.md\`.
-The LLM sees that text every time it considers calling the tool, which
-is the right scope for per-call output rules. The streaming-fence
-sanitizer in this file is the belt; the tool-description rule is the
-suspenders.)
-`.trim();
+// SSoT routing taxonomy: `src/modules/chat/prompts/chat-routing-rules.md`
+// defines the SQL / RAG / Ambiguous buckets and is consumed by BOTH the
+// ChatRouterService classifier prompt and the agent prompt builder below
+// (`buildAgentRoutingProtocol`). The classifier needs the same bucket
+// definitions as the agent prompt — one file, two consumers.
+//
+// The "Answer format after query_database" guidance (prose only, no SQL
+// fences, no meta-commentary) lives in
+// `src/modules/chat/prompts/query-database-tool-description.md`. The LLM
+// sees that text every time it considers calling the tool. The
+// streaming-fence sanitizer in this file is the belt; the tool-
+// description rule is the suspenders.
 
 // LLMs occasionally ignore the "do not include the SQL query" instruction and
 // emit a fenced code block containing SQL anyway. In practice the model uses
@@ -139,7 +129,7 @@ suspenders.)
 // first non-whitespace token inside the block is one of the UNAMBIGUOUS
 // SQL DML/DDL keywords below. Ambiguous keywords (BEGIN, COMMIT, ROLLBACK)
 // overlap with Pascal / Plpgsql / Ada code-block bodies, so we require
-// them to be followed by SQL-shaped syntax to count as SQL (M3 tighten).
+// them to be followed by SQL-shaped syntax to count as SQL.
 //
 // Specifically:
 //   - `BEGIN` matches only when followed by TRANSACTION|WORK|`;` (the
@@ -194,6 +184,124 @@ export function stripJsonFencesFromReply(content: string): string {
   return out;
 }
 
+// LLMs occasionally emit a markdown table immediately after prose without
+// the blank-line separator GitHub-flavored-markdown requires for the table
+// to render as a table. The result on the SPA is the table syntax getting
+// absorbed into the preceding paragraph as inline text — e.g.
+//
+//   "...45 questions.| User | Email |"   (no \n at all)
+//   "...45 questions.\n| User | Email |" (single \n, also not enough)
+//
+// Both should render as a table; the second one is what the markdown spec
+// SHOULD recognize but most renderers (including remark/rehype with their
+// default settings) require a true paragraph break (\n\n) before a table
+// header to treat it as a fresh block.
+//
+// Prompt-tuning this is unreliable — the model emits these patterns at
+// random token boundaries regardless of how loud the system prompt is.
+// The mechanical guarantee is to insert the missing blank line as a
+// post-processing pass on the assembled content.
+//
+// Implementation: line-based, NOT regex-only. An earlier regex-only
+// version over-matched the header-separator → data-row boundary in real
+// tables (e.g. `:|---|` would match as "prose char `:` then table line")
+// and inserted blank lines INSIDE tables, breaking them apart.
+//
+// Two passes:
+//   1. PRE-SPLIT mixed lines: any line containing "prose-text then
+//      table-syntax" (e.g. "foo.| User |") splits at the boundary
+//      into ["foo.", "| User |"].
+//   2. LINE WALK: ensure a blank line precedes any table line that
+//      follows a non-table, non-empty line. Consecutive table lines
+//      (header → separator → rows) are left glued together.
+//
+// Heuristic for "table line": trimmed line starts with `|` AND has at
+// least TWO pipes total. Avoids over-matching ordinary prose like
+// "Hello | World" (only one pipe).
+
+function isTableLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('|')) return false;
+  return (trimmed.match(/\|/g)?.length ?? 0) >= 2;
+}
+
+// A GFM table separator row: each cell is dashes, optionally with leading
+// or trailing colons for alignment. Matching this is what distinguishes
+// "real markdown table" from "prose with pipes in it" — the spec REQUIRES
+// a separator immediately after the header for table recognition.
+//   ✓ | --- | --- |
+//   ✓ |:--|--:|:-:|
+//   ✗ | a  | b  |   (cells contain non-dash content)
+function isTableSeparator(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) return false;
+  // Split on `|`, drop the empty leading/trailing chunks, require ≥1 cell,
+  // and every cell must match the separator pattern.
+  const cells = trimmed.slice(1, -1).split('|');
+  if (cells.length === 0) return false;
+  return cells.every((cell) => /^\s*:?-+:?\s*$/.test(cell));
+}
+
+// "foo.| User | Email |\n|---|---|" → ["foo.", "| User | Email |\n|---|---|"]
+//   (split because the line ends with a table-header shape AND the next
+//    line is a separator row)
+// "columns: a | b | c |" (no separator follows) → unchanged
+// "Hello | World"        → ["Hello | World"]    (single pipe, never table)
+function splitLineAtTableStart(line: string, nextLine: string | undefined): string[] {
+  // Match: non-pipe prose ($1) followed by a pipe segment containing
+  // at least two pipes ($2). Anchored to the start so we only split
+  // at the FIRST prose→table boundary in the line.
+  const m = line.match(/^([^|]+?)(\|[^\n]*\|)$/);
+  if (!m) return [line];
+  if ((m[2].match(/\|/g)?.length ?? 0) < 2) return [line];
+  if (m[1].trim() === '') return [line];
+  // Only split when the candidate table-header line ($2) is immediately
+  // followed by a GFM separator row on the NEXT line. Without this
+  // guard, prose like "columns: name | email | status |" would be split
+  // into a fake one-row table with a bogus blank line in front of it.
+  // The separator-row lookahead is what GFM itself uses to recognize a
+  // real table — borrow the same heuristic.
+  if (nextLine === undefined || !isTableSeparator(nextLine)) return [line];
+  return [m[1], m[2]];
+}
+
+export function normalizeMarkdownTables(content: string): string {
+  if (!content) return content;
+  // Pass 1: split prose-then-table lines. Pass the NEXT line into the
+  // splitter so it can verify a separator row follows the candidate
+  // header (the GFM contract for a real table).
+  const rawLines = content.split('\n');
+  const split: string[] = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    const expanded = splitLineAtTableStart(rawLines[i]!, rawLines[i + 1]);
+    for (const ex of expanded) split.push(ex);
+  }
+  // Pass 2: insert blank lines before new table blocks. A "table block"
+  // starts at a header line whose NEXT line in the (post-split) sequence
+  // is a separator row — same GFM rule. Continuation rows after the
+  // separator stay glued together (no blank line between rows).
+  const out: string[] = [];
+  for (let i = 0; i < split.length; i++) {
+    const line = split[i]!;
+    if (isTableLine(line)) {
+      const next = split[i + 1];
+      const prev = out[out.length - 1];
+      const isHeader = next !== undefined && isTableSeparator(next);
+      if (
+        isHeader &&
+        prev !== undefined &&
+        prev !== '' &&
+        !isTableLine(prev) &&
+        !isTableSeparator(prev)
+      ) {
+        out.push('');
+      }
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
 function sanitizeDbAssistantReplyText(
   raw: string,
   hadPersistedSqlCalls: boolean,
@@ -202,6 +310,11 @@ function sanitizeDbAssistantReplyText(
   if (hadPersistedSqlCalls) {
     out = stripJsonFencesFromReply(out);
   }
+  // Table normalization runs LAST so it operates on the final, fence-
+  // stripped content. Always runs (not gated on hadPersistedSqlCalls) —
+  // models sometimes emit tables in non-DB responses too (e.g.
+  // search_knowledge_base summaries that list results in a table).
+  out = normalizeMarkdownTables(out);
   return out;
 }
 
@@ -353,6 +466,13 @@ export class ChatAgentService {
   constructor(
     private readonly registry: DataSourceRegistry,
     private readonly configService: ConfigService,
+    // Optional injection so callers that wire only (registry, configService)
+    // keep working. `dispatchRoute` is the single consumer; when missing
+    // AND the router flag is on, the dispatcher logs a warning and falls
+    // through to the agent path (fail-safe — the consequence is "router
+    // optimization not applied", not a correctness bug).
+    @Optional()
+    private readonly chatRouter?: ChatRouterService,
   ) {}
 
   private getOrCreateLlm(apiKey: string): ChatOpenAI {
@@ -387,7 +507,14 @@ export class ChatAgentService {
     }
   }
 
-  private logReplySummary(reply: ChatReply, startedAt: number): void {
+  private logReplySummary(
+    reply: ChatReply,
+    startedAt: number,
+    // Explicit `route` so router-sql / router-rag turns are not
+    // mislabeled as `agent` in the chat.turn telemetry event. Defaults
+    // to 'agent' so the agent path's existing callers are unaffected.
+    route: 'agent' | 'sql' | 'rag' = 'agent',
+  ): void {
     const metadata = reply.metadata;
     const sources = metadata.sources;
     console.info('[ChatAgentService] reply generated', {
@@ -396,6 +523,44 @@ export class ChatAgentService {
       resultCount: metadata.resultCount,
       toolCallCount: metadata.toolCallCount,
       durationMs: Date.now() - startedAt,
+    });
+    this.recordTurnMetrics(reply, startedAt, route);
+  }
+
+  /**
+   * Canonical per-turn telemetry event. Emitted alongside `logReplySummary`
+   * so dashboards can parse a stable shape without depending on the informal
+   * operational log above.
+   *
+   * `route` is a local arg, not a field on `AgentToolContext` — the ctx
+   * shape stays unchanged. The dispatcher passes its chosen route at the
+   * call site.
+   *
+   * `llmCalls` is approximated as `toolCallCount + 1` (each tool call
+   * implies an outer-agent LLM round-trip; +1 for final synthesis).
+   * Sub-agent internal LLM calls are NOT counted here.
+   *
+   * `tokensTotal` is the outer agent's final-message
+   * `usage_metadata.total_tokens` when available; null otherwise. Same
+   * scope caveat as `llmCalls`.
+   */
+  private recordTurnMetrics(
+    reply: ChatReply,
+    startedAt: number,
+    route: 'agent' | 'sql' | 'rag' = 'agent',
+  ): void {
+    const metadata = reply.metadata;
+    const toolCallCount =
+      typeof metadata.toolCallCount === 'number' ? metadata.toolCallCount : 0;
+    const tokensTotal =
+      typeof metadata.totalTokens === 'number' ? metadata.totalTokens : null;
+    console.info('[ChatAgentService] chat.turn', {
+      event: 'chat.turn',
+      route,
+      llmCalls: toolCallCount + 1,
+      durationMs: Date.now() - startedAt,
+      tokensTotal,
+      generator: metadata.generator,
     });
   }
 
@@ -484,10 +649,9 @@ export class ChatAgentService {
         new HumanMessage(this.buildAgentUserMessage(params)),
       ];
 
-      // H2: tightened cap. Was max(10, maxIterations * 4) — let a confused
-      // outer agent burn ~32 graph transitions on a typical config. Halved
-      // to max(8, maxIterations * 2). The outer agent's job is one or two
-      // tool calls plus a synthesis, so 16 transitions is plenty headroom.
+      // Cap chosen so a confused outer agent cannot burn excessive graph
+      // transitions. The outer agent's job is one or two tool calls plus
+      // a synthesis, so max(8, maxIterations * 2) is ample headroom.
       const recursionLimit = Math.max(8, maxIterations * 2);
 
       const result = await agent.invoke(
@@ -545,6 +709,55 @@ export class ChatAgentService {
     }
   }
 
+  /**
+   * Chooses how this chat turn is executed.
+   *
+   * Returns `{ kind: 'agent' }` (the default agent path) when:
+   *   - CHAT_ROUTER_ENABLED is false (default), OR
+   *   - ChatRouterService is not wired, OR
+   *   - the classifier returned route='agent' (genuinely ambiguous), OR
+   *   - the classifier returned route='sql'|'rag' but with confidence
+   *     below CHAT_ROUTER_CONFIDENCE_PCT, OR
+   *   - the classifier threw / returned malformed output (its own safe
+   *     fallback maps that to route='agent' with confidence=0).
+   *
+   * Returns `{ kind: 'sql', decision }` or `{ kind: 'rag', decision }`
+   * when the classifier was confident. The streaming entry point then
+   * dispatches to `runSqlRoute` / `runRagRoute` which bypass createAgent
+   * to save one outer-agent LLM call.
+   *
+   * Fail-fast: no retry on classifier failure. The agent path is the
+   * safety net for everything below the confidence threshold; double-
+   * classifying wastes tokens.
+   */
+  private async dispatchRoute(
+    params: GenerateReplyParams,
+    apiKey: string,
+  ): Promise<
+    | { kind: 'agent' }
+    | { kind: 'sql' | 'rag'; decision: import('./chat-router.service').RouterDecision }
+  > {
+    if (!this.configService.getChatRouterEnabled()) {
+      return { kind: 'agent' };
+    }
+    if (!this.chatRouter) {
+      console.warn(
+        '[ChatAgentService] CHAT_ROUTER_ENABLED is true but ChatRouterService is not injected; falling through to agent path',
+      );
+      return { kind: 'agent' };
+    }
+    const decision = await this.chatRouter.classify({
+      question: params.question,
+      apiKey,
+      sources: params.sources,
+    });
+    const threshold = this.configService.getChatRouterConfidenceThreshold();
+    if (decision.route === 'agent' || decision.confidence < threshold) {
+      return { kind: 'agent' };
+    }
+    return { kind: decision.route, decision };
+  }
+
   private buildAgentContext(params: GenerateReplyParams): AgentToolContext {
     // Caller-provided signal takes precedence so an HTTP client disconnect
     // can cancel in-flight tools. When absent we still expose a never-aborted
@@ -581,6 +794,293 @@ export class ChatAgentService {
   }
 
   /**
+   * Direct route execution for SQL turns. Bypasses `createAgent` (no
+   * agent graph, no tool-decision LLM call). Saves ~1 outer-agent LLM
+   * call per turn vs the agent path.
+   *
+   * Sequence:
+   *   1. Build ctx, find `query_database` provider tool.
+   *   2. Yield `searching` to signal the SPA we're querying.
+   *   3. Invoke the tool directly. This populates ctx.eventSink with
+   *      `sql_executed` and ctx.persistedCalls with the audit entry,
+   *      same side effects as the agent path. sql_planning /
+   *      sql_executing events fire from inside runSqlSubAgent via the
+   *      onSqlProgress callback and bubble through ctx.eventSink —
+   *      drained below before synthesis chunks start.
+   *   4. Drain ctx.eventSink → yield every event in order.
+   *   5. Synthesize the answer via llm.stream() — yield chunks.
+   *   6. Yield `done` with metadata (generator='router-sql').
+   *
+   * On tool error: yield a `done` event with an error-shape reply
+   * (generator='router-sql-error'). No retry; the agent path is not a
+   * fallback here because the router has already committed to SQL — a
+   * tool failure is the user's signal that the query path is broken.
+   */
+  private async *runSqlRoute(
+    params: GenerateReplyParams,
+    apiKey: string,
+    decision: import('./chat-router.service').RouterDecision,
+  ): AsyncGenerator<ChatStreamEvent> {
+    // Capture turn start at function entry so `logReplySummary` sees
+    // the true elapsed time rather than ~0 from a same-line Date.now().
+    const startedAt = Date.now();
+    const ctx = this.buildAgentContext(params);
+    try {
+      const providerTools = this.registry.getAgentToolsFor(params.sources, ctx);
+      const queryDbTool = providerTools.find((t) => t.name === 'query_database');
+      if (!queryDbTool) {
+        // Router said SQL but no query_database tool was contributed.
+        // Possible if sources changed between router classification and
+        // execution. Fall back to a plain error reply rather than
+        // pretending the route is valid.
+        yield {
+          type: 'done',
+          reply: {
+            content:
+              'The router selected a SQL route but no database tool is available for this project.',
+            metadata: { generator: 'router-sql-error' },
+          },
+        };
+        return;
+      }
+      yield { type: 'searching', query: params.question };
+      try {
+        await queryDbTool.invoke({
+          question: params.question,
+          source_id: decision.sourceId,
+        });
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        yield {
+          type: 'done',
+          reply: {
+            content: `Sorry — the database query failed: ${msg}`,
+            metadata: {
+              generator: 'router-sql-error',
+              ...(ctx.persistedCalls.length > 0 && {
+                sqlCalls: ctx.persistedCalls,
+              }),
+            },
+          },
+        };
+        return;
+      }
+      // Drain sql_planning / sql_executing / sql_executed events the
+      // tool pushed (sub-agent fires sql_planning + sql_executing via
+      // the onSqlProgress callback).
+      for (const ev of this.drainSqlEvents(ctx)) {
+        yield ev;
+      }
+      // Synthesize the prose answer. Build a minimal synthesis prompt
+      // around the recorded persistedCalls so the LLM has the SQL +
+      // outcome without us re-running the query.
+      const synthSystemPrompt = this.buildAgentSystemPrompt(params);
+      const llm = this.getOrCreateLlm(apiKey);
+      const synthUserMessage = this.buildRouterSqlSynthesisUserMessage(
+        params,
+        ctx,
+      );
+      yield { type: 'thinking' };
+      let finalContent = '';
+      const fenceStripper = createStreamingDbReplyFenceStripper(ctx);
+      try {
+        // Use SystemMessage + HumanMessage rather than concatenating
+        // both into a single HumanMessage. The agent path
+        // (createAgent.systemPrompt) materializes the system prompt as
+        // a proper system-role message; router-sql synthesis must match
+        // that shape or instruction adherence and prompt-cache
+        // eligibility diverge between the two paths.
+        const stream = await llm.stream([
+          new SystemMessage(synthSystemPrompt),
+          new HumanMessage(synthUserMessage),
+        ]);
+        for await (const chunk of stream) {
+          const text = this.stringifyMessageContent(chunk.content);
+          if (text.length === 0) continue;
+          const safe = fenceStripper.push(text);
+          if (safe.length === 0) continue;
+          finalContent += safe;
+          yield { type: 'chunk', content: safe };
+        }
+        const trailing = fenceStripper.flush();
+        if (trailing.length > 0) {
+          finalContent += trailing;
+          yield { type: 'chunk', content: trailing };
+        }
+      } catch (error) {
+        console.error('[ChatAgentService] router-sql synthesis failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Surface a degraded reply rather than crashing the stream.
+        const degraded = ctx.persistedCalls
+          .map(
+            (call) =>
+              `Ran SQL on ${call.connectionName}: ${call.rowCount} row(s).`,
+          )
+          .join('\n');
+        finalContent = degraded || 'The database query ran but synthesis failed.';
+        yield { type: 'chunk', content: finalContent };
+      }
+      // Router-path metadata for telemetry parity with the agent path.
+      // recordTurnMetrics reads `toolCallCount` and `totalTokens` from
+      // metadata; without them every router turn would log llmCalls=1,
+      // tokensTotal=null even when the sub-agent consumed many calls /
+      // tokens. Approximation: 1 outer LLM call (synthesis below) + 1
+      // logical "tool call" (the query_database invocation, which
+      // itself wraps an entire sub-agent run — sub-agent internal
+      // calls are NOT visible here, same limitation as the agent path).
+      // Token usage surfaces the synthesis call's `usage_metadata`
+      // when available; sub-agent token usage requires a separate
+      // accounting pass.
+      const reply: ChatReply = {
+        content: sanitizeDbAssistantReplyText(
+          finalContent,
+          ctx.persistedCalls.length > 0,
+        ),
+        metadata: {
+          generator: 'router-sql',
+          routerConfidence: decision.confidence,
+          toolCallCount: 1,
+          ...(ctx.persistedCalls.length > 0 && {
+            sqlCalls: ctx.persistedCalls,
+          }),
+        },
+      };
+      this.logReplySummary(reply, startedAt, 'sql');
+      yield { type: 'done', reply };
+    } finally {
+      await this.runCleanupCallbacks(ctx);
+    }
+  }
+
+  /**
+   * Direct route execution for RAG turns. Bypasses `createAgent`. Same
+   * pattern as `runSqlRoute` but invokes the search tool directly and
+   * yields `searching` once for the single retrieval. Saves ~1 LLM
+   * call vs the agent path (no tool-decision step).
+   */
+  private async *runRagRoute(
+    params: GenerateReplyParams,
+    apiKey: string,
+    decision: import('./chat-router.service').RouterDecision,
+  ): AsyncGenerator<ChatStreamEvent> {
+    // Capture turn start at function entry — see runSqlRoute for rationale.
+    const startedAt = Date.now();
+    const ctx = this.buildAgentContext(params);
+    try {
+      const collectedSources: AirweaveSearchResultSummary[] = [];
+      const searchTool = createSearchKnowledgeBaseTool({
+        projectId: params.projectId,
+        sources: params.sources,
+        registry: this.registry,
+        sourcesSink: collectedSources,
+        resultLimit: this.configService.getChatAgentToolResultLimit(),
+        resultCharCap: this.configService.getChatAgentToolResultCharCap(),
+        searchTier: this.configService.getChatAgentSearchTier(),
+        retrievalStrategy: this.configService.getChatAgentRetrievalStrategy(),
+      });
+      yield { type: 'searching', query: params.question };
+      let searchResult: string;
+      try {
+        const raw = await searchTool.invoke({ query: params.question });
+        searchResult = typeof raw === 'string' ? raw : JSON.stringify(raw);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        yield {
+          type: 'done',
+          reply: {
+            content: `Sorry — the knowledge base search failed: ${msg}`,
+            metadata: { generator: 'router-rag-error' },
+          },
+        };
+        return;
+      }
+      const maxSources = this.configService.getChatAgentMaxSources();
+      const uniqueSources = dedupeAndCapSources(collectedSources, maxSources);
+      const synthSystemPrompt = this.buildAgentSystemPrompt(params);
+      const llm = this.getOrCreateLlm(apiKey);
+      const synthUserMessage = this.buildRouterRagSynthesisUserMessage(
+        params,
+        searchResult,
+      );
+      yield { type: 'thinking' };
+      let finalContent = '';
+      try {
+        // SystemMessage + HumanMessage — see runSqlRoute synthesis
+        // above for the rationale (agent-path parity).
+        const stream = await llm.stream([
+          new SystemMessage(synthSystemPrompt),
+          new HumanMessage(synthUserMessage),
+        ]);
+        for await (const chunk of stream) {
+          const text = this.stringifyMessageContent(chunk.content);
+          if (text.length === 0) continue;
+          finalContent += text;
+          yield { type: 'chunk', content: text };
+        }
+      } catch (error) {
+        console.error('[ChatAgentService] router-rag synthesis failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        finalContent =
+          uniqueSources.length > 0
+            ? `Found ${uniqueSources.length} relevant source(s) but synthesis failed.`
+            : 'No relevant sources were found and synthesis failed.';
+        yield { type: 'chunk', content: finalContent };
+      }
+      // Router-path metadata for telemetry parity — see runSqlRoute.
+      const reply: ChatReply = {
+        content: finalContent,
+        metadata: {
+          generator: 'router-rag',
+          routerConfidence: decision.confidence,
+          toolCallCount: 1,
+          sources: this.mapSources(uniqueSources),
+          resultCount: uniqueSources.length,
+        },
+      };
+      this.logReplySummary(reply, startedAt, 'rag');
+      yield { type: 'done', reply };
+    } finally {
+      await this.runCleanupCallbacks(ctx);
+    }
+  }
+
+  private buildRouterSqlSynthesisUserMessage(
+    params: GenerateReplyParams,
+    ctx: AgentToolContext,
+  ): string {
+    const callsSummary = ctx.persistedCalls
+      .map(
+        (call) =>
+          `- Connection: ${call.connectionName} (id=${call.connectionId})\n  SQL: ${call.sql}\n  Rows: ${call.rowCount}${call.truncated ? ' (truncated)' : ''}`,
+      )
+      .join('\n');
+    return [
+      `User question: ${params.question}`,
+      '',
+      'Database query was executed. Results:',
+      callsSummary,
+      '',
+      'The full result rows are also available via the executed SQL (the SPA renders them in a structured panel). Provide a concise prose answer to the user that cites the numbers from the results. Do NOT restate the SQL; do NOT include code fences.',
+    ].join('\n');
+  }
+
+  private buildRouterRagSynthesisUserMessage(
+    params: GenerateReplyParams,
+    searchResult: string,
+  ): string {
+    return [
+      `User question: ${params.question}`,
+      '',
+      'Knowledge base search results:',
+      searchResult,
+      '',
+      'Synthesize a concise expert answer grounded only in the search results above. If the results are insufficient, say so plainly.',
+    ].join('\n');
+  }
+
+  /**
    * Streaming version of generateAgentReply. Uses agent.stream() to yield
    * events in real time as the agent reasons, calls tools, and generates
    * the final answer. Falls back to generateAgentReply + fake chunking
@@ -597,6 +1097,21 @@ export class ChatAgentService {
         yield { type: 'chunk', content: chunk };
       }
       yield { type: 'done', reply: fallback };
+      return;
+    }
+
+    // Dispatcher branch. When the router is off or unconfident, this
+    // returns { kind: 'agent' } and the streaming flow below runs
+    // unchanged. When the router classifies confidently, dispatch to
+    // the direct-route handler which bypasses createAgent and saves
+    // one outer-agent LLM call.
+    const dispatch = await this.dispatchRoute(params, apiKey);
+    if (dispatch.kind === 'sql') {
+      yield* this.runSqlRoute(params, apiKey, dispatch.decision);
+      return;
+    }
+    if (dispatch.kind === 'rag') {
+      yield* this.runRagRoute(params, apiKey, dispatch.decision);
       return;
     }
 
@@ -833,14 +1348,16 @@ export class ChatAgentService {
       AGENT_TOOL_USAGE_PROTOCOL,
     ];
     if (hasDatabaseSource) {
-      // H2: structural capabilities chip — concrete tool menu with attached
-      // DB names enumerated, so the LLM routes off a named menu rather than
-      // pure intent classification under a prose-rules conflict. Goes BEFORE
-      // the routing protocol so the model has the chip in mind when reading
-      // the rules. Only emitted when a DB source is attached so the
-      // zero-DB-project prompt remains byte-identical to the pre-H2 version.
+      // Concrete tool menu with attached DB names enumerated, so the
+      // LLM routes off a named menu rather than pure intent
+      // classification under a prose-rules conflict. Goes BEFORE the
+      // routing protocol so the model has the chip in mind when
+      // reading the rules. Only emitted when a DB source is attached
+      // so the zero-DB-project prompt remains byte-identical.
       sections.push(this.buildCapabilitiesChip(params));
-      sections.push(AGENT_DATABASE_ROUTING_PROTOCOL);
+      // Loads the SSoT routing taxonomy from chat-routing-rules.md and
+      // wraps it with the agent-specific tool-use directives.
+      sections.push(this.buildAgentRoutingProtocol());
     }
     sections.push(
       `## Context\n\nYou are answering questions for the organization: ${params.organizationName}, scoped to the project: ${params.projectName}. Every question is implicitly scoped to that project's configured data sources.`,
@@ -850,7 +1367,7 @@ export class ChatAgentService {
   }
 
   /**
-   * H2: structural capability menu. Generates a one-liner per capability
+   * Structural capability menu. Generates a one-liner per capability
    * with concrete data (DB names) so the LLM has a named menu to route
    * off, not just prose rules.
    */
@@ -872,6 +1389,42 @@ export class ChatAgentService {
       `- \`query_database\` — natural-language read-only queries against the attached SQL database(s): ${dbList}.`,
       '',
       'Use the tool that fits the *shape of the answer* the user wants. The rules below detail when each applies; this menu is the concrete list of what you can call.',
+    ].join('\n');
+  }
+
+  /**
+   * Agent-specific wrapper around the classifier-neutral routing
+   * taxonomy loaded from `chat-routing-rules.md`. Combines:
+   *
+   *   1. A short heading framing the bucket choice as a tool-call decision.
+   *   2. The taxonomy verbatim (SSoT — same text loaded by
+   *      ChatRouterService for the classifier prompt; drift is
+   *      asserted-against in chat-agent.dispatch.spec.ts).
+   *   3. Agent-only tool-use directives that translate each bucket into
+   *      a concrete tool call. Keeping them here (rather than in the
+   *      rules file) preserves the rules file's consumer-neutral shape
+   *      so the router can load the same taxonomy.
+   *
+   * The SSoT spec (chat-agent.dispatch.spec.ts) enumerates each
+   * behavioral assertion as a fixture so a dropped directive surfaces
+   * as a regression.
+   */
+  private buildAgentRoutingProtocol(): string {
+    const rules = this.configService.getChatRoutingRules();
+    return [
+      '## When the project has an attached database',
+      '',
+      'You have a `query_database` tool in addition to `search_knowledge_base`. Route each question per the taxonomy below.',
+      '',
+      rules,
+      '',
+      '## Tool-use directives (agent-specific)',
+      '',
+      '- For **SQL bucket** questions, call `query_database` FIRST (before `search_knowledge_base`). Pass the user\'s question verbatim as the `question` argument — the inner sub-agent will inspect the schema and write the SQL. Do not pre-translate to SQL yourself; do not ask the user for clarification before trying.',
+      '- For **RAG bucket** questions, call `search_knowledge_base`.',
+      '- For the **Ambiguous bucket**, try `query_database` first; if results are empty, follow up with `search_knowledge_base` for a complementary view.',
+      '',
+      'When you call `query_database`, cite the numbers you got back; never reshape them. When results are empty or the tool returns an error, say so plainly and consider falling back to `search_knowledge_base` for a complementary view.',
     ].join('\n');
   }
 

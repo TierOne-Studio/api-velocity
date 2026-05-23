@@ -7,6 +7,7 @@ import { DatabaseModule } from '../../shared/infrastructure/database/database.mo
 import { ConfigService } from '../../shared/config/config.service';
 import { ChatController } from './api/controllers/chat.controller';
 import { ChatAgentService } from './application/services/chat-agent.service';
+import { ChatRouterService } from './application/services/chat-router.service';
 import { ChatService } from './application/services/chat.service';
 import { ChatDatabaseRepository } from './infrastructure/persistence/repositories/chat.database-repository';
 import { CHAT_REPOSITORY } from './domain/repositories/chat.repository.interface';
@@ -35,6 +36,9 @@ import { ChatMigrationService } from './chat.migration';
   providers: [
     ChatService,
     ChatAgentService,
+    // Consumed by ChatAgentService's dispatcher branch when
+    // CHAT_ROUTER_ENABLED=true; otherwise the classifier is never invoked.
+    ChatRouterService,
     ChatMigrationService,
     { provide: CHAT_REPOSITORY, useClass: ChatDatabaseRepository },
   ],

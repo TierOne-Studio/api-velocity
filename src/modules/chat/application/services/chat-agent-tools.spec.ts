@@ -7,9 +7,11 @@ import type {
   AirweaveSearchResponse,
   AirweaveSearchResultSummary,
 } from '../../../airweave/application/services/airweave.service';
-import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
-import type { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
-import type { DataSourceProvider } from '../../../projects/application/providers/data-source-provider.interface';
+import type {
+  ProjectDataSource,
+  DataSourceRegistry,
+  DataSourceProvider,
+} from '../../../projects';
 
 function makeResult(
   overrides: Partial<AirweaveSearchResultSummary> = {},

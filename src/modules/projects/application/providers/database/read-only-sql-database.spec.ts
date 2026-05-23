@@ -1,7 +1,8 @@
 import { jest } from '@jest/globals';
 
 // Captured params from the most recent SqlDatabase.fromDataSourceParams
-// call. Used by the H1c spec below to assert `includesTables` is forwarded.
+// call. Used by the table-scoping specs below to assert `includesTables`
+// is forwarded.
 const capturedFromDataSourceParams: Array<Record<string, unknown>> = [];
 
 jest.unstable_mockModule('@langchain/classic/sql_db', () => {
@@ -14,6 +15,7 @@ jest.unstable_mockModule('@langchain/classic/sql_db', () => {
       appDataSource: unknown;
       includesTables?: string[];
       ignoreTables?: string[];
+      sampleRowsInTableInfo?: number;
     }) {
       capturedFromDataSourceParams.push({ ...params });
       return new SqlDatabase(params.appDataSource);
@@ -109,7 +111,7 @@ describe('ReadOnlySqlDatabase', () => {
     );
   });
 
-  // H1c: per-connection table allowlist forwards to SqlToolkit introspection.
+  // Per-connection table allowlist forwards to SqlToolkit introspection.
   describe('fromDataSource forwards table scoping options', () => {
     beforeEach(() => {
       capturedFromDataSourceParams.length = 0;
@@ -149,6 +151,37 @@ describe('ReadOnlySqlDatabase', () => {
       });
       const last = capturedFromDataSourceParams.at(-1)!;
       expect(last.ignoreTables).toEqual(['migrations']);
+    });
+
+    // `sampleRowsInTableInfo` is plumbed through to the parent
+    // `SqlDatabase.fromDataSourceParams`. Default behavior (undefined =>
+    // parent's own default of 3) preserved; explicit 0 from
+    // ConfigService suppresses sample rows in `info-sql` output.
+    it('passes sampleRowsInTableInfo when provided', async () => {
+      const { ds } = buildFakeDataSource();
+      await ReadOnlySqlDatabase.fromDataSource(ds as never, limits, {
+        sampleRowsInTableInfo: 0,
+      });
+      const last = capturedFromDataSourceParams.at(-1)!;
+      expect(last.sampleRowsInTableInfo).toBe(0);
+    });
+
+    it('passes non-zero sampleRowsInTableInfo when provided', async () => {
+      const { ds } = buildFakeDataSource();
+      await ReadOnlySqlDatabase.fromDataSource(ds as never, limits, {
+        sampleRowsInTableInfo: 3,
+      });
+      const last = capturedFromDataSourceParams.at(-1)!;
+      expect(last.sampleRowsInTableInfo).toBe(3);
+    });
+
+    it('omits sampleRowsInTableInfo when not provided (parent default applies)', async () => {
+      const { ds } = buildFakeDataSource();
+      await ReadOnlySqlDatabase.fromDataSource(ds as never, limits, {
+        includesTables: ['users'],
+      });
+      const last = capturedFromDataSourceParams.at(-1)!;
+      expect(last.sampleRowsInTableInfo).toBeUndefined();
     });
   });
 });

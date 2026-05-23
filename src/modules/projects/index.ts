@@ -25,4 +25,8 @@ export type {
 export type {
   DataSourceProvider,
   DataSourceSearchOptions,
+  AgentToolContext,
+  AgentToolEvent,
+  AgentToolPersistedCall,
+  SqlProgressCallback,
 } from './application/providers/data-source-provider.interface';

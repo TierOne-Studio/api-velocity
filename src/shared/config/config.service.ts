@@ -383,6 +383,145 @@ export class ConfigService {
     return process.env.SQL_AGENT_MODEL?.trim() || null;
   }
 
+  /**
+   * When true, removes the `query-checker` tool from the SqlToolkit
+   * set exposed to the sub-agent. The checker performs an extra LLM
+   * call to lint SQL before execution; for SELECT-only queries with a
+   * one-shot repair path, the error from `query-sql` is enough.
+   *
+   * Default false. Flip per-environment when you want the LLM-call
+   * reduction.
+   */
+  getSqlAgentDropCheckerEnabled(): boolean {
+    return process.env.SQL_AGENT_DROP_CHECKER_ENABLED === 'true';
+  }
+
+  /**
+   * Number of sample rows the SqlToolkit's `info-sql` tool includes
+   * per table. The library default is 3 (500-1500 tokens of
+   * low-signal noise per call). Setting `SQL_AGENT_SAMPLE_ROWS=0`
+   * disables sample rows entirely — column types alone are usually
+   * enough for SQL generation.
+   *
+   * Returns `null` when unset so the caller can omit the parameter
+   * and let `SqlDatabase` apply its own default (3). Set
+   * `SQL_AGENT_SAMPLE_ROWS` explicitly (0–10) to override.
+   */
+  getSqlAgentSampleRows(): number | null {
+    const raw = process.env.SQL_AGENT_SAMPLE_ROWS;
+    if (raw === undefined || raw.trim().length === 0) {
+      return null;
+    }
+    return this.boundedInt('SQL_AGENT_SAMPLE_ROWS', 0, { min: 0, max: 10 });
+  }
+
+  /**
+   * When true, ChatToSqlService fetches the connection's schema via
+   * `db.getTableInfo()` (deterministic, no LLM) BEFORE invoking the
+   * sub-agent and injects it into the sub-agent's system prompt. The
+   * sub-agent then skips `list_tables_sql_db` / `info_sql_db` on the
+   * typical turn (saving ~2 LLM round-trips per SQL turn).
+   *
+   * The SqlToolkit's discovery tools remain callable as a fallback if
+   * the agent decides the prewarmed schema is incomplete (they're not
+   * removed from the toolkit set — just made redundant).
+   *
+   * Default false.
+   */
+  getSqlAgentPrewarmSchemaEnabled(): boolean {
+    return process.env.SQL_AGENT_PREWARM_SCHEMA_ENABLED === 'true';
+  }
+
+  /**
+   * When true, ChatAgentService consults ChatRouterService to classify
+   * each turn BEFORE running the agent. High-confidence sql / rag
+   * routes call the corresponding tool directly (saving the
+   * outer-agent's tool-decision LLM round-trip). Low confidence or
+   * route=='agent' falls through to the agentic loop unchanged.
+   *
+   * Default false.
+   */
+  getChatRouterEnabled(): boolean {
+    return process.env.CHAT_ROUTER_ENABLED === 'true';
+  }
+
+  /**
+   * Operator-specified router model. The router service's fallback
+   * chain is `getChatRouterModel() ?? getOpenAiModel()`. Returns null
+   * when unset so callers chain explicitly. Set to a small/cheap
+   * model (gpt-X-mini, etc) for per-turn classification — the bigger
+   * model is for synthesis, not classification.
+   */
+  getChatRouterModel(): string | null {
+    return process.env.CHAT_ROUTER_MODEL?.trim() || null;
+  }
+
+  /**
+   * Confidence threshold above which the dispatcher takes the
+   * router's chosen route. Below this threshold, fall through to the
+   * agent fallback path. Stored as a 0-100 percent for env legibility;
+   * the getter returns the 0-1 fraction.
+   *
+   * Default 70 (0.7). Bounded 0-100.
+   */
+  getChatRouterConfidenceThreshold(): number {
+    return (
+      this.boundedInt('CHAT_ROUTER_CONFIDENCE_PCT', 70, { min: 0, max: 100 }) /
+      100
+    );
+  }
+
+  /**
+   * Loads the classifier-neutral routing taxonomy from
+   * `chat-routing-rules.md`. SSoT: both the router's classifier
+   * prompt and the agent's tool-use prompt embed this exact text via
+   * composition.
+   *
+   * Test coverage:
+   *   - `chat-router.service.spec.ts` (§"SSoT: classifier prompt
+   *     composition") verifies the ROUTER-side embedding of the
+   *     taxonomy + placeholder substitution behavior.
+   *   - `chat-agent.dispatch.spec.ts` (§"SSoT routing-rules embedded
+   *     in agent system prompt") verifies the CROSS-CONSUMER property
+   *     — the rules section is byte-identical between the router and
+   *     agent prompt builds.
+   *
+   * If the two consumers drift, the dispatch spec's byte-identical
+   * assertion catches it.
+   */
+  getChatRoutingRules(): string {
+    return this.loadPrompt({
+      envInline: process.env.CHAT_ROUTING_RULES?.trim(),
+      envPath: process.env.CHAT_ROUTING_RULES_PATH?.trim(),
+      fileCandidates: [
+        resolve(process.cwd(), 'dist/modules/chat/prompts/chat-routing-rules.md'),
+        resolve(process.cwd(), 'src/modules/chat/prompts/chat-routing-rules.md'),
+      ],
+      fallback:
+        '# Routing taxonomy (built-in fallback)\n\n- SQL: counts/listings/entity-state from tables.\n- RAG: explanations/docs/specs.\n- Ambiguous → prefer SQL.',
+      cacheKey: 'chat-routing-rules',
+    });
+  }
+
+  /**
+   * Loads the router classifier prompt (`chat-router-system.md`).
+   * The router service injects the routing rules (loaded separately
+   * above) where the prompt has the `{{ROUTING_RULES}}` placeholder.
+   */
+  getChatRouterSystemPrompt(): string {
+    return this.loadPrompt({
+      envInline: process.env.CHAT_ROUTER_SYSTEM_PROMPT?.trim(),
+      envPath: process.env.CHAT_ROUTER_SYSTEM_PROMPT_PATH?.trim(),
+      fileCandidates: [
+        resolve(process.cwd(), 'dist/modules/chat/prompts/chat-router-system.md'),
+        resolve(process.cwd(), 'src/modules/chat/prompts/chat-router-system.md'),
+      ],
+      fallback:
+        'Classify the question into {sql, rag, agent}. Respond with strict JSON: {"route","confidence","reasoning"}.\n\n{{ROUTING_RULES}}',
+      cacheKey: 'chat-router-system',
+    });
+  }
+
   getSqlAgentSystemPrompt(): string {
     return this.loadPrompt({
       envInline: process.env.SQL_AGENT_SYSTEM_PROMPT?.trim(),
@@ -442,7 +581,7 @@ export class ConfigService {
   }
 
   /**
-   * Bounded-int parser for SQL-agent and similar safety-critical knobs (L2).
+   * Bounded-int parser for SQL-agent and similar safety-critical knobs.
    *
    * - Unset env: returns `fallback` silently (this is the normal case).
    * - Env set but unparseable / NaN: returns `fallback` and logs a warning

@@ -26,7 +26,40 @@ export type AgentToolEvent =
       rows: unknown[];
       truncated: boolean;
       durationMs: number;
+    }
+  | {
+      // Fires from ChatToSqlService before the sub-agent starts
+      // running. Surfaces "I am about to think about your SQL question"
+      // to the SPA during the otherwise-silent sub-agent latency
+      // window. Drained at the next outer-loop message boundary —
+      // typically immediately before sql_executed.
+      type: 'sql_planning';
+      connectionId: string;
+      connectionName: string;
+    }
+  | {
+      // Fires from inside runSqlSubAgent — wrapped around the query-sql
+      // tool's invoke — right BEFORE db.run() is called. Carries the
+      // actual SQL string so the SPA can show "Running: SELECT ..."
+      // progress chrome before the query returns.
+      type: 'sql_executing';
+      connectionId: string;
+      connectionName: string;
+      sql: string;
     };
+
+/**
+ * Synchronous progress callback that `runSqlSubAgent` and
+ * `ChatToSqlService.askConnection` fire to push progress events into
+ * `ctx.eventSink` mid-execution. The streaming loop in
+ * `ChatAgentService` drains the sink at the next outer-loop message
+ * boundary (typically the tool message immediately preceding
+ * `sql_executed`).
+ *
+ * Optional everywhere — callers that don't care for the progress
+ * surface (non-streaming paths) pass undefined and pay no overhead.
+ */
+export type SqlProgressCallback = (event: AgentToolEvent) => void;
 
 export type AgentToolPersistedCall = {
   connectionId: string;

@@ -89,6 +89,11 @@ export function createQueryDatabaseTool(
         resolved,
         question,
         ctx.signal,
+        // Forward sql_planning / sql_executing events from
+        // ChatToSqlService and the sub-agent into the same
+        // ctx.eventSink the chat-agent streaming loop drains. Additive
+        // — SPAs that don't recognize these types ignore them.
+        (event) => ctx.eventSink.push(event),
       );
 
       if (outcome.ok === false) {
@@ -112,13 +117,13 @@ export function createQueryDatabaseTool(
         durationMs: outcome.durationMs,
       });
 
-      // M7: redact single-quoted string literals before persisting. The
-      // live eventSink event above carries the unredacted SQL to the SPA
-      // of the CURRENT user (their own session, no cross-user leak), but
-      // `persistedCalls` lands in the assistant message metadata visible
-      // to every org member reading the conversation later. A SELECT like
-      // `WHERE email = 'user@x.test'` would leak that email; redaction
-      // replaces literals with `'<redacted>'`.
+      // Redact single-quoted string literals before persisting. The
+      // live eventSink event above carries the unredacted SQL to the
+      // SPA of the CURRENT user (their own session, no cross-user
+      // leak), but `persistedCalls` lands in the assistant message
+      // metadata visible to every org member reading the conversation
+      // later. A SELECT like `WHERE email = 'user@x.test'` would leak
+      // that email; redaction replaces literals with `'<redacted>'`.
       const persisted: AgentToolPersistedCall = {
         connectionId: resolved.id,
         connectionName: resolved.name,

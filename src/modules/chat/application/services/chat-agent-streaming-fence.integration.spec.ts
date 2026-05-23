@@ -40,8 +40,10 @@ type ChatAgentServiceType =
 let ChatAgentService:
   typeof import('./chat-agent.service').ChatAgentService;
 
-import type { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
-import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
+import type {
+  DataSourceRegistry,
+  ProjectDataSource,
+} from '../../../projects';
 
 function makeAirweaveSource(): ProjectDataSource {
   return {
@@ -115,6 +117,12 @@ function buildService(): ChatAgentServiceType {
     getChatAgentHistoryWindow: jest.fn().mockReturnValue(6),
     getChatAgentSearchTier: jest.fn().mockReturnValue('classic'),
     getChatAgentRetrievalStrategy: jest.fn().mockReturnValue(undefined),
+    // Router OFF — this spec exercises the agent path.
+    getChatRoutingRules: jest
+      .fn()
+      .mockReturnValue('# RULES\n- SQL: counts.\n- RAG: docs.'),
+    getChatRouterEnabled: jest.fn().mockReturnValue(false),
+    getChatRouterConfidenceThreshold: jest.fn().mockReturnValue(0.7),
   };
 
   return new ChatAgentService(registry, configService as never);

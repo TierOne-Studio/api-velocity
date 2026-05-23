@@ -24,7 +24,18 @@ Use the returned rows to synthesize a natural-language answer for the user. Cite
 
 ## Answer format after calling this tool
 
-Reply with **prose only** — one optional short sentence framing the answer, then the facts (do **not** print two similar introductions back-to-back). For multi-row results, use **one** markdown pipe table (`| column |`) — put a **blank line** before the table header row so it parses reliably.
+Reply with **prose only** — one optional short sentence framing the answer, then the facts (do **not** print two similar introductions back-to-back).
+
+### Tabular data: pick exactly one format
+
+For multi-row results, choose ONE format — **never both**:
+
+- **Markdown pipe table** (`| column |`) — preferred when the rows have 3+ columns or the user explicitly asked for a "table". **MUST be preceded by a blank line** and **MUST be the only formatting** for the data. Do not also list the same rows as bullets above or below the table.
+- **Bullet list** — preferred when rows have ≤2 attributes per row (e.g. "name and count") and the user did not ask for a table. Use bullets OR a table, never both.
+
+A common failure mode is to write a bullet list and then append a markdown table beneath it as a "summary". This renders as one giant bullet on the SPA because markdown requires a blank line before the table header and the bullet immediately preceding it absorbs the table syntax. **Pick one format and commit to it for the whole answer.**
+
+### Other format rules
 
 **Do NOT include the SQL query in your reply.** The application UI renders the executed SQL automatically from tool metadata as a separate, collapsible panel beneath your answer. Repeating the SQL in your text creates duplication and renders poorly.
 
@@ -35,14 +46,40 @@ Describe roles or counts in natural language—avoid quoting raw DB column names
 - Do **not** paste the JSON array/object of `rows`, or any ```json fenced dump of query results.
 - Do **not** narrate implementation details (how you joined tables, which columns you matched, or schema exploration steps). Go straight to the answer.
 
-### Correct example
+### Correct examples
 
-  There are 4 users in your database.
+Single value:
+
+```
+There are 4 users in your database.
+```
+
+Multi-row, table (user asked for a "table" — pick table only, blank line before header):
+
+```
+Here are the users and their chat counts:
+
+| User | Email | Chats | Questions |
+|---|---|---:|---:|
+| Mariano Ravinale | mravinale@tierone.studio | 7 | 45 |
+| Michael Grabert | michael@motionmeetings.co | 0 | 0 |
+```
+
+Multi-row, bullets (user just wanted "users" — pick bullets only):
+
+```
+Found 4 users:
+
+- Mariano Ravinale (mravinale@tierone.studio): 7 chats, 45 questions
+- Michael Grabert (michael@motionmeetings.co): 0 chats, 0 questions
+```
 
 ### Incorrect examples (do NOT do this)
 
+- **Mixing bullets AND a table for the same data.** Pick one.
+- Omitting the blank line before a markdown table header — the SPA's markdown renderer requires it.
 - Pasting a ```sql fenced block with the query — the UI already shows it.
-- Pasting a ```json fenced block (or raw `[{...}]`) with row payloads — use prose or a markdown table instead.
+- Pasting a ```json fenced block (or raw `[{...}]`) with row payloads — use prose, a single table, or a single bullet list.
 - Explaining "I joined table X with table Y on …" before the answer — omit that entirely.
 - Wrapping any part of the reply in a code fence.
 - Prefixing the answer with "I ran the query …" or other meta-commentary about tool use.

@@ -85,7 +85,7 @@ describe('ConfigService', () => {
   // the SQL validator's instance-metadata deny-list, the SET TRANSACTION READ
   // ONLY chokepoint, and operator-provisioned SELECT-only Postgres role grants.
 
-  describe('boundedInt SQL_AGENT_* knobs (L2)', () => {
+  describe('boundedInt SQL_AGENT_* knobs', () => {
     let warnSpy: jest.SpiedFunction<typeof console.warn>;
     beforeEach(() => {
       warnSpy = jest
@@ -154,6 +154,48 @@ describe('ConfigService', () => {
       const cs = new ConfigService();
       expect(cs.getSqlAgentMaxSqlLength()).toBe(256);
       expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    // Regression guard: getSqlAgentSampleRows MUST return null when
+    // unset so the caller can omit the parameter and let the
+    // underlying SqlDatabase apply its own default (3). Returning 0
+    // unconditionally would be a silent behavior change from "3 sample
+    // rows in info-sql" to "0 sample rows".
+    describe('getSqlAgentSampleRows', () => {
+      it('returns null when SQL_AGENT_SAMPLE_ROWS is unset', () => {
+        delete process.env.SQL_AGENT_SAMPLE_ROWS;
+        const cs = new ConfigService();
+        expect(cs.getSqlAgentSampleRows()).toBeNull();
+      });
+
+      it('returns null when SQL_AGENT_SAMPLE_ROWS is empty string', () => {
+        process.env.SQL_AGENT_SAMPLE_ROWS = '';
+        const cs = new ConfigService();
+        expect(cs.getSqlAgentSampleRows()).toBeNull();
+      });
+
+      it('returns the explicit value when set to 0 (opt-in optimization)', () => {
+        process.env.SQL_AGENT_SAMPLE_ROWS = '0';
+        const cs = new ConfigService();
+        expect(cs.getSqlAgentSampleRows()).toBe(0);
+      });
+
+      it('returns the explicit value when set in range (1-10)', () => {
+        process.env.SQL_AGENT_SAMPLE_ROWS = '5';
+        const cs = new ConfigService();
+        expect(cs.getSqlAgentSampleRows()).toBe(5);
+      });
+
+      it('warns + returns the default (0) when env is above max', () => {
+        // boundedInt's fallback when out of range is the second arg (0
+        // here). This isn't ideal — out-of-range arguably should also
+        // be null — but it matches the pattern of the other safety-
+        // critical knobs. Operators get a warn so the issue surfaces.
+        process.env.SQL_AGENT_SAMPLE_ROWS = '999';
+        const cs = new ConfigService();
+        expect(cs.getSqlAgentSampleRows()).toBe(0);
+        expect(warnSpy).toHaveBeenCalled();
+      });
     });
   });
 
@@ -664,7 +706,7 @@ describe('ConfigService', () => {
         );
       });
 
-      // C3a: previous-key validation during rotation window
+      // Previous-key validation during rotation window
       it('passes validation when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is unset', () => {
         process.env.AUTH_SECRET = 'secret';
         process.env.DATABASE_URL = 'postgresql://localhost/db';
@@ -696,7 +738,7 @@ describe('ConfigService', () => {
       });
   });
 
-  describe('getProjectSourceSecretKeyPrevious (C3a)', () => {
+  describe('getProjectSourceSecretKeyPrevious', () => {
     it('returns null when unset', () => {
       delete process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS;
       const cs = new ConfigService();

@@ -5,8 +5,7 @@ import type {
   AirweaveSearchTier,
   AirweaveSearchRetrievalStrategy,
 } from '../../../airweave/application/services/airweave.service';
-import type { DataSourceRegistry } from '../../../projects/application/providers/data-source.registry';
-import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
+import type { DataSourceRegistry, ProjectDataSource } from '../../../projects';
 
 const searchKnowledgeBaseSchema = z.object({
   query: z
