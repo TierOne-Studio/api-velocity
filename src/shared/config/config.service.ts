@@ -480,8 +480,19 @@ export class ConfigService {
    * Phase 3a (R) — loads the classifier-neutral routing taxonomy from
    * `chat-routing-rules.md`. This is the SSoT: both the router's
    * classifier prompt and (in P3b) the agent's tool-use prompt embed
-   * this exact text via composition. Drift between consumers is caught
-   * by the SSoT assertion test in chat-router.service.spec.ts.
+   * this exact text via composition.
+   *
+   * Test coverage:
+   *   - `chat-router.service.spec.ts` (§"SSoT: classifier prompt
+   *     composition") verifies the ROUTER-side embedding of the
+   *     taxonomy + placeholder substitution behavior.
+   *   - `chat-agent.dispatch.spec.ts` (§"SSoT routing-rules embedded
+   *     in agent system prompt") verifies the CROSS-CONSUMER property
+   *     — the rules section is byte-identical between the router and
+   *     agent prompt builds.
+   *
+   * If the two consumers drift, the dispatch spec's byte-identical
+   * assertion catches it.
    */
   getChatRoutingRules(): string {
     return this.loadPrompt({

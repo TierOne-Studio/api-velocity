@@ -44,10 +44,12 @@ export type SubAgentConfig = {
   dropCheckerEnabled?: boolean;
   /**
    * Phase 2 (S1) — when present, the rendered schema text (from
-   * `db.getTableInfo()`) is prepended to `systemPrompt` so the agent
-   * starts with full schema context. Combined with the prompt rule in
-   * `sql-tool-usage.md`, this lets the agent skip `list-sql` / `info-sql`
-   * on the typical turn — saving ~2 LLM round-trips.
+   * `db.getTableInfo()`) is APPENDED to `systemPrompt` under the
+   * canonical header `## Schema (already loaded — DO NOT re-fetch)`
+   * so the agent starts with full schema context. The "DO NOT re-fetch"
+   * line is the contract `sql-tool-usage.md` references when telling
+   * the agent to skip `list-sql` / `info-sql` on the typical turn —
+   * saving ~2 LLM round-trips.
    *
    * When undefined, the agent runs as today (must discover schema via
    * tool calls). Wired from `ChatToSqlService` only when
