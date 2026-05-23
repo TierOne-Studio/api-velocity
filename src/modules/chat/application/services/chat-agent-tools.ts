@@ -5,7 +5,6 @@ import type {
   AirweaveSearchTier,
   AirweaveSearchRetrievalStrategy,
 } from '../../../airweave/application/services/airweave.service';
-// Phase 4-lite: barrel import (proposal §3.4 directional smell fix).
 import type { DataSourceRegistry, ProjectDataSource } from '../../../projects';
 
 const searchKnowledgeBaseSchema = z.object({

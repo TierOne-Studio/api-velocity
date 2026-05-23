@@ -85,7 +85,7 @@ describe('ConfigService', () => {
   // the SQL validator's instance-metadata deny-list, the SET TRANSACTION READ
   // ONLY chokepoint, and operator-provisioned SELECT-only Postgres role grants.
 
-  describe('boundedInt SQL_AGENT_* knobs (L2)', () => {
+  describe('boundedInt SQL_AGENT_* knobs', () => {
     let warnSpy: jest.SpiedFunction<typeof console.warn>;
     beforeEach(() => {
       warnSpy = jest
@@ -156,13 +156,12 @@ describe('ConfigService', () => {
       expect(warnSpy).not.toHaveBeenCalled();
     });
 
-    // Copilot PR #22 C6 regression guard: getSqlAgentSampleRows MUST
-    // return null when unset so the caller can omit the parameter and
-    // let the underlying SqlDatabase apply its own default (3). An
-    // earlier version returned 0 unconditionally — a silent behavior
-    // change on merge from "3 sample rows in info-sql" to "0 sample
-    // rows", contradicting the PR's default-off contract.
-    describe('getSqlAgentSampleRows (Copilot C6 contract)', () => {
+    // Regression guard: getSqlAgentSampleRows MUST return null when
+    // unset so the caller can omit the parameter and let the
+    // underlying SqlDatabase apply its own default (3). Returning 0
+    // unconditionally would be a silent behavior change from "3 sample
+    // rows in info-sql" to "0 sample rows".
+    describe('getSqlAgentSampleRows', () => {
       it('returns null when SQL_AGENT_SAMPLE_ROWS is unset', () => {
         delete process.env.SQL_AGENT_SAMPLE_ROWS;
         const cs = new ConfigService();
@@ -707,7 +706,7 @@ describe('ConfigService', () => {
         );
       });
 
-      // C3a: previous-key validation during rotation window
+      // Previous-key validation during rotation window
       it('passes validation when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is unset', () => {
         process.env.AUTH_SECRET = 'secret';
         process.env.DATABASE_URL = 'postgresql://localhost/db';
@@ -739,7 +738,7 @@ describe('ConfigService', () => {
       });
   });
 
-  describe('getProjectSourceSecretKeyPrevious (C3a)', () => {
+  describe('getProjectSourceSecretKeyPrevious', () => {
     it('returns null when unset', () => {
       delete process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS;
       const cs = new ConfigService();

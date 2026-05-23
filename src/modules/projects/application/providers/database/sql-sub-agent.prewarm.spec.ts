@@ -1,13 +1,13 @@
-// Phase 2 (S1) — schema pre-warming in runSqlSubAgent.
+// Schema pre-warming in runSqlSubAgent.
 //
 // Tests the splice: when SubAgentConfig.prewarmedSchema is set,
 // createAgent receives a systemPrompt that contains the schema block
-// under the canonical "DO NOT re-fetch" header. When unset (today's
+// under the canonical "DO NOT re-fetch" header. When unset (the
 // default), createAgent's systemPrompt is byte-identical to config's.
 //
-// Mocking pattern mirrors sql-sub-agent.spec.ts / sql-sub-agent.config
-// .spec.ts — `jest.unstable_mockModule` for the ESM-mode repo. See
-// docs/langchain-agent-refactor-proposal.md §0.1.
+// Mocking pattern mirrors sql-sub-agent.spec.ts /
+// sql-sub-agent.config.spec.ts — `jest.unstable_mockModule` for the
+// ESM-mode repo.
 
 import { jest } from '@jest/globals';
 import { z } from 'zod';
@@ -52,7 +52,7 @@ const baseConfig = {
   maxIterations: 8,
 };
 
-describe('runSqlSubAgent — Phase 2 S1 schema pre-warming', () => {
+describe('runSqlSubAgent — schema pre-warming', () => {
   beforeEach(() => {
     capturedSystemPrompt = null;
     mockToolkitTools = [
@@ -119,9 +119,9 @@ describe('runSqlSubAgent — Phase 2 S1 schema pre-warming', () => {
     expect(capturedSystemPrompt!).toContain(schema);
   });
 
-  it('preserves toolkit tool set when pre-warming (does not interfere with S2.1 drop-checker)', async () => {
+  it('preserves toolkit tool set when pre-warming (does not interfere with drop-checker)', async () => {
     // Combination test: pre-warm + dropCheckerEnabled. Both knobs are
-    // independent and operator-composable per the proposal §7 matrix.
+    // independent and operator-composable.
     mockToolkitTools.push({
       name: 'query-checker',
       description: 'checker',

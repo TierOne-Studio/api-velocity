@@ -40,7 +40,6 @@ type ChatAgentServiceType =
 let ChatAgentService:
   typeof import('./chat-agent.service').ChatAgentService;
 
-// Phase 4-lite: barrel import.
 import type {
   DataSourceRegistry,
   ProjectDataSource,
@@ -118,7 +117,7 @@ function buildService(): ChatAgentServiceType {
     getChatAgentHistoryWindow: jest.fn().mockReturnValue(6),
     getChatAgentSearchTier: jest.fn().mockReturnValue('classic'),
     getChatAgentRetrievalStrategy: jest.fn().mockReturnValue(undefined),
-    // Phase 3b additions (router OFF — this spec exercises the agent path).
+    // Router OFF — this spec exercises the agent path.
     getChatRoutingRules: jest
       .fn()
       .mockReturnValue('# RULES\n- SQL: counts.\n- RAG: docs.'),

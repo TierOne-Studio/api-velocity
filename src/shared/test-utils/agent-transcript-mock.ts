@@ -1,20 +1,19 @@
 // Shared test utilities for mocking the langchain agent layer with a
 // deterministic, scripted transcript. Used by the chat-agent pin tests.
 //
-// WHY THIS EXISTS (per docs/langchain-agent-refactor-proposal.md §0.1).
-// This repo runs Jest in ESM mode (`useESM: true` in package.json's `jest`
-// block + `node --experimental-vm-modules`). The legacy `jest.mock(...)`
-// pattern from CJS does NOT work here — the static `import` of a module
-// resolves to the real implementation before the mock factory registers.
-// Every chat-agent spec that needs to control LLM behavior MUST use
-// `jest.unstable_mockModule` + dynamic `import()` of the SUT.
+// WHY THIS EXISTS.
+// This repo runs Jest in ESM mode (`useESM: true` in package.json's
+// `jest` block + `node --experimental-vm-modules`). The legacy
+// `jest.mock(...)` pattern from CJS does NOT work here — the static
+// `import` of a module resolves to the real implementation before the
+// mock factory registers. Every chat-agent spec that needs to control
+// LLM behavior MUST use `jest.unstable_mockModule` + dynamic
+// `import()` of the SUT.
 //
-// The proposal's earlier draft mocked `@langchain/openai`. After reading
-// the existing `chat-agent-streaming-fence.integration.spec.ts` we discovered
-// the cleaner pattern is to mock `langchain.createAgent` directly — the
-// returned agent's `stream()` and `invoke()` are what the chat-agent service
-// drives, and faking those is sufficient. The underlying `ChatOpenAI` is
-// never instantiated under the mock.
+// The mock targets `langchain.createAgent` directly — the returned
+// agent's `stream()` and `invoke()` are what the chat-agent service
+// drives, and faking those is sufficient. The underlying `ChatOpenAI`
+// is never instantiated under the mock.
 //
 // This file exports building blocks. The spec wires them up like so:
 //

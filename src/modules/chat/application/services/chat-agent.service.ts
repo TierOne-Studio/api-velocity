@@ -10,12 +10,9 @@ import {
 import { createAgent } from 'langchain';
 import { ConfigService } from '../../../../shared/config';
 import type { AirweaveSearchResultSummary } from '../../../airweave/application/services/airweave.service';
-// Phase 4-lite: imports from the projects MODULE BARREL (projects/index.ts)
-// instead of deep paths into projects/application/providers/...
-// Fixes the chat → projects directional smell (proposal §3.4's goal) without
-// requiring a full file move. The barrel is the public surface; deep imports
-// were a coupling smell. See Phase 4-lite commit message for the deviation
-// from the proposal's literal "move to data-sources/" plan.
+// Imports from the projects MODULE BARREL (projects/index.ts) — the barrel
+// is the public surface for the projects module; deep imports into
+// projects/application/providers/... are a coupling smell.
 import type {
   AgentToolContext,
   AgentToolEvent,
@@ -69,9 +66,9 @@ export type ChatStreamEvent =
       truncated: boolean;
       durationMs: number;
     }
-  // Phase 3b (R / §3.6): fire BEFORE sql_executed during SQL turns. Both
-  // are additive — older SPA consumers ignore unknown event types
-  // (verified during P0.5 spa-velocity audit at chatService.ts:88-115).
+  // sql_planning and sql_executing fire BEFORE sql_executed during SQL
+  // turns. All three are additive — older SPA consumers ignore unknown
+  // event types.
   | {
       type: 'sql_planning';
       connectionId: string;
@@ -104,19 +101,11 @@ You have access to a \`search_knowledge_base\` tool that queries this organizati
 Do not answer non-trivial organization-specific questions from memory — the tool is your only authoritative source for facts about this organization's code, docs, specs, and other indexed material.
 `.trim();
 
-// Phase 3b (R / SSoT): the routing TAXONOMY (which buckets exist, what
-// counts as SQL vs RAG vs Ambiguous) now lives in
-// `src/modules/chat/prompts/chat-routing-rules.md` as the single source
-// of truth (consumed by BOTH ChatRouterService and the agent prompt
-// builder below — see `buildAgentRoutingProtocol`). The agent-specific
-// tool-use directives that the previous inline constant carried
-// (verbatim-question, cite-numbers, follow-up-on-empty, fences-in-tool-
-// description) are now composed around the loaded taxonomy at runtime.
-//
-// Why the rules file and not the constant: with the router on (P3b
-// dispatcher) the classifier needs the same bucket definitions, written
-// as taxonomy not as tool-use prose. One file, two consumers, one set
-// of bucket definitions — SSoT.
+// SSoT routing taxonomy: `src/modules/chat/prompts/chat-routing-rules.md`
+// defines the SQL / RAG / Ambiguous buckets and is consumed by BOTH the
+// ChatRouterService classifier prompt and the agent prompt builder below
+// (`buildAgentRoutingProtocol`). The classifier needs the same bucket
+// definitions as the agent prompt — one file, two consumers.
 //
 // The "Answer format after query_database" guidance (prose only, no SQL
 // fences, no meta-commentary) lives in
@@ -140,7 +129,7 @@ Do not answer non-trivial organization-specific questions from memory — the to
 // first non-whitespace token inside the block is one of the UNAMBIGUOUS
 // SQL DML/DDL keywords below. Ambiguous keywords (BEGIN, COMMIT, ROLLBACK)
 // overlap with Pascal / Plpgsql / Ada code-block bodies, so we require
-// them to be followed by SQL-shaped syntax to count as SQL (M3 tighten).
+// them to be followed by SQL-shaped syntax to count as SQL.
 //
 // Specifically:
 //   - `BEGIN` matches only when followed by TRANSACTION|WORK|`;` (the
@@ -255,7 +244,7 @@ function isTableSeparator(line: string): boolean {
 
 // "foo.| User | Email |\n|---|---|" → ["foo.", "| User | Email |\n|---|---|"]
 //   (split because the line ends with a table-header shape AND the next
-//    line is a separator row — Copilot N6 fix)
+//    line is a separator row)
 // "columns: a | b | c |" (no separator follows) → unchanged
 // "Hello | World"        → ["Hello | World"]    (single pipe, never table)
 function splitLineAtTableStart(line: string, nextLine: string | undefined): string[] {
@@ -266,12 +255,12 @@ function splitLineAtTableStart(line: string, nextLine: string | undefined): stri
   if (!m) return [line];
   if ((m[2].match(/\|/g)?.length ?? 0) < 2) return [line];
   if (m[1].trim() === '') return [line];
-  // N6 fix: only split when the candidate table-header line ($2) is
-  // immediately followed by a GFM separator row on the NEXT line. Without
-  // this guard, prose like "columns: name | email | status |" got
-  // split into a fake one-row table and a bogus blank line inserted in
-  // front of it. The separator-row lookahead is what GFM itself uses to
-  // recognize a real table — borrow the same heuristic.
+  // Only split when the candidate table-header line ($2) is immediately
+  // followed by a GFM separator row on the NEXT line. Without this
+  // guard, prose like "columns: name | email | status |" would be split
+  // into a fake one-row table with a bogus blank line in front of it.
+  // The separator-row lookahead is what GFM itself uses to recognize a
+  // real table — borrow the same heuristic.
   if (nextLine === undefined || !isTableSeparator(nextLine)) return [line];
   return [m[1], m[2]];
 }
@@ -477,13 +466,11 @@ export class ChatAgentService {
   constructor(
     private readonly registry: DataSourceRegistry,
     private readonly configService: ConfigService,
-    // Phase 3b (R): optional injection so existing specs that wire only
-    // (registry, configService) keep working. The dispatcher in
-    // `dispatchRoute` is the single place that uses it; when missing
-    // AND the router flag is on, the dispatcher logs a warning and
-    // falls through to the agent path (fail-safe rather than fail-loud
-    // because the consequence is "router optimization not applied", not
-    // a correctness bug).
+    // Optional injection so callers that wire only (registry, configService)
+    // keep working. `dispatchRoute` is the single consumer; when missing
+    // AND the router flag is on, the dispatcher logs a warning and falls
+    // through to the agent path (fail-safe — the consequence is "router
+    // optimization not applied", not a correctness bug).
     @Optional()
     private readonly chatRouter?: ChatRouterService,
   ) {}
@@ -523,11 +510,9 @@ export class ChatAgentService {
   private logReplySummary(
     reply: ChatReply,
     startedAt: number,
-    // P3b telemetry fix (Copilot C1): without the explicit `route` arg the
-    // router-sql / router-rag paths were tagged route='agent' in the
-    // chat.turn event — making the router-win measurement (proposal §3.5)
-    // unobservable. Default kept for the agent path so existing callers
-    // are unaffected.
+    // Explicit `route` so router-sql / router-rag turns are not
+    // mislabeled as `agent` in the chat.turn telemetry event. Defaults
+    // to 'agent' so the agent path's existing callers are unaffected.
     route: 'agent' | 'sql' | 'rag' = 'agent',
   ): void {
     const metadata = reply.metadata;
@@ -543,24 +528,21 @@ export class ChatAgentService {
   }
 
   /**
-   * Canonical per-turn telemetry event (per docs/langchain-agent-refactor-proposal.md
-   * §3.5). Emitted alongside `logReplySummary` so dashboards can parse a stable
-   * shape without depending on the informal operational log above.
+   * Canonical per-turn telemetry event. Emitted alongside `logReplySummary`
+   * so dashboards can parse a stable shape without depending on the informal
+   * operational log above.
    *
-   * IMPORTANT (per proposal §3.5 + ISP discipline):
-   *   `route` is a LOCAL variable, NOT a field on `AgentToolContext`. The ctx
-   *   shape is unchanged by this refactor — see proposal §11 verification log.
-   *   For P0 every turn is `'agent'`. P3 (router) will pass the dispatcher's
-   *   chosen route at the call site.
+   * `route` is a local arg, not a field on `AgentToolContext` — the ctx
+   * shape stays unchanged. The dispatcher passes its chosen route at the
+   * call site.
    *
-   * `llmCalls` is approximated as `toolCallCount + 1` (each tool call implies
-   * an outer-agent LLM round-trip; +1 for final synthesis). Sub-agent internal
-   * LLM calls are NOT counted here — that requires the progress callback added
-   * in P3b. See docs/refactor-baseline-metrics.md for the gap analysis and
-   * how P1/P2 wins surface (or don't) in this single metric.
+   * `llmCalls` is approximated as `toolCallCount + 1` (each tool call
+   * implies an outer-agent LLM round-trip; +1 for final synthesis).
+   * Sub-agent internal LLM calls are NOT counted here.
    *
-   * `tokensTotal` is the outer agent's final-message `usage_metadata.total_tokens`
-   * when available; null otherwise. Same scope caveat as `llmCalls`.
+   * `tokensTotal` is the outer agent's final-message
+   * `usage_metadata.total_tokens` when available; null otherwise. Same
+   * scope caveat as `llmCalls`.
    */
   private recordTurnMetrics(
     reply: ChatReply,
@@ -667,10 +649,9 @@ export class ChatAgentService {
         new HumanMessage(this.buildAgentUserMessage(params)),
       ];
 
-      // H2: tightened cap. Was max(10, maxIterations * 4) — let a confused
-      // outer agent burn ~32 graph transitions on a typical config. Halved
-      // to max(8, maxIterations * 2). The outer agent's job is one or two
-      // tool calls plus a synthesis, so 16 transitions is plenty headroom.
+      // Cap chosen so a confused outer agent cannot burn excessive graph
+      // transitions. The outer agent's job is one or two tool calls plus
+      // a synthesis, so max(8, maxIterations * 2) is ample headroom.
       const recursionLimit = Math.max(8, maxIterations * 2);
 
       const result = await agent.invoke(
@@ -729,11 +710,11 @@ export class ChatAgentService {
   }
 
   /**
-   * Phase 3b (R) — chooses how this chat turn is executed.
+   * Chooses how this chat turn is executed.
    *
-   * Returns `{ kind: 'agent' }` (the legacy agent path) when:
+   * Returns `{ kind: 'agent' }` (the default agent path) when:
    *   - CHAT_ROUTER_ENABLED is false (default), OR
-   *   - ChatRouterService is not wired (e.g. older test fixtures), OR
+   *   - ChatRouterService is not wired, OR
    *   - the classifier returned route='agent' (genuinely ambiguous), OR
    *   - the classifier returned route='sql'|'rag' but with confidence
    *     below CHAT_ROUTER_CONFIDENCE_PCT, OR
@@ -743,7 +724,7 @@ export class ChatAgentService {
    * Returns `{ kind: 'sql', decision }` or `{ kind: 'rag', decision }`
    * when the classifier was confident. The streaming entry point then
    * dispatches to `runSqlRoute` / `runRagRoute` which bypass createAgent
-   * for the LLM-call reduction.
+   * to save one outer-agent LLM call.
    *
    * Fail-fast: no retry on classifier failure. The agent path is the
    * safety net for everything below the confidence threshold; double-
@@ -813,37 +794,35 @@ export class ChatAgentService {
   }
 
   /**
-   * Phase 3b (R) — direct route execution for SQL turns. Bypasses
-   * `createAgent` (no agent graph, no tool-decision LLM call). Saves
-   * ~1 outer-agent LLM call per turn vs the legacy agent path.
+   * Direct route execution for SQL turns. Bypasses `createAgent` (no
+   * agent graph, no tool-decision LLM call). Saves ~1 outer-agent LLM
+   * call per turn vs the agent path.
    *
    * Sequence:
    *   1. Build ctx, find `query_database` provider tool.
    *   2. Yield `searching` to signal the SPA we're querying.
    *   3. Invoke the tool directly. This populates ctx.eventSink with
    *      `sql_executed` and ctx.persistedCalls with the audit entry,
-   *      same side effects as the agent path. Phase 3b's sql_planning /
-   *      sql_executing callback events (proposal §3.6) fire from inside
-   *      runSqlSubAgent and bubble through ctx.eventSink — drained
-   *      below before synthesis chunks start.
+   *      same side effects as the agent path. sql_planning /
+   *      sql_executing events fire from inside runSqlSubAgent via the
+   *      onSqlProgress callback and bubble through ctx.eventSink —
+   *      drained below before synthesis chunks start.
    *   4. Drain ctx.eventSink → yield every event in order.
    *   5. Synthesize the answer via llm.stream() — yield chunks.
    *   6. Yield `done` with metadata (generator='router-sql').
    *
    * On tool error: yield a `done` event with an error-shape reply
-   * (generator='router-sql-error'). No retry; the agent path is not
-   * a fallback here because the router has already committed to SQL —
-   * a tool failure is the user's signal that the query path is broken.
+   * (generator='router-sql-error'). No retry; the agent path is not a
+   * fallback here because the router has already committed to SQL — a
+   * tool failure is the user's signal that the query path is broken.
    */
   private async *runSqlRoute(
     params: GenerateReplyParams,
     apiKey: string,
     decision: import('./chat-router.service').RouterDecision,
   ): AsyncGenerator<ChatStreamEvent> {
-    // Capture turn start at function entry (Copilot C3 / C5 fix). Without
-    // this `logReplySummary` ran with Date.now() as startedAt → durationMs
-    // always near-zero on router turns, defeating the §3.5 router-win
-    // measurement.
+    // Capture turn start at function entry so `logReplySummary` sees
+    // the true elapsed time rather than ~0 from a same-line Date.now().
     const startedAt = Date.now();
     const ctx = this.buildAgentContext(params);
     try {
@@ -886,9 +865,9 @@ export class ChatAgentService {
         };
         return;
       }
-      // Drain sql_planning / sql_executing / sql_executed events the tool
-      // pushed (sub-agent fires sql_planning + sql_executing via the
-      // onSqlProgress callback wired in Phase 3b §3.6).
+      // Drain sql_planning / sql_executing / sql_executed events the
+      // tool pushed (sub-agent fires sql_planning + sql_executing via
+      // the onSqlProgress callback).
       for (const ev of this.drainSqlEvents(ctx)) {
         yield ev;
       }
@@ -905,12 +884,12 @@ export class ChatAgentService {
       let finalContent = '';
       const fenceStripper = createStreamingDbReplyFenceStripper(ctx);
       try {
-        // Copilot C2 fix: use SystemMessage + HumanMessage rather than
-        // concatenating both into a single HumanMessage. The agent path
-        // (createAgent.systemPrompt) materializes the system prompt as a
-        // proper system-role message; router-sql synthesis must match
-        // that shape or instruction adherence and prompt-cache eligibility
-        // diverge between the two paths.
+        // Use SystemMessage + HumanMessage rather than concatenating
+        // both into a single HumanMessage. The agent path
+        // (createAgent.systemPrompt) materializes the system prompt as
+        // a proper system-role message; router-sql synthesis must match
+        // that shape or instruction adherence and prompt-cache
+        // eligibility diverge between the two paths.
         const stream = await llm.stream([
           new SystemMessage(synthSystemPrompt),
           new HumanMessage(synthUserMessage),
@@ -942,16 +921,17 @@ export class ChatAgentService {
         finalContent = degraded || 'The database query ran but synthesis failed.';
         yield { type: 'chunk', content: finalContent };
       }
-      // Router-path metadata for telemetry parity with agent path (Copilot
-      // C1 + architect M1). recordTurnMetrics reads `toolCallCount` and
-      // `totalTokens` from metadata; without them every router turn would
-      // log llmCalls=1, tokensTotal=null even when the sub-agent consumed
-      // many calls / tokens. We approximate: 1 outer LLM call (synthesis
-      // below) + 1 logical "tool call" (the query_database invocation,
-      // which itself wraps an entire sub-agent run — sub-agent internal
+      // Router-path metadata for telemetry parity with the agent path.
+      // recordTurnMetrics reads `toolCallCount` and `totalTokens` from
+      // metadata; without them every router turn would log llmCalls=1,
+      // tokensTotal=null even when the sub-agent consumed many calls /
+      // tokens. Approximation: 1 outer LLM call (synthesis below) + 1
+      // logical "tool call" (the query_database invocation, which
+      // itself wraps an entire sub-agent run — sub-agent internal
       // calls are NOT visible here, same limitation as the agent path).
-      // For tokens, surface the synthesis call's usage when available;
-      // sub-agent token usage requires a separate accounting pass.
+      // Token usage surfaces the synthesis call's `usage_metadata`
+      // when available; sub-agent token usage requires a separate
+      // accounting pass.
       const reply: ChatReply = {
         content: sanitizeDbAssistantReplyText(
           finalContent,
@@ -974,11 +954,10 @@ export class ChatAgentService {
   }
 
   /**
-   * Phase 3b (R) — direct route execution for RAG turns. Bypasses
-   * `createAgent`. Same pattern as `runSqlRoute` but invokes the search
-   * tool directly and yields `searching` once for the single retrieval.
-   *
-   * Saves ~1 LLM call vs the agent path (no tool-decision step).
+   * Direct route execution for RAG turns. Bypasses `createAgent`. Same
+   * pattern as `runSqlRoute` but invokes the search tool directly and
+   * yields `searching` once for the single retrieval. Saves ~1 LLM
+   * call vs the agent path (no tool-decision step).
    */
   private async *runRagRoute(
     params: GenerateReplyParams,
@@ -1027,8 +1006,8 @@ export class ChatAgentService {
       yield { type: 'thinking' };
       let finalContent = '';
       try {
-        // Copilot C4 fix: SystemMessage + HumanMessage — see runSqlRoute
-        // synthesis above for the rationale (agent-path parity).
+        // SystemMessage + HumanMessage — see runSqlRoute synthesis
+        // above for the rationale (agent-path parity).
         const stream = await llm.stream([
           new SystemMessage(synthSystemPrompt),
           new HumanMessage(synthUserMessage),
@@ -1121,12 +1100,11 @@ export class ChatAgentService {
       return;
     }
 
-    // Phase 3b (R): dispatcher branch. When the router is off or
-    // unconfident, this returns { kind: 'agent' } and the existing
-    // streaming flow below runs unchanged (zero-risk for the default
-    // path). When the router classifies confidently, dispatch to the
-    // direct-route handler which bypasses createAgent and saves one
-    // outer-agent LLM call.
+    // Dispatcher branch. When the router is off or unconfident, this
+    // returns { kind: 'agent' } and the streaming flow below runs
+    // unchanged. When the router classifies confidently, dispatch to
+    // the direct-route handler which bypasses createAgent and saves
+    // one outer-agent LLM call.
     const dispatch = await this.dispatchRoute(params, apiKey);
     if (dispatch.kind === 'sql') {
       yield* this.runSqlRoute(params, apiKey, dispatch.decision);
@@ -1370,15 +1348,14 @@ export class ChatAgentService {
       AGENT_TOOL_USAGE_PROTOCOL,
     ];
     if (hasDatabaseSource) {
-      // H2: structural capabilities chip — concrete tool menu with attached
-      // DB names enumerated, so the LLM routes off a named menu rather than
-      // pure intent classification under a prose-rules conflict. Goes BEFORE
-      // the routing protocol so the model has the chip in mind when reading
-      // the rules. Only emitted when a DB source is attached so the
-      // zero-DB-project prompt remains byte-identical to the pre-H2 version.
+      // Concrete tool menu with attached DB names enumerated, so the
+      // LLM routes off a named menu rather than pure intent
+      // classification under a prose-rules conflict. Goes BEFORE the
+      // routing protocol so the model has the chip in mind when
+      // reading the rules. Only emitted when a DB source is attached
+      // so the zero-DB-project prompt remains byte-identical.
       sections.push(this.buildCapabilitiesChip(params));
-      // Phase 3b (R / SSoT): replaces the inline AGENT_DATABASE_ROUTING_PROTOCOL
-      // constant. Loads the SSoT taxonomy from chat-routing-rules.md and
+      // Loads the SSoT routing taxonomy from chat-routing-rules.md and
       // wraps it with the agent-specific tool-use directives.
       sections.push(this.buildAgentRoutingProtocol());
     }
@@ -1390,7 +1367,7 @@ export class ChatAgentService {
   }
 
   /**
-   * H2: structural capability menu. Generates a one-liner per capability
+   * Structural capability menu. Generates a one-liner per capability
    * with concrete data (DB names) so the LLM has a named menu to route
    * off, not just prose rules.
    */
@@ -1416,25 +1393,21 @@ export class ChatAgentService {
   }
 
   /**
-   * Phase 3b (R / SSoT) — agent-specific wrapper around the
-   * classifier-neutral routing taxonomy loaded from
-   * `chat-routing-rules.md`. Combines:
+   * Agent-specific wrapper around the classifier-neutral routing
+   * taxonomy loaded from `chat-routing-rules.md`. Combines:
    *
    *   1. A short heading framing the bucket choice as a tool-call decision.
    *   2. The taxonomy verbatim (SSoT — same text loaded by
    *      ChatRouterService for the classifier prompt; drift is
    *      asserted-against in chat-agent.dispatch.spec.ts).
    *   3. Agent-only tool-use directives that translate each bucket into
-   *      a concrete tool call. These rules used to live inside the
-   *      AGENT_DATABASE_ROUTING_PROTOCOL constant in this file — moving
-   *      them here keeps them next to the wrapper that uses them
-   *      without polluting the rules file (which has to stay
-   *      consumer-neutral so the router can use it too).
+   *      a concrete tool call. Keeping them here (rather than in the
+   *      rules file) preserves the rules file's consumer-neutral shape
+   *      so the router can load the same taxonomy.
    *
-   * If any tool-use rule from the original constant is dropped during a
-   * future edit, the SSoT spec (chat-agent.dispatch.spec.ts) catches the
-   * regression because it enumerates each behavioral assertion as a
-   * fixture.
+   * The SSoT spec (chat-agent.dispatch.spec.ts) enumerates each
+   * behavioral assertion as a fixture so a dropped directive surfaces
+   * as a regression.
    */
   private buildAgentRoutingProtocol(): string {
     const rules = this.configService.getChatRoutingRules();

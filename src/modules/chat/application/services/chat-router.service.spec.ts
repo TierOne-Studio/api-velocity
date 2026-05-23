@@ -1,4 +1,4 @@
-// Phase 3a (R) — tests for ChatRouterService in isolation.
+// Tests for ChatRouterService in isolation.
 //
 // Mocks @langchain/openai's ChatOpenAI so the classifier never makes a
 // real LLM call. Uses the ESM-correct unstable_mockModule pattern.
@@ -81,7 +81,7 @@ function makeDatabaseSource(connectionId: string): ProjectDataSource {
   };
 }
 
-describe('ChatRouterService — Phase 3a', () => {
+describe('ChatRouterService', () => {
   let consoleWarnSpy: jest.SpiedFunction<typeof console.warn>;
 
   beforeEach(() => {
@@ -330,13 +330,13 @@ describe('ChatRouterService — Phase 3a', () => {
       );
     });
 
-    // Copilot N5 regression guard. An operator override template can
-    // contain `{{ROUTING_RULES}}` more than once (e.g., once in the
-    // preamble and once near examples). Pre-fix, `String.prototype
-    // .replace` substituted only the first occurrence and left the
-    // second as a literal placeholder in the final prompt — the
+    // Regression guard for multi-occurrence substitution. An operator
+    // override template can contain `{{ROUTING_RULES}}` more than once
+    // (e.g., once in the preamble and once near examples).
+    // `String.prototype.replace` would substitute only the first
+    // occurrence and leave the second as a literal placeholder — the
     // classifier would then see an instruction it couldn't fulfil.
-    // The fix uses `replaceAll`, which is verified here.
+    // `replaceAll` is required so every occurrence is substituted.
     it('substitutes ALL occurrences of {{ROUTING_RULES}} (not just the first)', () => {
       const customRules = '# RULES-CONTENT';
       const customTemplate = [
@@ -360,7 +360,7 @@ describe('ChatRouterService — Phase 3a', () => {
     });
   });
 
-  describe('model env-fallback chain (per proposal §3.0)', () => {
+  describe('model env-fallback chain', () => {
     it('uses CHAT_ROUTER_MODEL when set', async () => {
       invokeMock.mockResolvedValue({
         content: JSON.stringify({ route: 'sql', confidence: 0.9, reasoning: 'r' }),

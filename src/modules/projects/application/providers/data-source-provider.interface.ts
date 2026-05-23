@@ -28,20 +28,20 @@ export type AgentToolEvent =
       durationMs: number;
     }
   | {
-      // Phase 3b (R / §3.6): fires from ChatToSqlService before the
-      // sub-agent starts running. Surfaces "I am about to think about
-      // your SQL question" to the SPA during the otherwise-silent
-      // sub-agent latency window. Drained at the next outer-loop message
-      // boundary — typically immediately before sql_executed.
+      // Fires from ChatToSqlService before the sub-agent starts
+      // running. Surfaces "I am about to think about your SQL question"
+      // to the SPA during the otherwise-silent sub-agent latency
+      // window. Drained at the next outer-loop message boundary —
+      // typically immediately before sql_executed.
       type: 'sql_planning';
       connectionId: string;
       connectionName: string;
     }
   | {
-      // Phase 3b (R / §3.6): fires from inside runSqlSubAgent — wrapped
-      // around the query-sql tool's invoke — right BEFORE db.run() is
-      // called. Carries the actual SQL string so the SPA can show
-      // "Running: SELECT ..." progress chrome before the query returns.
+      // Fires from inside runSqlSubAgent — wrapped around the query-sql
+      // tool's invoke — right BEFORE db.run() is called. Carries the
+      // actual SQL string so the SPA can show "Running: SELECT ..."
+      // progress chrome before the query returns.
       type: 'sql_executing';
       connectionId: string;
       connectionName: string;
@@ -49,16 +49,15 @@ export type AgentToolEvent =
     };
 
 /**
- * Phase 3b (R / §3.6) — synchronous progress callback that
- * `runSqlSubAgent` and `ChatToSqlService.askConnection` fire to push
- * progress events into `ctx.eventSink` mid-execution. The streaming
- * loop in `ChatAgentService` drains the sink at the next outer-loop
- * message boundary (typically the tool message immediately preceding
+ * Synchronous progress callback that `runSqlSubAgent` and
+ * `ChatToSqlService.askConnection` fire to push progress events into
+ * `ctx.eventSink` mid-execution. The streaming loop in
+ * `ChatAgentService` drains the sink at the next outer-loop message
+ * boundary (typically the tool message immediately preceding
  * `sql_executed`).
  *
  * Optional everywhere — callers that don't care for the progress
- * surface (existing chat-to-sql callers, non-streaming paths) pass
- * undefined and pay no overhead.
+ * surface (non-streaming paths) pass undefined and pay no overhead.
  */
 export type SqlProgressCallback = (event: AgentToolEvent) => void;
 

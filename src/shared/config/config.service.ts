@@ -384,30 +384,28 @@ export class ConfigService {
   }
 
   /**
-   * Phase 1 (S2.1) — when true, removes the `query-checker` tool from the
-   * SqlToolkit set exposed to the sub-agent. The checker performs an extra
-   * LLM call to lint SQL before execution; for SELECT-only queries with a
+   * When true, removes the `query-checker` tool from the SqlToolkit
+   * set exposed to the sub-agent. The checker performs an extra LLM
+   * call to lint SQL before execution; for SELECT-only queries with a
    * one-shot repair path, the error from `query-sql` is enough.
    *
-   * Default false — preserves today's behavior. Flip per-environment when
-   * you want the LLM-call reduction. See docs/langchain-agent-refactor-proposal.md
-   * §3.2.1.
+   * Default false. Flip per-environment when you want the LLM-call
+   * reduction.
    */
   getSqlAgentDropCheckerEnabled(): boolean {
     return process.env.SQL_AGENT_DROP_CHECKER_ENABLED === 'true';
   }
 
   /**
-   * Phase 1 (S2.2) — number of sample rows the SqlToolkit's `info-sql` tool
-   * includes per table. The library default is 3 (500-1500 tokens of
-   * low-signal noise per call). Setting `SQL_AGENT_SAMPLE_ROWS=0` is the
-   * recommended optimization (column types alone are usually enough for
-   * SQL generation), but is OPT-IN by env per PR #22's "default-off /
-   * zero behavior change on merge" contract (Copilot C6 fix).
+   * Number of sample rows the SqlToolkit's `info-sql` tool includes
+   * per table. The library default is 3 (500-1500 tokens of
+   * low-signal noise per call). Setting `SQL_AGENT_SAMPLE_ROWS=0`
+   * disables sample rows entirely — column types alone are usually
+   * enough for SQL generation.
    *
-   * Returns `null` when unset so the caller can omit the parameter and
-   * let `SqlDatabase` apply its own default (3). Set `SQL_AGENT_SAMPLE_ROWS`
-   * explicitly (0–10) to override.
+   * Returns `null` when unset so the caller can omit the parameter
+   * and let `SqlDatabase` apply its own default (3). Set
+   * `SQL_AGENT_SAMPLE_ROWS` explicitly (0–10) to override.
    */
   getSqlAgentSampleRows(): number | null {
     const raw = process.env.SQL_AGENT_SAMPLE_ROWS;
@@ -418,54 +416,51 @@ export class ConfigService {
   }
 
   /**
-   * Phase 2 (S1) — when true, ChatToSqlService fetches the connection's
-   * schema via `db.getTableInfo()` (deterministic, no LLM) BEFORE invoking
-   * the sub-agent and injects it into the sub-agent's system prompt. The
+   * When true, ChatToSqlService fetches the connection's schema via
+   * `db.getTableInfo()` (deterministic, no LLM) BEFORE invoking the
+   * sub-agent and injects it into the sub-agent's system prompt. The
    * sub-agent then skips `list_tables_sql_db` / `info_sql_db` on the
    * typical turn (saving ~2 LLM round-trips per SQL turn).
    *
    * The SqlToolkit's discovery tools remain callable as a fallback if
-   * the agent decides the prewarmed schema is incomplete (it's not
+   * the agent decides the prewarmed schema is incomplete (they're not
    * removed from the toolkit set — just made redundant).
    *
-   * Default false. Flip per-environment after validating against pin
-   * tests + staging telemetry. See proposal §3.1.
+   * Default false.
    */
   getSqlAgentPrewarmSchemaEnabled(): boolean {
     return process.env.SQL_AGENT_PREWARM_SCHEMA_ENABLED === 'true';
   }
 
   /**
-   * Phase 3a (R) — when true, ChatAgentService consults ChatRouterService
-   * to classify each turn BEFORE running the agent. High-confidence
-   * sql / rag routes call the corresponding tool directly (saving the
+   * When true, ChatAgentService consults ChatRouterService to classify
+   * each turn BEFORE running the agent. High-confidence sql / rag
+   * routes call the corresponding tool directly (saving the
    * outer-agent's tool-decision LLM round-trip). Low confidence or
-   * route=='agent' falls through to today's agentic loop unchanged.
+   * route=='agent' falls through to the agentic loop unchanged.
    *
-   * Default false. P3a ships the service in isolation; P3b wires the
-   * dispatcher and flips this flag on per environment. See proposal §3.3.
+   * Default false.
    */
   getChatRouterEnabled(): boolean {
     return process.env.CHAT_ROUTER_ENABLED === 'true';
   }
 
   /**
-   * Phase 3a (R) — operator-specified router model. Per the model
-   * fallback chain (proposal §3.0):
-   *   `getChatRouterModel() ?? getOpenAiModel()` → built-in default.
-   * Returns null when unset so callers chain explicitly. Set to a
-   * small/cheap model (gpt-X-mini, etc) for per-turn classification —
-   * the bigger model is for synthesis, not classification.
+   * Operator-specified router model. The router service's fallback
+   * chain is `getChatRouterModel() ?? getOpenAiModel()`. Returns null
+   * when unset so callers chain explicitly. Set to a small/cheap
+   * model (gpt-X-mini, etc) for per-turn classification — the bigger
+   * model is for synthesis, not classification.
    */
   getChatRouterModel(): string | null {
     return process.env.CHAT_ROUTER_MODEL?.trim() || null;
   }
 
   /**
-   * Phase 3a (R) — confidence threshold above which the dispatcher
-   * takes the router's chosen route. Below this threshold, fall
-   * through to the agent fallback path. Stored as a 0-100 percent for
-   * env legibility; the getter returns the 0-1 fraction.
+   * Confidence threshold above which the dispatcher takes the
+   * router's chosen route. Below this threshold, fall through to the
+   * agent fallback path. Stored as a 0-100 percent for env legibility;
+   * the getter returns the 0-1 fraction.
    *
    * Default 70 (0.7). Bounded 0-100.
    */
@@ -477,10 +472,10 @@ export class ConfigService {
   }
 
   /**
-   * Phase 3a (R) — loads the classifier-neutral routing taxonomy from
-   * `chat-routing-rules.md`. This is the SSoT: both the router's
-   * classifier prompt and (in P3b) the agent's tool-use prompt embed
-   * this exact text via composition.
+   * Loads the classifier-neutral routing taxonomy from
+   * `chat-routing-rules.md`. SSoT: both the router's classifier
+   * prompt and the agent's tool-use prompt embed this exact text via
+   * composition.
    *
    * Test coverage:
    *   - `chat-router.service.spec.ts` (§"SSoT: classifier prompt
@@ -509,10 +504,9 @@ export class ConfigService {
   }
 
   /**
-   * Phase 3a (R) — loads the router classifier prompt
-   * (`chat-router-system.md`). The router service injects the routing
-   * rules (loaded separately above) where the prompt has the
-   * `{{ROUTING_RULES}}` placeholder.
+   * Loads the router classifier prompt (`chat-router-system.md`).
+   * The router service injects the routing rules (loaded separately
+   * above) where the prompt has the `{{ROUTING_RULES}}` placeholder.
    */
   getChatRouterSystemPrompt(): string {
     return this.loadPrompt({
@@ -587,7 +581,7 @@ export class ConfigService {
   }
 
   /**
-   * Bounded-int parser for SQL-agent and similar safety-critical knobs (L2).
+   * Bounded-int parser for SQL-agent and similar safety-critical knobs.
    *
    * - Unset env: returns `fallback` silently (this is the normal case).
    * - Env set but unparseable / NaN: returns `fallback` and logs a warning

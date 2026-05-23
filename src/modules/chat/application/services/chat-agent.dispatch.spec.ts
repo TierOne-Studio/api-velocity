@@ -1,4 +1,4 @@
-// Phase 3b (R) — tests for the dispatcher branch in ChatAgentService.
+// Tests for the dispatcher branch in ChatAgentService.
 //
 // Coverage:
 // - flag off → existing agent path runs, router NOT consulted.
@@ -21,7 +21,6 @@ import {
   resetCapturedTools,
 } from '../../../../shared/test-utils/agent-transcript-mock';
 import { registerPinMatcher } from '../../../../shared/test-utils/pin-matchers';
-// Phase 4-lite: barrel import.
 import type {
   DataSourceRegistry,
   AgentToolContext,
@@ -216,7 +215,7 @@ async function collect(
 
 // --- suite -------------------------------------------------------------------
 
-describe('ChatAgentService dispatcher (Phase 3b)', () => {
+describe('ChatAgentService dispatcher', () => {
   let consoleWarnSpy: jest.SpiedFunction<typeof console.warn>;
   let consoleInfoSpy: jest.SpiedFunction<typeof console.info>;
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
@@ -357,22 +356,18 @@ describe('ChatAgentService dispatcher (Phase 3b)', () => {
         reply: { metadata: Record<string, unknown> };
       };
       expect(done.reply.metadata.generator).toBe('router-sql');
-      // Copilot C1 + architect M1: router-path metadata must surface
-      // toolCallCount so recordTurnMetrics computes llmCalls correctly.
-      // Without this every router-sql turn logs llmCalls=1 instead of 2
-      // (1 query_database tool call + 1 synthesis).
+      // Router-path metadata must surface toolCallCount so
+      // recordTurnMetrics computes llmCalls correctly (1 query_database
+      // tool call + 1 synthesis → llmCalls=2).
       expect(done.reply.metadata.toolCallCount).toBe(1);
-      // Copilot C1: the chat.turn telemetry event must report route='sql'
-      // for router-sql turns. The console.info call below should have
-      // received a payload with route: 'sql'. Hunt for it among the spy's
-      // calls.
+      // The chat.turn telemetry event must report route='sql' for
+      // router-sql turns.
       const turnEvents = consoleInfoSpy.mock.calls
         .map((c) => c[1] as Record<string, unknown> | undefined)
         .filter((p): p is Record<string, unknown> => p?.event === 'chat.turn');
       expect(turnEvents.length).toBeGreaterThanOrEqual(1);
       expect(turnEvents[0]?.route).toBe('sql');
-      // Copilot C3: durationMs must reflect the real turn time, not
-      // ~0 from a Date.now()-as-startedAt bug.
+      // durationMs must reflect the real turn time.
       expect(turnEvents[0]?.durationMs).toBeGreaterThanOrEqual(0);
     });
 

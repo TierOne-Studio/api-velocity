@@ -6,7 +6,6 @@ import {
   stripJsonFencesFromReply,
   stripSqlFencesFromReply,
 } from './chat-agent.service';
-// Phase 4-lite: barrel import.
 import type {
   ProjectDataSource,
   DataSourceRegistry,
@@ -103,7 +102,7 @@ describe('ChatAgentService', () => {
       getChatAgentHistoryWindow: jest.fn().mockReturnValue(6),
       getChatAgentSearchTier: jest.fn().mockReturnValue('classic'),
       getChatAgentRetrievalStrategy: jest.fn().mockReturnValue(undefined),
-      // Phase 3b additions (kept default-disabled for these legacy tests).
+      // Router defaults disabled for these tests.
       getChatRoutingRules: jest.fn().mockReturnValue('# RULES\n- SQL: counts.\n- RAG: docs.'),
       getChatRouterEnabled: jest.fn().mockReturnValue(false),
       getChatRouterConfidenceThreshold: jest.fn().mockReturnValue(0.7),
@@ -407,7 +406,6 @@ describe('ChatAgentService', () => {
       expect(dbIdx).toBeGreaterThan(baseIdx);
     });
 
-    // H2: structural capabilities chip
     it('emits the capabilities chip with DB names when DB sources attached', () => {
       configService.getChatSystemPrompt.mockReturnValue('expert persona body');
 
@@ -489,13 +487,13 @@ describe('ChatAgentService', () => {
       expect(systemPrompt).not.toContain('Available capabilities');
     });
 
-    it('keeps the "do not emit SQL" guidance in the tool description file (L3)', async () => {
-      // L3: the "Answer format after query_database" rule moved out of
-      // the system prompt and into the tool description bundled with
-      // query-database-tool-description.md. The LLM sees it every time
-      // it considers calling the tool, which is the right scope for
-      // per-call output rules. Test the .md file directly so this
-      // assertion doesn't depend on the configService mock surface.
+    it('keeps the "do not emit SQL" guidance in the tool description file', async () => {
+      // The "Answer format after query_database" rule lives in the tool
+      // description bundled with query-database-tool-description.md.
+      // The LLM sees it every time it considers calling the tool, which
+      // is the right scope for per-call output rules. Test the .md file
+      // directly so this assertion doesn't depend on the configService
+      // mock surface.
       const fs = await import('node:fs');
       const path = await import('node:path');
       const url = await import('node:url');
@@ -628,8 +626,8 @@ describe('stripSqlFencesFromReply', () => {
     expect(stripSqlFencesFromReply('')).toBe('');
   });
 
-  // M3: tightened to require SQL-shaped follow-up for ambiguous keywords
-  it('M3: preserves a pascal-tagged block whose body uses BEGIN as a Pascal keyword', () => {
+  // Ambiguous keywords require a SQL-shaped follow-up to be treated as SQL.
+  it('preserves a pascal-tagged block whose body uses BEGIN as a Pascal keyword', () => {
     const input = [
       'Here is the Pascal example:',
       '```pascal',
@@ -644,7 +642,7 @@ describe('stripSqlFencesFromReply', () => {
     expect(stripSqlFencesFromReply(input)).toBe(input);
   });
 
-  it('M3: still strips a bare ``` block whose BEGIN IS SQL-shaped', () => {
+  it('still strips a bare ``` block whose BEGIN IS SQL-shaped', () => {
     const input = [
       'I ran:',
       '```',
@@ -660,13 +658,13 @@ describe('stripSqlFencesFromReply', () => {
     expect(out).toContain('Done.');
   });
 
-  it('M3: still strips an explicit ```sql block even with bare BEGIN inside', () => {
+  it('still strips an explicit ```sql block even with bare BEGIN inside', () => {
     // The sql tag is the canonical match — body shape doesn't matter.
     const input = '```sql\nBEGIN\nSELECT 1;\n```\nResult.';
     expect(stripSqlFencesFromReply(input)).toBe('Result.');
   });
 
-  it('M3: preserves a bash block where a SQL-keyword-looking identifier appears', () => {
+  it('preserves a bash block where a SQL-keyword-looking identifier appears', () => {
     // Pure non-SQL: language tag is bash, no SQL fingerprint in the body.
     const input = '```bash\nROLLBACK_TIMEOUT=5 ./run.sh\n```\nDone.';
     expect(stripSqlFencesFromReply(input)).toBe(input);
@@ -746,11 +744,10 @@ describe('createStreamingSqlFenceStripper', () => {
     expect(out).toBe('Found 4 rows.');
   });
 
-  // qa MED-1: M3 ambiguous-keyword tightening through the streaming path.
-  // `stripSqlFencesFromReply` has dedicated M3 tests; the streaming version
-  // shares SQL_KEYWORDS but has its own state machine + 64-char lookahead
-  // window. Same logical rule deserves coverage on both implementations.
-  it('M3 streaming: preserves a ```pascal block with BEGIN as a Pascal keyword (token-by-token)', () => {
+  // The streaming stripper has its own state machine + 64-char lookahead
+  // window, so the ambiguous-keyword tightening needs coverage on both
+  // the batch and the streaming implementations.
+  it('streaming: preserves a ```pascal block with BEGIN as a Pascal keyword (token-by-token)', () => {
     const s = createStreamingSqlFenceStripper();
     // Emit the Pascal block one chunk at a time so the decision happens
     // during the streaming window-fill, not after the whole block is buffered.
@@ -771,7 +768,7 @@ describe('createStreamingSqlFenceStripper', () => {
     expect(out).toContain('That is the example.');
   });
 
-  it('M3 streaming: preserves a ```bash block with a SQL-keyword-shaped identifier', () => {
+  it('streaming: preserves a ```bash block with a SQL-keyword-shaped identifier', () => {
     const s = createStreamingSqlFenceStripper();
     const chunks = [
       'Run: ',
@@ -786,7 +783,7 @@ describe('createStreamingSqlFenceStripper', () => {
     expect(out).toContain('Done.');
   });
 
-  it('M3 streaming: still strips a bare ``` block with SQL-shaped BEGIN', () => {
+  it('streaming: still strips a bare ``` block with SQL-shaped BEGIN', () => {
     const s = createStreamingSqlFenceStripper();
     const chunks = [
       'I ran:\n',
@@ -883,14 +880,13 @@ describe('normalizeMarkdownTables', () => {
     expect(normalizeMarkdownTables(input)).toBe(input);
   });
 
-  // Copilot N6 regression guards: the earlier version of splitLineAtTableStart
-  // would misclassify prose like "a | b | c |" as a table because it had
-  // multiple pipes and ended in `|`. The fix requires a GFM separator
-  // row (e.g. `|---|---|`) on the next line before treating any line
-  // as a table header. Prose passes through untouched.
+  // Regression guards for splitLineAtTableStart: prose like
+  // "a | b | c |" must not be misclassified as a table just because it
+  // has multiple pipes and ends in `|`. A GFM separator row
+  // (e.g. `|---|---|`) on the next line is required before treating any
+  // line as a table header. Prose passes through untouched.
 
   it('does NOT split prose ending in multiple pipes when no separator row follows', () => {
-    // The failure case Copilot identified.
     const input = 'columns: name | email | status |';
     expect(normalizeMarkdownTables(input)).toBe(input);
   });
@@ -914,12 +910,10 @@ describe('normalizeMarkdownTables', () => {
   it('does NOT insert blank line before a one-row "table" that has no separator (treats as prose)', () => {
     // The model occasionally emits a single pipe-delimited line without a
     // separator row. Per GFM this isn't a table; treating it as prose is
-    // safer than synthesizing a missing header.
+    // safer than synthesizing a missing header. With the separator-row
+    // guard, the line stays as-is and renders as plain text (which is
+    // what markdown does without a separator anyway).
     const input = 'Intro.\n| no separator | follows |';
-    // Pre-N6, the second line would have triggered a blank-line
-    // insertion and made it render as a broken one-row table. With the
-    // separator-row guard, it stays as-is and renders as plain text
-    // (which is what markdown does without a separator anyway).
     expect(normalizeMarkdownTables(input)).toBe(input);
   });
 

@@ -7,7 +7,6 @@ import type {
   AirweaveSearchResponse,
   AirweaveSearchResultSummary,
 } from '../../../airweave/application/services/airweave.service';
-// Phase 4-lite: barrel import.
 import type {
   ProjectDataSource,
   DataSourceRegistry,

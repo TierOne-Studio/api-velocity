@@ -1,15 +1,13 @@
 // Behavior-pin integration tests for ChatAgentService streaming path.
 //
-// PURPOSE (per docs/langchain-agent-refactor-proposal.md §0.2):
-// Lock the SHAPE of streamed event sequences and reply metadata BEFORE any
-// refactor phase changes behavior. Every later phase (P1 drop-checker, P2
-// schema pre-warm, P3 router, P3b streaming events) MUST keep these pins
-// green. The matcher in `pin-matchers.ts` is intentionally permissive on
-// optional tool-call types (`?` suffix) so the same pins survive when
-// pre-warming removes discovery tool-calls or when P3b adds new streaming
-// events — both states match the same pattern.
+// PURPOSE:
+// Lock the SHAPE of streamed event sequences and reply metadata. The matcher
+// in `pin-matchers.ts` is intentionally permissive on optional tool-call
+// types (`?` suffix) so the same pins survive when pre-warming removes
+// discovery tool-calls or when new streaming events are added — both states
+// match the same pattern.
 //
-// MOCK SEAM (per proposal §0.1):
+// MOCK SEAM:
 // Mocks `langchain.createAgent` via `jest.unstable_mockModule` (the ESM-correct
 // pattern). The mocked agent's `stream()` yields a deterministic transcript
 // built from `streamFromTranscript(steps)` — no real LLM call ever fires.
@@ -25,7 +23,6 @@ import {
   type TranscriptStep,
 } from '../../../../shared/test-utils/agent-transcript-mock';
 import { registerPinMatcher } from '../../../../shared/test-utils/pin-matchers';
-// Phase 4-lite: barrel import.
 import type {
   DataSourceRegistry,
   AgentToolContext,
@@ -191,9 +188,9 @@ function buildConfigService(opts: { apiKey: string | null }) {
     getChatAgentSearchTier: jest.fn().mockReturnValue('classic'),
     getChatAgentRetrievalStrategy: jest.fn().mockReturnValue(undefined),
     getQueryDatabaseToolDescription: jest.fn().mockReturnValue('fake desc'),
-    // Phase 3b additions (router OFF — pin spec exercises agent path
-    // unchanged. Critical: the matcher allows sql_planning/sql_executing
-    // as optional events so pins survive both off and on).
+    // Router OFF — pin spec exercises the agent path. The matcher allows
+    // sql_planning/sql_executing as optional events so pins survive both
+    // off and on.
     getChatRoutingRules: jest
       .fn()
       .mockReturnValue('# RULES\n- SQL: counts.\n- RAG: docs.'),
@@ -238,7 +235,7 @@ const eventTypes = (events: Array<Record<string, unknown>>): string[] =>
 
 // --- suite -------------------------------------------------------------------
 
-describe('ChatAgentService behavior pins (Phase 0 baseline)', () => {
+describe('ChatAgentService behavior pins', () => {
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
   let consoleInfoSpy: jest.SpiedFunction<typeof console.info>;
   let consoleWarnSpy: jest.SpiedFunction<typeof console.warn>;
@@ -366,9 +363,7 @@ describe('ChatAgentService behavior pins (Phase 0 baseline)', () => {
       type: 'done';
       reply: { metadata: Record<string, unknown> };
     };
-    // NB: the generator label in code is `'fallback-search-summary'`, not
-    // `'keyless-fallback'` (the proposal had the colloquial name; this is
-    // the actual string in chat-agent.service.ts). Pin tests pin reality.
+    // Generator label in code is `'fallback-search-summary'`.
     expect(done.reply.metadata.generator).toBe('fallback-search-summary');
   });
 
@@ -464,9 +459,8 @@ describe('ChatAgentService behavior pins (Phase 0 baseline)', () => {
 
     // CRITICAL pin: both `searching` (from search_knowledge_base) AND
     // `sql_executed` (from query_database wrapper draining ctx.eventSink)
-    // MUST appear. The hybrid scenario is what the router-fallback path
-    // (P3b `route='agent'`) is for; this pin guarantees we don't regress
-    // it when the router is wired.
+    // MUST appear. The hybrid scenario is what the router-fallback agent
+    // path is for; this pin guarantees we don't regress it.
     const types = eventTypes(events);
     expect(types).toContain('searching');
     expect(types).toContain('sql_executed');

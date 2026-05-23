@@ -1,4 +1,4 @@
-// Eval Phase A — opt-in chat response format eval.
+// Opt-in chat response format eval.
 //
 // This is NOT a unit test. It calls a REAL LLM via ChatAgentService and
 // scores the response shape (markdown table format, prose-only, no
@@ -14,19 +14,10 @@
 //   CHAT_EVALS_ENABLED=true OPENAI_API_KEY=sk-... \
 //   npm test -- --testPathPattern=chat-response-format.eval
 //
-// The point of this file (per docs/langchain-agent-refactor-proposal.md
-// proposal §3.6 follow-up): replace the "edit a prompt, restart server,
+// The point of this file: replace the "edit a prompt, restart server,
 // manually test, repeat" loop with a programmatic fixture/scorer setup.
 // When prompt regressions surface, iterate on the prompt and re-run this
 // eval to confirm the fix before shipping.
-//
-// Extensions (Phase B / C, NOT scoped here):
-//   - Compare multiple prompt variants side-by-side.
-//   - Aggregate scores across N runs (to smooth LLM non-determinism).
-//   - Write results to a dashboard / CI gate.
-//
-// This Phase A file gives you the framework; expanding it is straight
-// substitution of fixtures + scorers.
 
 import { jest } from '@jest/globals';
 import { ConfigService } from '../../../../shared/config';
@@ -69,7 +60,7 @@ type EvalFixture = {
 
 const FIXTURES: EvalFixture[] = [
   {
-    name: 'F1 — explicit table request → table format with proper separation',
+    name: 'explicit table request → table format with proper separation',
     question:
       'Create a table summarizing for each user the chats and how many questions they have.',
     sourceKinds: ['database'],
@@ -79,7 +70,7 @@ const FIXTURES: EvalFixture[] = [
     },
   },
   {
-    name: 'F2 — count question → single-value prose',
+    name: 'count question → single-value prose',
     question: 'How many users do we have in the database?',
     sourceKinds: ['database'],
     expect: {
@@ -88,7 +79,7 @@ const FIXTURES: EvalFixture[] = [
     },
   },
   {
-    name: 'F3 — list question without "table" keyword → bullets OR table (not both)',
+    name: 'list question without "table" keyword → bullets OR table (not both)',
     question: 'List the users with their email addresses.',
     sourceKinds: ['database'],
     expect: {
@@ -97,7 +88,7 @@ const FIXTURES: EvalFixture[] = [
     },
   },
   {
-    name: 'F4 — RAG-shaped question → prose, no table',
+    name: 'RAG-shaped question → prose, no table',
     question: 'How is authentication implemented in this codebase?',
     sourceKinds: ['airweave_collection'],
     expect: {
@@ -106,7 +97,7 @@ const FIXTURES: EvalFixture[] = [
     },
   },
   {
-    name: 'F5 — hybrid question → may use table; must not paste SQL',
+    name: 'hybrid question → may use table; must not paste SQL',
     question:
       'Who are the most active users by number of questions, and how is "active" measured here?',
     sourceKinds: ['airweave_collection', 'database'],
@@ -321,7 +312,7 @@ describeIfEnabled('Chat response format evals (CHAT_EVALS_ENABLED=true)', () => 
     }
     configService = new ConfigService();
     // Registry needs the actual providers — these REQUIRE TypeORM + Airweave
-    // wiring to function for real. For Phase A we run a STUB registry that
+    // wiring to function for real. The eval uses a STUB registry that
     // returns canned tool responses; the eval scores the LLM's formatting
     // against those canned outcomes, not against real DB queries.
     //
@@ -377,12 +368,13 @@ describeIfEnabled('Chat response format evals (CHAT_EVALS_ENABLED=true)', () => 
   });
 });
 
-// === Stub registry (Phase A: canned tool responses) ===
+// === Stub registry (canned tool responses) ===
 
 function makeStubRegistry(): DataSourceRegistry {
   // Minimal stub so the agent's tool calls don't hit real services. The
   // eval evaluates the LLM's text formatting given a canned tool output;
-  // wiring the real registry is a Phase B concern (real DB fixtures).
+  // wiring the real registry against real DB fixtures is a future
+  // extension.
   // jest.fn() default-types as `() => unknown`; cast the search mock
   // explicitly so mockResolvedValue accepts our shape.
   const searchMock = jest
@@ -410,7 +402,7 @@ function makeStubRegistry(): DataSourceRegistry {
     })),
     kinds: jest.fn(() => ['airweave_collection', 'database']),
     getAgentToolsFor: jest.fn(() => {
-      // No SQL tool wired for Phase A — the agent will either work with
+      // No SQL tool wired here — the agent will either work with
       // search results alone OR report it cannot answer SQL questions.
       // That's acceptable for the format eval; the question shape still
       // drives format selection.

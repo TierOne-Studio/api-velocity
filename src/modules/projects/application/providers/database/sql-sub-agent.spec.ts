@@ -182,18 +182,16 @@ describe('runSqlSubAgent', () => {
     });
   });
 
-  describe('Phase 3b progress wrapper (regression guard)', () => {
-    // CRITICAL: this suite reproduces the production regression caught
-    // post-P3b where `wrapQuerySqlWithProgress` detached `this` from
-    // `sqlTool.invoke` via `const invoke = sqlTool.invoke as ...`. The
-    // detached method, when called, tried to read `this.defaultConfig`
-    // on undefined and crashed every SQL chat turn with
+  describe('progress wrapper (regression guard)', () => {
+    // CRITICAL: this suite reproduces a production regression where
+    // `wrapQuerySqlWithProgress` detached `this` from `sqlTool.invoke`
+    // via `const invoke = sqlTool.invoke as ...`. The detached method,
+    // when called, tried to read `this.defaultConfig` on undefined and
+    // crashed every SQL chat turn with
     //   "TypeError: Cannot read properties of undefined (reading 'defaultConfig')"
     //
-    // Pre-fix, every existing sql-sub-agent spec was green because none
-    // passed a `progress` arg — the buggy wrapper was unreachable in
-    // tests. These specs DO pass progress AND then actually invoke the
-    // captured wrapped tool, so they fail loudly if the bug returns.
+    // These specs pass `progress` AND actually invoke the captured
+    // wrapped tool, so they fail loudly if the binding bug returns.
 
     it('preserves `this` binding when invoking the underlying query-sql tool', async () => {
       // Use a class-method invoke to expose the binding bug. A plain
@@ -302,13 +300,12 @@ describe('runSqlSubAgent', () => {
       });
     });
 
-    // Copilot C7 regression guard. Before this fix the progress wrapper
-    // extracted SQL from the LLM's raw input (pre-repair) while the
-    // identifier-repair wrapper rewrote it inside `target.invoke`. The
-    // SPA's sql_executing event then surfaced a DIFFERENT string than
-    // what hit the DB — confusing UX on Postgres schemas with mixed-case
-    // identifiers. The fix passes identifierRepair into the progress
-    // wrapper and applies the same repair before emitting.
+    // Regression guard: the progress wrapper must emit the same SQL
+    // string that hits the DB. Earlier the wrapper extracted SQL from
+    // the LLM's raw input (pre-repair) while the identifier-repair
+    // wrapper rewrote it inside `target.invoke` — the SPA's
+    // sql_executing event then surfaced a DIFFERENT string from what
+    // executed. The progress wrapper now applies the same repair.
     it('emits sql_executing with the post-repair SQL (matches what the DB receives)', async () => {
       // Two tool calls in order: info-sql (teaches the repair about
       // mixed-case identifiers) → query-sql (the wrapper should now

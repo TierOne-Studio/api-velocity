@@ -9,14 +9,16 @@
 //   'chunk*'        — zero or more
 //   'sql_executed'  — required, exactly one
 //
-// CRITICAL DESIGN PROPERTY (per proposal §0.2 and §3.6):
-// The matcher MUST treat tool-call types as optional so the same pin survives
-// later phases. Specifically, after P2 lands schema pre-warming, the sub-agent
-// stops calling `list-sql` / `info-sql`; after P3b lands streaming progress
-// events, new `sql_planning` / `sql_executing` events appear before
-// `sql_executed`. Pins written with `searching?`, `sql_planning?`,
-// `sql_executing?` continue to pass under both states. Tests that need
-// stricter assertions can use exact-match strings without sigils.
+// CRITICAL DESIGN PROPERTY:
+// The matcher MUST treat tool-call types as optional so the same pin
+// survives behavioral changes that add or remove tool-call events.
+// Examples: when schema pre-warming is enabled the sub-agent skips
+// `list-sql` / `info-sql`; the SQL streaming events `sql_planning` /
+// `sql_executing` appear before `sql_executed` when the progress
+// callback is wired. Pins written with `searching?`, `sql_planning?`,
+// `sql_executing?` continue to pass under both states. Tests that
+// need stricter assertions can use exact-match strings without
+// sigils.
 
 import { expect } from '@jest/globals';
 import type { MatcherFunction } from 'expect';

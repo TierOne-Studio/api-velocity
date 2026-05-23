@@ -5,16 +5,15 @@ import { ConfigService } from '../../../../shared/config';
 import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
 
 /**
- * Phase 3a (R) — fast routing classifier (proposal §3.3).
+ * Fast routing classifier.
  *
  * Decides whether a chat turn is best handled by:
- *   - `sql`   — call `query_database` directly (skip outer-agent tool-decision step).
+ *   - `sql`   — call `query_database` directly (skip the outer-agent's tool-decision step).
  *   - `rag`   — call `search_knowledge_base` directly.
- *   - `agent` — fall through to existing agentic loop (safety net for hard cases).
+ *   - `agent` — fall through to the agentic loop (safety net for hard cases).
  *
- * In P3a this service ships in isolation; no consumer in `ChatAgentService`
- * wires it. P3b wires the dispatcher and flips `CHAT_ROUTER_ENABLED=true`
- * per environment.
+ * The dispatcher in `ChatAgentService` consumes this when
+ * `CHAT_ROUTER_ENABLED=true`. Otherwise the classifier is never invoked.
  *
  * Fail-fast invariants:
  *   - LLM error → safe fallback `{route: 'agent', confidence: 0, reasoning: 'classifier_error'}`.
@@ -22,8 +21,8 @@ import type { ProjectDataSource } from '../../../projects/api/dto/project.dto';
  *   - JSON parse failure → safe fallback (same shape).
  *   - Schema-shape mismatch (missing `route` field, invalid value) → safe fallback.
  *
- * Model selection follows the cross-cutting env-fallback chain (proposal §3.0):
- *   `getChatRouterModel() ?? getOpenAiModel()` → built-in via `getOpenAiModel`.
+ * Model selection follows the env-fallback chain
+ * `getChatRouterModel() ?? getOpenAiModel()`.
  */
 
 export type RouterRouteName = 'sql' | 'rag' | 'agent';
@@ -91,19 +90,19 @@ export class ChatRouterService {
   /**
    * Builds the classifier system prompt by composing the SSoT rules into
    * the wrapper template. The template's `{{ROUTING_RULES}}` placeholder is
-   * substituted with the contents of `chat-routing-rules.md`. This is the
-   * mechanism that satisfies the SSoT contract: one rules file, two
-   * consumers (router here, agent in P3b's prompt builder).
+   * substituted with the contents of `chat-routing-rules.md`. One rules
+   * file, two consumers (router here, agent prompt builder in
+   * `ChatAgentService.buildAgentRoutingProtocol`).
    */
   buildClassifierSystemPrompt(): string {
     const template = this.configService.getChatRouterSystemPrompt();
     const rules = this.configService.getChatRoutingRules();
     if (template.includes('{{ROUTING_RULES}}')) {
-      // Copilot N5 fix: `replaceAll` (vs `replace`) so operator-overridden
-      // templates that embed the placeholder in multiple positions (e.g.
-      // once in the preamble and once near the examples) get full
-      // substitution. The string form is safe for `$`-bearing rules
-      // content because `replaceAll(string, string)` treats $ literally.
+      // `replaceAll` (not `replace`) so operator-overridden templates
+      // that embed the placeholder in multiple positions (e.g. once in
+      // the preamble and once near the examples) get full substitution.
+      // The string form is safe for `$`-bearing rules content because
+      // `replaceAll(string, string)` treats $ literally.
       return template.replaceAll('{{ROUTING_RULES}}', rules);
     }
     // Template author dropped the placeholder — append rules at the end so

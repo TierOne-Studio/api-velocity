@@ -1,7 +1,8 @@
 import { jest } from '@jest/globals';
 
 // Captured params from the most recent SqlDatabase.fromDataSourceParams
-// call. Used by the H1c spec below to assert `includesTables` is forwarded.
+// call. Used by the table-scoping specs below to assert `includesTables`
+// is forwarded.
 const capturedFromDataSourceParams: Array<Record<string, unknown>> = [];
 
 jest.unstable_mockModule('@langchain/classic/sql_db', () => {
@@ -110,7 +111,7 @@ describe('ReadOnlySqlDatabase', () => {
     );
   });
 
-  // H1c: per-connection table allowlist forwards to SqlToolkit introspection.
+  // Per-connection table allowlist forwards to SqlToolkit introspection.
   describe('fromDataSource forwards table scoping options', () => {
     beforeEach(() => {
       capturedFromDataSourceParams.length = 0;
@@ -152,10 +153,10 @@ describe('ReadOnlySqlDatabase', () => {
       expect(last.ignoreTables).toEqual(['migrations']);
     });
 
-    // Phase 1 (S2.2): sampleRowsInTableInfo plumbed through to the parent
+    // `sampleRowsInTableInfo` is plumbed through to the parent
     // `SqlDatabase.fromDataSourceParams`. Default behavior (undefined =>
-    // parent's own default of 3) preserved; explicit 0 from ConfigService
-    // suppresses sample rows in `info-sql` output.
+    // parent's own default of 3) preserved; explicit 0 from
+    // ConfigService suppresses sample rows in `info-sql` output.
     it('passes sampleRowsInTableInfo when provided', async () => {
       const { ds } = buildFakeDataSource();
       await ReadOnlySqlDatabase.fromDataSource(ds as never, limits, {

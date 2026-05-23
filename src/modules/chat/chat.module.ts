@@ -36,9 +36,8 @@ import { ChatMigrationService } from './chat.migration';
   providers: [
     ChatService,
     ChatAgentService,
-    // Phase 3a (R): registered but no consumer wires it yet. P3b adds the
-    // dispatcher branch in ChatAgentService that conditionally calls
-    // chatRouter.classify(...) when CHAT_ROUTER_ENABLED=true.
+    // Consumed by ChatAgentService's dispatcher branch when
+    // CHAT_ROUTER_ENABLED=true; otherwise the classifier is never invoked.
     ChatRouterService,
     ChatMigrationService,
     { provide: CHAT_REPOSITORY, useClass: ChatDatabaseRepository },
