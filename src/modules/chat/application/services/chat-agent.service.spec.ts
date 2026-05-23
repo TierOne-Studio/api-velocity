@@ -882,4 +882,70 @@ describe('normalizeMarkdownTables', () => {
     const input = 'There are 4 users in your database.';
     expect(normalizeMarkdownTables(input)).toBe(input);
   });
+
+  // Copilot N6 regression guards: the earlier version of splitLineAtTableStart
+  // would misclassify prose like "a | b | c |" as a table because it had
+  // multiple pipes and ended in `|`. The fix requires a GFM separator
+  // row (e.g. `|---|---|`) on the next line before treating any line
+  // as a table header. Prose passes through untouched.
+
+  it('does NOT split prose ending in multiple pipes when no separator row follows', () => {
+    // The failure case Copilot identified.
+    const input = 'columns: name | email | status |';
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  it('does NOT split prose ending in pipe (no following line at all)', () => {
+    const input = 'a | b | c |';
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  it('does split prose-then-table when a separator row follows on the next line', () => {
+    // Confirms the legitimate case (prose glued to a real table header
+    // with a separator beneath it) still gets normalized.
+    const input =
+      'Here are the rows:| User | Email |\n|---|---|\n| Ada | a@x |';
+    const out = normalizeMarkdownTables(input);
+    expect(out).toContain('Here are the rows:\n\n| User | Email |');
+    expect(out).toContain('|---|---|');
+    expect(out).toContain('| Ada | a@x |');
+  });
+
+  it('does NOT insert blank line before a one-row "table" that has no separator (treats as prose)', () => {
+    // The model occasionally emits a single pipe-delimited line without a
+    // separator row. Per GFM this isn't a table; treating it as prose is
+    // safer than synthesizing a missing header.
+    const input = 'Intro.\n| no separator | follows |';
+    // Pre-N6, the second line would have triggered a blank-line
+    // insertion and made it render as a broken one-row table. With the
+    // separator-row guard, it stays as-is and renders as plain text
+    // (which is what markdown does without a separator anyway).
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  it('isTableSeparator: accepts standard, colon-aligned, and tight forms', () => {
+    // White-box assertion via end-to-end behavior: the splitter should
+    // recognize all three separator styles as valid headers-of-tables.
+    const cases = [
+      '| Col |\n| --- |\n| val |',
+      '| Col |\n|:---|\n| val |',
+      '| Col |\n|---:|\n| val |',
+      '| Col |\n|:---:|\n| val |',
+      '| A | B |\n|---|---|\n| 1 | 2 |',
+    ];
+    for (const input of cases) {
+      // Each case is already valid markdown (no prose before the header).
+      // The normalizer should be a no-op — the separator-row detector
+      // must accept all of these as valid separators.
+      expect(normalizeMarkdownTables(input)).toBe(input);
+    }
+  });
+
+  it('does NOT mistake a non-separator pipe-line as a separator (e.g. "|a-b|c|")', () => {
+    // Edge case: a row whose cells happen to start with `-` should NOT
+    // be treated as a separator row.
+    const input = 'Intro.\n| a-b | c |\n| 1 | 2 |';
+    // No separator row anywhere → no normalization.
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
 });

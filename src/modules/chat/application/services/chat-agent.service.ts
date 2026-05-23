@@ -236,10 +236,29 @@ function isTableLine(line: string): boolean {
   return (trimmed.match(/\|/g)?.length ?? 0) >= 2;
 }
 
-// "foo.| User | Email |" → ["foo.", "| User | Email |"]
-// "| header | only |"   → ["| header | only |"]  (unchanged)
-// "no table here"       → ["no table here"]      (unchanged)
-function splitLineAtTableStart(line: string): string[] {
+// A GFM table separator row: each cell is dashes, optionally with leading
+// or trailing colons for alignment. Matching this is what distinguishes
+// "real markdown table" from "prose with pipes in it" — the spec REQUIRES
+// a separator immediately after the header for table recognition.
+//   ✓ | --- | --- |
+//   ✓ |:--|--:|:-:|
+//   ✗ | a  | b  |   (cells contain non-dash content)
+function isTableSeparator(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) return false;
+  // Split on `|`, drop the empty leading/trailing chunks, require ≥1 cell,
+  // and every cell must match the separator pattern.
+  const cells = trimmed.slice(1, -1).split('|');
+  if (cells.length === 0) return false;
+  return cells.every((cell) => /^\s*:?-+:?\s*$/.test(cell));
+}
+
+// "foo.| User | Email |\n|---|---|" → ["foo.", "| User | Email |\n|---|---|"]
+//   (split because the line ends with a table-header shape AND the next
+//    line is a separator row — Copilot N6 fix)
+// "columns: a | b | c |" (no separator follows) → unchanged
+// "Hello | World"        → ["Hello | World"]    (single pipe, never table)
+function splitLineAtTableStart(line: string, nextLine: string | undefined): string[] {
   // Match: non-pipe prose ($1) followed by a pipe segment containing
   // at least two pipes ($2). Anchored to the start so we only split
   // at the FIRST prose→table boundary in the line.
@@ -247,19 +266,45 @@ function splitLineAtTableStart(line: string): string[] {
   if (!m) return [line];
   if ((m[2].match(/\|/g)?.length ?? 0) < 2) return [line];
   if (m[1].trim() === '') return [line];
+  // N6 fix: only split when the candidate table-header line ($2) is
+  // immediately followed by a GFM separator row on the NEXT line. Without
+  // this guard, prose like "columns: name | email | status |" got
+  // split into a fake one-row table and a bogus blank line inserted in
+  // front of it. The separator-row lookahead is what GFM itself uses to
+  // recognize a real table — borrow the same heuristic.
+  if (nextLine === undefined || !isTableSeparator(nextLine)) return [line];
   return [m[1], m[2]];
 }
 
 export function normalizeMarkdownTables(content: string): string {
   if (!content) return content;
-  // Pass 1: split prose-then-table lines.
-  const split = content.split('\n').flatMap(splitLineAtTableStart);
-  // Pass 2: insert blank lines before new table blocks.
+  // Pass 1: split prose-then-table lines. Pass the NEXT line into the
+  // splitter so it can verify a separator row follows the candidate
+  // header (the GFM contract for a real table).
+  const rawLines = content.split('\n');
+  const split: string[] = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    const expanded = splitLineAtTableStart(rawLines[i]!, rawLines[i + 1]);
+    for (const ex of expanded) split.push(ex);
+  }
+  // Pass 2: insert blank lines before new table blocks. A "table block"
+  // starts at a header line whose NEXT line in the (post-split) sequence
+  // is a separator row — same GFM rule. Continuation rows after the
+  // separator stay glued together (no blank line between rows).
   const out: string[] = [];
-  for (const line of split) {
+  for (let i = 0; i < split.length; i++) {
+    const line = split[i]!;
     if (isTableLine(line)) {
+      const next = split[i + 1];
       const prev = out[out.length - 1];
-      if (prev !== undefined && prev !== '' && !isTableLine(prev)) {
+      const isHeader = next !== undefined && isTableSeparator(next);
+      if (
+        isHeader &&
+        prev !== undefined &&
+        prev !== '' &&
+        !isTableLine(prev) &&
+        !isTableSeparator(prev)
+      ) {
         out.push('');
       }
     }
