@@ -329,6 +329,35 @@ describe('ChatRouterService — Phase 3a', () => {
         expect.stringContaining('missing the {{ROUTING_RULES}} placeholder'),
       );
     });
+
+    // Copilot N5 regression guard. An operator override template can
+    // contain `{{ROUTING_RULES}}` more than once (e.g., once in the
+    // preamble and once near examples). Pre-fix, `String.prototype
+    // .replace` substituted only the first occurrence and left the
+    // second as a literal placeholder in the final prompt — the
+    // classifier would then see an instruction it couldn't fulfil.
+    // The fix uses `replaceAll`, which is verified here.
+    it('substitutes ALL occurrences of {{ROUTING_RULES}} (not just the first)', () => {
+      const customRules = '# RULES-CONTENT';
+      const customTemplate = [
+        'PREAMBLE WITH RULES:',
+        '{{ROUTING_RULES}}',
+        '',
+        'AND AGAIN IN EXAMPLES:',
+        '{{ROUTING_RULES}}',
+        '',
+        'END.',
+      ].join('\n');
+      const service = makeService({ rules: customRules, systemTemplate: customTemplate });
+
+      const prompt = service.buildClassifierSystemPrompt();
+
+      // Every occurrence must be substituted — zero residual placeholders.
+      expect(prompt).not.toContain('{{ROUTING_RULES}}');
+      // The rules text appears twice — once per placeholder position.
+      const rulesOccurrences = (prompt.match(/# RULES-CONTENT/g) ?? []).length;
+      expect(rulesOccurrences).toBe(2);
+    });
   });
 
   describe('model env-fallback chain (per proposal §3.0)', () => {

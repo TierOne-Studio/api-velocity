@@ -99,7 +99,12 @@ export class ChatRouterService {
     const template = this.configService.getChatRouterSystemPrompt();
     const rules = this.configService.getChatRoutingRules();
     if (template.includes('{{ROUTING_RULES}}')) {
-      return template.replace('{{ROUTING_RULES}}', rules);
+      // Copilot N5 fix: `replaceAll` (vs `replace`) so operator-overridden
+      // templates that embed the placeholder in multiple positions (e.g.
+      // once in the preamble and once near the examples) get full
+      // substitution. The string form is safe for `$`-bearing rules
+      // content because `replaceAll(string, string)` treats $ literally.
+      return template.replaceAll('{{ROUTING_RULES}}', rules);
     }
     // Template author dropped the placeholder — append rules at the end so
     // the classifier still has the taxonomy, but flag in logs so the missing
