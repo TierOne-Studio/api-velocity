@@ -178,6 +178,7 @@ export class AirweaveController {
         name,
         slugHint,
         organizationId,
+        createdByUserId: session.user.id,
       }),
     };
   }

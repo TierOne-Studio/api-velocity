@@ -309,6 +309,7 @@ describe('AirweaveController', () => {
         name: 'Foo',
         slugHint: 'foo',
         organizationId: 'org-1',
+        createdByUserId: 'user-admin',
       });
       expect(result).toEqual({ data: { id: 'uuid-x', readableId: 'acme-foo-abcdef12' } });
     });
@@ -333,6 +334,38 @@ describe('AirweaveController', () => {
         controller.createCollection(adminSession, {
           name: 'X',
           slugHint: 'a'.repeat(33),
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+
+    it('accepts slugHint of exactly 32 chars (boundary — QA gap #4)', async () => {
+      (airweaveService.createCollection as jest.Mock).mockResolvedValue({
+        id: 'uuid',
+      } as never);
+
+      await controller.createCollection(adminSession, {
+        name: 'X',
+        slugHint: 'a'.repeat(32),
+      });
+
+      expect(airweaveService.createCollection).toHaveBeenCalledWith(
+        expect.objectContaining({ slugHint: 'a'.repeat(32) }),
+      );
+    });
+
+    it.each([
+      ['leading dash', '-foo'],
+      ['trailing dash', 'foo-'],
+      ['consecutive dashes', 'foo--bar'],
+      ['uppercase', 'FOO'],
+      ['unicode', 'café'],
+      ['underscore', 'foo_bar'],
+      ['space', 'foo bar'],
+    ])('rejects slugHint with %s ("%s") — QA gap #5', async (_label, slug) => {
+      await expect(
+        controller.createCollection(adminSession, {
+          name: 'X',
+          slugHint: slug,
         }),
       ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
     });

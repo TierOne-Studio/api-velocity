@@ -309,26 +309,52 @@ describe('ConfigService', () => {
   });
 
   describe('getAirweaveReadLockdownEnforce', () => {
-    it('returns false by default (observe-only mode per ADR-011 Step 10a)', () => {
+    // Per amended ADR-011 § Decision 4 (after security review): env-aware
+    // defaults — enforce in non-prod, observe in prod. Explicit env value
+    // ('true' | 'false') always wins over the default.
+    const originalNodeEnv = process.env.NODE_ENV;
+
+    afterEach(() => {
+      process.env.NODE_ENV = originalNodeEnv;
       delete process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE;
+    });
+
+    it('defaults to TRUE when NODE_ENV !== production (dev/staging enforce)', () => {
+      delete process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE;
+      process.env.NODE_ENV = 'development';
+
+      expect(new ConfigService().getAirweaveReadLockdownEnforce()).toBe(true);
+    });
+
+    it('defaults to FALSE in production (observe-only soak window)', () => {
+      delete process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE;
+      process.env.NODE_ENV = 'production';
 
       expect(new ConfigService().getAirweaveReadLockdownEnforce()).toBe(false);
     });
 
-    it('returns true only when explicitly set to the string "true"', () => {
+    it('explicit "true" overrides the production default', () => {
+      process.env.NODE_ENV = 'production';
       process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE = 'true';
 
       expect(new ConfigService().getAirweaveReadLockdownEnforce()).toBe(true);
     });
 
-    it('returns false for any other value (no truthy coercion)', () => {
+    it('explicit "false" overrides the non-prod default', () => {
+      process.env.NODE_ENV = 'development';
+      process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE = 'false';
+
+      expect(new ConfigService().getAirweaveReadLockdownEnforce()).toBe(false);
+    });
+
+    it('non-boolean string values fall through to the env-aware default', () => {
+      process.env.NODE_ENV = 'production';
       process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE = '1';
       expect(new ConfigService().getAirweaveReadLockdownEnforce()).toBe(false);
 
+      process.env.NODE_ENV = 'staging';
       process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE = 'yes';
-      expect(new ConfigService().getAirweaveReadLockdownEnforce()).toBe(false);
-
-      delete process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE;
+      expect(new ConfigService().getAirweaveReadLockdownEnforce()).toBe(true);
     });
   });
 

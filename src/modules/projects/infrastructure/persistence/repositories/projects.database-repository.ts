@@ -201,14 +201,16 @@ export class ProjectsDatabaseRepository implements IProjectsRepository {
 
   async findProjectsReferencingAirweaveCollection(
     collectionReadableId: string,
+    organizationId: string,
   ): Promise<Array<{ id: string; name: string }>> {
     return this.db.query<{ id: string; name: string }>(
       `SELECT DISTINCT p.id, p.name
          FROM project p
          JOIN project_data_source pds ON pds.project_id = p.id
         WHERE pds.kind = 'airweave_collection'
-          AND pds.config->>'collectionReadableId' = $1`,
-      [collectionReadableId],
+          AND pds.config->>'collectionReadableId' = $1
+          AND p.organization_id = $2`,
+      [collectionReadableId, organizationId],
     );
   }
 }

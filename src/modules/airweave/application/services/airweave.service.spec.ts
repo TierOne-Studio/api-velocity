@@ -682,15 +682,16 @@ describe('AirweaveService', () => {
       adminOrgService.isAirweaveCollectionInAllowlist.mockResolvedValue(false);
     });
 
-    it('happy path — creates upstream and records ownership', async () => {
+    it('happy path — creates upstream with random suffix and records ownership', async () => {
       client.collections.create.mockResolvedValue(mappedReturnFromSdk);
 
       const result = await service.createCollection({
         name: 'My Coll',
         organizationId: 'org-1',
+        createdByUserId: 'user-admin',
       });
 
-      // Deterministic id derives from orgSlug + slugified(name) + sha256[:8].
+      // Random hex suffix per amended ADR-011 § Decision 3.
       expect(client.collections.create).toHaveBeenCalledWith(
         expect.objectContaining({
           name: 'My Coll',
@@ -728,6 +729,33 @@ describe('AirweaveService', () => {
       );
     });
 
+    it('produces different readable_ids on consecutive calls (random suffix, not deterministic)', async () => {
+      // Per amended ADR-011 § Decision 3 / Alt G: the suffix MUST be random
+      // so the id cannot be derived from public inputs. Two calls with the
+      // same (orgSlug, slugHint) produce different ids — this is the
+      // load-bearing security property.
+      client.collections.create.mockResolvedValue(mappedReturnFromSdk);
+
+      await service.createCollection({
+        name: 'X',
+        slugHint: 'same',
+        organizationId: 'org-1',
+      });
+      await service.createCollection({
+        name: 'X',
+        slugHint: 'same',
+        organizationId: 'org-1',
+      });
+
+      const [firstCall, secondCall] =
+        client.collections.create.mock.calls;
+      const firstId = (firstCall[0] as { readable_id: string }).readable_id;
+      const secondId = (secondCall[0] as { readable_id: string }).readable_id;
+      expect(firstId).not.toBe(secondId);
+      expect(firstId).toMatch(/^acme-same-[0-9a-f]{8}$/);
+      expect(secondId).toMatch(/^acme-same-[0-9a-f]{8}$/);
+    });
+
     it('throws NotFoundException when the organization cannot be found', async () => {
       adminOrgService.findById.mockResolvedValue(null);
 
@@ -737,63 +765,35 @@ describe('AirweaveService', () => {
       expect(client.collections.create).not.toHaveBeenCalled();
     });
 
-    it('adopt-on-409 — returns existing record when our org already owns the conflicting id', async () => {
-      client.collections.create.mockRejectedValue(makeAirweaveError(409));
-      client.collections.get.mockResolvedValue(mappedReturnFromSdk);
-      adminOrgService.isAirweaveCollectionInAllowlist.mockResolvedValue(true);
-
-      const result = await service.createCollection({
-        name: 'My Coll',
-        organizationId: 'org-1',
+    it('throws BadGatewayException when the organization has no slug', async () => {
+      // QA gap #2 — covers the no-slug branch in createCollection.
+      adminOrgService.findById.mockResolvedValue({
+        ...orgRow,
+        slug: null,
       });
 
-      expect(client.collections.get).toHaveBeenCalled();
-      // Adopt path skips a second addToAllowlist (already owned).
-      expect(
-        adminOrgService.addAirweaveCollectionToAllowlist,
-      ).not.toHaveBeenCalled();
-      expect(result.id).toBe('uuid-new');
+      await expect(
+        service.createCollection({
+          name: 'My Coll',
+          organizationId: 'org-no-slug',
+        }),
+      ).rejects.toThrow(BadGatewayException);
+      expect(client.collections.create).not.toHaveBeenCalled();
     });
 
-    it('adopt-on-409 — recovers an orphan by adding to allowlist when get succeeds but ownership absent', async () => {
-      // Scenario: prior attempt succeeded upstream + allowlist UPDATE failed.
-      // Retry hits 409; get returns the upstream record; allowlist doesn't
-      // have it yet → we ADD it now to heal the orphan.
+    it('Airweave create returns 409 → ConflictException (caller retries for a fresh id)', async () => {
+      // Per amended ADR-011 — no adopt-on-409. 409 is real conflict.
       client.collections.create.mockRejectedValue(makeAirweaveError(409));
-      client.collections.get.mockResolvedValue(mappedReturnFromSdk);
-      adminOrgService.isAirweaveCollectionInAllowlist.mockResolvedValue(false);
-
-      const result = await service.createCollection({
-        name: 'My Coll',
-        organizationId: 'org-1',
-      });
-
-      expect(
-        adminOrgService.addAirweaveCollectionToAllowlist,
-      ).toHaveBeenCalled();
-      expect(result.id).toBe('uuid-new');
-    });
-
-    it('adopt-on-409 secondary failure — 5xx on the disambiguating get → ServiceUnavailableException (503)', async () => {
-      client.collections.create.mockRejectedValue(makeAirweaveError(409));
-      client.collections.get.mockRejectedValue(makeAirweaveError(500));
 
       await expect(
         service.createCollection({ name: 'X', organizationId: 'org-1' }),
-      ).rejects.toThrow(ServiceUnavailableException);
-      // Failure mode row 17 — system left unchanged; retry is safe.
+      ).rejects.toThrow(ConflictException);
+      // We never call collections.get — the disambiguation path is gone.
+      expect(client.collections.get).not.toHaveBeenCalled();
+      // Allowlist untouched.
       expect(
         adminOrgService.addAirweaveCollectionToAllowlist,
       ).not.toHaveBeenCalled();
-    });
-
-    it('adopt-on-409 secondary failure — timeout on the get → ServiceUnavailableException (503)', async () => {
-      client.collections.create.mockRejectedValue(makeAirweaveError(409));
-      client.collections.get.mockRejectedValue(new Error('ETIMEDOUT'));
-
-      await expect(
-        service.createCollection({ name: 'X', organizationId: 'org-1' }),
-      ).rejects.toThrow(ServiceUnavailableException);
     });
 
     it('Airweave create returns 5xx → BadGatewayException', async () => {
@@ -816,6 +816,7 @@ describe('AirweaveService', () => {
       });
 
       await expect(failure).rejects.toThrow(ConflictException);
+      // Caller-facing message names the orphan id so SRE can correlate.
       await expect(failure).rejects.toThrow(/readable_id='acme-my-coll-/);
     });
   });
@@ -876,6 +877,11 @@ describe('AirweaveService', () => {
       expect(
         adminOrgService.removeAirweaveCollectionFromAllowlist,
       ).not.toHaveBeenCalled();
+      // Security H1 fix — repo MUST be scoped by org id (defense-in-depth
+      // per repo-conventions §3 even though the route already gates).
+      expect(
+        projectsRepo.findProjectsReferencingAirweaveCollection,
+      ).toHaveBeenCalledWith('acme-foo-abcdef12', 'org-1');
     });
 
     it('deletes upstream + removes from allowlist on the clean path', async () => {
@@ -1026,7 +1032,10 @@ describe('AirweaveService', () => {
       );
     });
 
-    it('OAuth branch — create OK + session token issuance fails → BadGatewayException', async () => {
+    it('OAuth branch — create OK + session token issuance fails → BadGatewayException naming the orphan source-connection id (QA gap #3)', async () => {
+      // Per ADR-011: when Airweave create succeeds but connect-session
+      // fails, the caller-facing message MUST name the orphan source-
+      // connection id so the frontend can recover via the reauth endpoint.
       client.sourceConnections.create.mockResolvedValue(sdkReturn);
       fetchSpy.mockResolvedValue({
         ok: false,
@@ -1034,14 +1043,18 @@ describe('AirweaveService', () => {
         statusText: 'upstream broke',
       } as unknown as Response);
 
-      await expect(
-        service.createSourceConnection({
-          collectionReadableId: 'acme-foo-abcdef12',
-          name: 'Slack',
-          shortName: 'slack',
-          authentication: { kind: 'oauth', endUserId: 'user-1' },
-        }),
-      ).rejects.toThrow(BadGatewayException);
+      const failure = service.createSourceConnection({
+        collectionReadableId: 'acme-foo-abcdef12',
+        name: 'Slack',
+        shortName: 'slack',
+        authentication: { kind: 'oauth', endUserId: 'user-1' },
+      });
+
+      await expect(failure).rejects.toThrow(BadGatewayException);
+      // Orphan source-connection id is named verbatim.
+      await expect(failure).rejects.toThrow(/src-uuid-1/);
+      // And the message points the caller at the recovery endpoint.
+      await expect(failure).rejects.toThrow(/reauth/);
     });
 
     it('direct branch — Airweave rejects credentials → BadGatewayException', async () => {
@@ -1186,6 +1199,31 @@ describe('AirweaveService', () => {
 
       it('rejects re-auth for direct-auth source connections', async () => {
         client.sourceConnections.get.mockResolvedValue(directSdkConn);
+
+        await expect(
+          service.reauthSourceConnection('src-uuid-1', adminSession),
+        ).rejects.toThrow(BadGatewayException);
+      });
+
+      it('deny-by-default — rejects re-auth when conn.auth is undefined (Security MED #1)', async () => {
+        // Per amended ADR-011 + security review: an SDK shape we don't
+        // recognize (auth missing, method undefined) must NOT default to
+        // opening an OAuth handshake against an unknown connection type.
+        client.sourceConnections.get.mockResolvedValue({
+          ...directSdkConn,
+          auth: undefined,
+        });
+
+        await expect(
+          service.reauthSourceConnection('src-uuid-1', adminSession),
+        ).rejects.toThrow(BadGatewayException);
+      });
+
+      it('deny-by-default — rejects re-auth when method is unknown (e.g. new SDK enum value)', async () => {
+        client.sourceConnections.get.mockResolvedValue({
+          ...directSdkConn,
+          auth: { method: 'something_new', authenticated: false },
+        });
 
         await expect(
           service.reauthSourceConnection('src-uuid-1', adminSession),

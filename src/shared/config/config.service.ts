@@ -79,15 +79,26 @@ export class ConfigService {
 
   /**
    * Feature flag for per-collection read-path ownership enforcement.
-   * Defaults to `false` (observe-only). When `false`, the
-   * `AirweaveOwnershipGuard` logs a structured `airweave.read_would_403`
-   * warning for cross-org reads of collection-scoped endpoints but ALLOWS
-   * the request. Flip to `true` after a soak window of zero would-403 events
-   * from legitimate frontend traffic — see ADR-011 § Decision 4 and Step 10b
-   * of the airweave-collections-crud plan.
+   *
+   * Environment-aware defaults (per amended ADR-011 § Decision 4 after
+   * security review):
+   *  - `NODE_ENV !== 'production'` → default **`true`** (enforce). Dev /
+   *    staging surface misconfigured callers immediately so they don't
+   *    silently ship to prod.
+   *  - `NODE_ENV === 'production'` → default **`false`** (observe).
+   *    `AirweaveOwnershipGuard` logs a structured `airweave.read_would_403`
+   *    warning for cross-org reads but allows the request. Flip to `true`
+   *    after ≥5 business days of zero events from legitimate traffic.
+   *
+   * Setting `AIRWEAVE_READ_LOCKDOWN_ENFORCE=true` or `=false` explicitly
+   * overrides the env-aware default.
    */
   getAirweaveReadLockdownEnforce(): boolean {
-    return process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE === 'true';
+    const raw = process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE;
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+    // Env-aware default: enforce everywhere EXCEPT production.
+    return process.env.NODE_ENV !== 'production';
   }
 
   getOpenAiApiKey(): string | null {

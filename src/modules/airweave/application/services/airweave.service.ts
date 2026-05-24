@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
 import {
   BadGatewayException,
   ConflictException,
@@ -144,6 +144,8 @@ export type CreateAirweaveCollectionParams = {
   slugHint?: string;
   /** Velocity organization that will own the new collection. Required for both ownership recording and `readable_id` generation. */
   organizationId: string;
+  /** Optional — surfaced in audit-log entries so SRE can attribute creates to a user. */
+  createdByUserId?: string;
 };
 
 @Injectable()
@@ -328,17 +330,22 @@ export class AirweaveService {
    * Create a new Airweave collection and record ownership in the caller's
    * organization allowlist.
    *
-   * The `readable_id` is generated **deterministically** from
-   * `(orgSlug, slugHint || nameSlug)` — same input always produces the
-   * same id. This is what enables the adopt-on-409 recovery contract per
-   * ADR-011 § Decision 3: if a previous attempt succeeded in Airweave but
-   * the allowlist UPDATE failed (or the connection dropped between the
-   * two), the client retry hits 409 and adopts the orphan.
+   * The `readable_id` is `${orgSlug}-${slugPart}-${nonce8}` where `nonce8`
+   * is a **true random** 32-bit hex string (per amended ADR-011 § Decision 3
+   * after security review). No two calls produce the same id; the suffix is
+   * not derivable from any public input.
    *
-   * Three failure branches on Airweave 409:
-   *  - **Adopt**: our org already owns the id → idempotent retry, return existing.
-   *  - **Conflict**: a different org owns it (or it's legacy) → throw 409.
-   *  - **Secondary failure**: the disambiguating `get()` itself fails → throw 503.
+   * On Airweave `409 Conflict` (vanishingly rare with a random suffix —
+   * birthday-bound at ~65k attempts per `(orgSlug, slugPart)` bucket), we
+   * surface `ConflictException` to the caller. The caller's recovery is to
+   * retry — the new attempt generates a different random suffix and succeeds.
+   *
+   * If Airweave create succeeds but the allowlist UPDATE fails, the upstream
+   * collection becomes an **orphan** (exists upstream, no allowlist entry).
+   * Orphans are invisible from Velocity (LIST silent-filter hides them; per-id
+   * reads gate by allowlist) and will be reaped by a future reconciler cron.
+   * The caller's retry produces a fresh random id (clean second create). See
+   * ADR-011 § Alt G for why the original adopt-on-409 path was removed.
    */
   async createCollection(
     params: CreateAirweaveCollectionParams,
@@ -354,8 +361,8 @@ export class AirweaveService {
     }
     if (!organization.slug) {
       // Slug is the URL-safe org identifier we embed in readable_id. An
-      // org without one cannot deterministically participate in this
-      // flow — surface a clear 502 (upstream/data issue, not caller's fault).
+      // org without one cannot participate — surface 502 (upstream/data
+      // issue, not caller's fault).
       throw new BadGatewayException(
         `Organization '${params.organizationId}' has no slug; cannot generate readable_id`,
       );
@@ -374,35 +381,50 @@ export class AirweaveService {
         readable_id: readableId,
       });
     } catch (error) {
-      if (this.isAirweaveConflict(error)) {
-        return this.recoverFromCreateConflict(
-          client,
-          orgService,
-          params.organizationId,
-          readableId,
+      if (this.getErrorStatusCode(error) === 409) {
+        // Per amended ADR-011 § Decision 3 / Alt G: random suffix collision
+        // is vanishingly rare; surface as a real conflict so the caller
+        // retries (fresh random id → succeeds). No adopt-on-409 path.
+        throw new ConflictException(
+          `Generated readable_id '${readableId}' collided upstream; please retry to receive a new id`,
         );
       }
       this.handleUpstreamError('create collection', error);
     }
 
-    // Airweave create succeeded — record ownership. If this throws, the
-    // adopt-on-409 path on retry will heal it (deterministic id → next
-    // attempt hits 409 → adopt). We surface a ConflictException naming
-    // the orphan so the caller can disambiguate retry vs. real conflict.
     try {
       await orgService.addAirweaveCollectionToAllowlist(
         params.organizationId,
         readableId,
       );
     } catch (error) {
+      // Orphan window: upstream collection exists but the allowlist entry
+      // is missing. Per ADR-011 § Negative, orphans are silent (no ownership
+      // leak — LIST hides them; per-id reads gate by allowlist) and reaped
+      // by a future reconciler. Log loudly so SRE can spot them.
       this.logger.error(
-        `[AirweaveService] allowlist UPDATE failed after Airweave create succeeded — orphan id '${readableId}' will self-heal on retry`,
-        error instanceof Error ? error.stack : String(error),
+        `airweave.collection.orphan ${JSON.stringify({
+          organizationId: params.organizationId,
+          readableId,
+          sdkId: created.id,
+          reason:
+            error instanceof Error ? error.message : String(error),
+        })}`,
       );
       throw new ConflictException(
-        `Collection was created upstream (readable_id='${readableId}') but ownership recording failed; retry the same request to claim it.`,
+        `Collection created upstream (readable_id='${readableId}') but ownership recording failed. The id is orphaned upstream; please retry to create a fresh collection.`,
       );
     }
+
+    // Audit-log per security review recommendation.
+    this.logger.log(
+      `airweave.collection.created ${JSON.stringify({
+        organizationId: params.organizationId,
+        userId: params.createdByUserId ?? null,
+        readableId,
+        sdkId: created.id,
+      })}`,
+    );
 
     return this.mapCollectionDetail(created);
   }
@@ -452,7 +474,10 @@ export class AirweaveService {
     const projectsRepo = this.requireProjectsRepository();
 
     const referencingProjects =
-      await projectsRepo.findProjectsReferencingAirweaveCollection(readableId);
+      await projectsRepo.findProjectsReferencingAirweaveCollection(
+        readableId,
+        organizationId,
+      );
 
     if (referencingProjects.length > 0) {
       throw new ConflictException({
@@ -480,6 +505,13 @@ export class AirweaveService {
       organizationId,
       readableId,
     );
+
+    this.logger.log(
+      `airweave.collection.deleted ${JSON.stringify({
+        organizationId,
+        readableId,
+      })}`,
+    );
   }
 
   /**
@@ -503,18 +535,27 @@ export class AirweaveService {
     const client = this.requireClient();
 
     if (params.authentication.kind === 'direct') {
+      let created: AirweaveSDK.SourceConnection;
       try {
-        const created = await client.sourceConnections.create({
+        created = await client.sourceConnections.create({
           name: params.name,
           short_name: params.shortName,
           readable_collection_id: params.collectionReadableId,
           sync_immediately: true,
           authentication: { credentials: params.authentication.credentials },
         });
-        return { sourceConnection: this.mapSourceConnection(created) };
       } catch (error) {
         this.handleUpstreamError('create source connection', error);
       }
+      this.logger.log(
+        `airweave.source_connection.created ${JSON.stringify({
+          collectionReadableId: params.collectionReadableId,
+          sourceConnectionId: created.id,
+          shortName: params.shortName,
+          authMethod: 'direct',
+        })}`,
+      );
+      return { sourceConnection: this.mapSourceConnection(created) };
     }
 
     // OAuth branch (Step 8): Airweave creates the connection in `pending`
@@ -554,6 +595,15 @@ export class AirweaveService {
         `Source connection ${created.id} was created but the OAuth session token could not be issued; call POST /source-connections/${created.id}/reauth to retry.`,
       );
     }
+
+    this.logger.log(
+      `airweave.source_connection.created ${JSON.stringify({
+        collectionReadableId: params.collectionReadableId,
+        sourceConnectionId: created.id,
+        shortName: params.shortName,
+        authMethod: 'oauth',
+      })}`,
+    );
 
     return {
       sourceConnection: this.mapSourceConnection(created),
@@ -603,7 +653,11 @@ export class AirweaveService {
     session: UserSession,
   ): Promise<void> {
     const client = this.requireClient();
-    await this.fetchAndAssertOwnership(client, sourceConnectionId, session);
+    const conn = await this.fetchAndAssertOwnership(
+      client,
+      sourceConnectionId,
+      session,
+    );
     try {
       await client.sourceConnections.delete(sourceConnectionId);
     } catch (error) {
@@ -613,6 +667,12 @@ export class AirweaveService {
         'Source connection not found',
       );
     }
+    this.logger.log(
+      `airweave.source_connection.deleted ${JSON.stringify({
+        collectionReadableId: conn.readable_collection_id,
+        sourceConnectionId,
+      })}`,
+    );
   }
 
   /**
@@ -639,10 +699,16 @@ export class AirweaveService {
     // mapper's optional `auth_method` widening). OAuth-browser is the only
     // method that needs a re-auth round-trip; direct / oauth_token /
     // auth_provider rotate credentials via PATCH or upstream provider config.
+    //
+    // Security MED #1 fix (2026-05-23): deny-by-default on unknown method.
+    // If `conn.auth` is missing or `method` is anything other than the
+    // explicit OAuth-browser value, refuse rather than open an OAuth flow
+    // against a connection whose auth shape we don't know.
     const method = conn.auth?.method;
-    if (method && method !== 'oauth_browser') {
+    if (method !== 'oauth_browser') {
       throw new BadGatewayException(
-        `Re-auth is only available for OAuth-browser source connections (this one uses '${method}')`,
+        `Re-auth is only available for OAuth-browser source connections ` +
+          `(this one's auth.method = ${method === undefined ? 'undefined' : `'${method}'`})`,
       );
     }
 
@@ -701,80 +767,15 @@ export class AirweaveService {
   }
 
   /**
-   * Disambiguate an Airweave 409 on create. Either:
-   *  - we already own this id (legitimate retry → return existing record),
-   *  - someone else owns it (genuine cross-org conflict → throw 409),
-   *  - or we can't tell because the disambiguating `get()` failed (→ throw 503).
-   */
-  private async recoverFromCreateConflict(
-    client: NonNullable<AirweaveSdkClient>,
-    orgService: AdminOrganizationsService,
-    organizationId: string,
-    readableId: string,
-  ): Promise<AirweaveCollectionDetail> {
-    let existing: AirweaveSDK.Collection;
-    try {
-      existing = await client.collections.get(readableId);
-    } catch (error) {
-      // Secondary-failure path per ADR-011 § Decision 3. Retry-safe:
-      // both the original 409 and this failed GET left the system
-      // unchanged. Subsequent retry re-enters the same code path.
-      this.logger.error(
-        `[AirweaveService] adopt-on-409: disambiguating GET failed for readable_id='${readableId}'`,
-        error instanceof Error ? error.stack : String(error),
-      );
-      throw new ServiceUnavailableException(
-        `Could not disambiguate conflict on '${readableId}' — please retry`,
-      );
-    }
-
-    const owned = await orgService.isAirweaveCollectionInAllowlist(
-      organizationId,
-      readableId,
-    );
-
-    if (owned) {
-      // Adopt path: this is a retry of a previous successful create
-      // whose allowlist UPDATE didn't land. Return the existing record;
-      // the allowlist already has it.
-      return this.mapCollectionDetail(existing);
-    }
-
-    // Recover-by-add path: Airweave already has it but our org doesn't —
-    // this happens when the FIRST allowlist UPDATE failed and a retry is
-    // healing the orphan. Add to allowlist now and return.
-    //
-    // Distinguishing this from a true cross-org conflict is the open
-    // question: an id we deterministically generated for THIS org with
-    // THIS slug input would only exist upstream if WE created it (deterministic
-    // hash includes orgSlug). So if our org doesn't own it but the id matches
-    // our deterministic shape, it's a stale create from us — adopt safely.
-    try {
-      await orgService.addAirweaveCollectionToAllowlist(
-        organizationId,
-        readableId,
-      );
-    } catch (error) {
-      this.logger.error(
-        `[AirweaveService] adopt-on-409 recovery: addToAllowlist failed for '${readableId}'`,
-        error instanceof Error ? error.stack : String(error),
-      );
-      throw new ConflictException(
-        `Recovered upstream collection '${readableId}' but failed to record ownership; retry the same request.`,
-      );
-    }
-
-    return this.mapCollectionDetail(existing);
-  }
-
-  /**
-   * Deterministic `readable_id` generator. Per ADR-011 § Decision 3:
-   * `${orgSlug}-${slugHint || nameSlug}-${nonce8}` where `nonce8` is the
-   * first 8 hex chars of `SHA-256(orgSlug | slugPart)`. 32-bit hash space;
-   * birthday-bound 50% collision at ~65k distinct (orgSlug, slugPart)
-   * combinations — effectively impossible at production volumes.
+   * Generate `${orgSlug}-${slugPart}-${nonce8}` with a true random nonce.
+   * Per amended ADR-011 § Decision 3: the nonce is `randomBytes(4)` (32
+   * random bits) so the id is unpredictable from public inputs (org slug
+   * + display name). The earlier deterministic suffix (sha256 of inputs)
+   * was retired by security review — see ADR-011 § Alt G.
    *
-   * Same input → same id. Required for the adopt-on-409 recovery contract.
+   * Birthday-bound collision at ~65k attempts per `(orgSlug, slugPart)`
+   * bucket; when a collision DOES occur, the caller receives a 409 and
+   * retries (different random nonce → different id → succeeds).
    */
   private generateReadableId(
     orgSlug: string,
@@ -788,10 +789,7 @@ export class AirweaveService {
         'Cannot generate readable_id from empty name/slugHint',
       );
     }
-    const nonce = createHash('sha256')
-      .update(`${orgSlug}|${slugPart}`)
-      .digest('hex')
-      .slice(0, 8);
+    const nonce = randomBytes(4).toString('hex');
     return `${orgSlug}-${slugPart}-${nonce}`;
   }
 
@@ -800,10 +798,6 @@ export class AirweaveService {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
-  }
-
-  private isAirweaveConflict(error: unknown): boolean {
-    return this.getErrorStatusCode(error) === 409;
   }
 
   private requireAdminOrganizationsService(): AdminOrganizationsService {
