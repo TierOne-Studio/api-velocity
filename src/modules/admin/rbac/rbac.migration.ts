@@ -33,6 +33,11 @@ const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
   { resource: 'project', action: 'delete' },
   { resource: 'project', action: 'manage-sources' },
   { resource: 'dashboard', action: 'view' },
+  { resource: 'airweave', action: 'create' },
+  { resource: 'airweave', action: 'read' },
+  { resource: 'airweave', action: 'update' },
+  { resource: 'airweave', action: 'delete' },
+  { resource: 'airweave', action: 'manage-sources' },
 ] as const;
 
 const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
@@ -53,6 +58,12 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
   { resource: 'project', action: 'update' },
   { resource: 'project', action: 'manage-sources' },
   { resource: 'dashboard', action: 'view' },
+  // Manager: airweave CRU + manage-sources but no delete (intentional
+  // asymmetry per ADR-011 — collection disposal is admin-only).
+  { resource: 'airweave', action: 'create' },
+  { resource: 'airweave', action: 'read' },
+  { resource: 'airweave', action: 'update' },
+  { resource: 'airweave', action: 'manage-sources' },
 ] as const;
 
 const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
@@ -61,6 +72,7 @@ const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
   { resource: 'chat', action: 'create' },
   { resource: 'chat', action: 'stream' },
   { resource: 'project', action: 'read' },
+  { resource: 'airweave', action: 'read' },
 ] as const;
 
 /**
@@ -148,6 +160,10 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_019_restore_project_permissions',
         up: () => this.restoreProjectPermissions(),
+      },
+      {
+        name: 'rbac_020_add_airweave_permissions',
+        up: () => this.addAirweavePermissions(),
       },
     ];
 
@@ -1482,6 +1498,126 @@ export class RbacMigrationService implements OnModuleInit {
 
     console.log(
       '✅ project permissions restored and assigned to default roles (superadmin/admin/manager/member)',
+    );
+  }
+
+  /**
+   * Add airweave:* permissions for the Airweave collection / source-connection
+   * CRUD feature shipped in the `feat/airweave-collections-crud` PR.
+   *
+   * Resource `airweave` with 5 actions: create / read / update / delete /
+   * manage-sources. Distribution mirrors the `project` resource pattern
+   * with one documented asymmetry (manager has `manage-sources` but not
+   * `delete` — collection disposal is admin-only). See ADR-011 §
+   * "Consequences > Negative" for the asymmetry rationale.
+   *
+   * Granting redundantly to superadmin follows the established repo
+   * pattern (rbac_014/015/018/019). Runtime auth still bypasses superadmin
+   * at the `PermissionsGuard` layer; table grants exist for query consistency.
+   */
+  async addAirweavePermissions(): Promise<void> {
+    const airweavePermissions = [
+      ['airweave', 'create', 'Create Airweave collections'],
+      ['airweave', 'read', 'View Airweave collections and search results'],
+      ['airweave', 'update', 'Rename Airweave collections'],
+      ['airweave', 'delete', 'Delete Airweave collections'],
+      [
+        'airweave',
+        'manage-sources',
+        'Create, update, re-authenticate, and delete Airweave source connections',
+      ],
+    ] as const;
+
+    for (const [resource, action, description] of airweavePermissions) {
+      await this.db.query(
+        `INSERT INTO permissions (resource, action, description)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (resource, action) DO NOTHING`,
+        [resource, action, description],
+      );
+    }
+
+    // Grant all airweave permissions to the global superadmin role.
+    const superadminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
+    );
+    if (superadminRole) {
+      await this.db.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT $1, p.id
+         FROM permissions p
+         WHERE p.resource = 'airweave'
+         ON CONFLICT DO NOTHING`,
+        [superadminRole.id],
+      );
+    }
+
+    // Re-sync global admin/manager/member roles.
+    const globalRoles = await this.db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM roles
+       WHERE organization_id IS NULL
+         AND name IN ('admin', 'manager', 'member')`,
+    );
+    for (const role of globalRoles) {
+      if (role.name === 'admin') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      } else if (role.name === 'manager') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      } else if (role.name === 'member') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    // Re-sync org-scoped default roles across every organization.
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
+    for (const organization of organizations) {
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [organization.id],
+      );
+      if (adminRole) {
+        await this.syncRolePermissions(
+          adminRole.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(
+          managerRole.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const memberRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'member'`,
+        [organization.id],
+      );
+      if (memberRole) {
+        await this.syncRolePermissions(
+          memberRole.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    console.log(
+      '✅ airweave permissions added and assigned to default roles (superadmin/admin/manager/member)',
     );
   }
 }

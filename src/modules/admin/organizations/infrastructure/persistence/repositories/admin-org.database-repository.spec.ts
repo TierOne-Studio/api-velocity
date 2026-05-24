@@ -606,4 +606,77 @@ describe('AdminOrgDatabaseRepository', () => {
       expect(await repo.getRoles(null)).toEqual(roles);
     });
   });
+
+  // ─── Airweave allowlist (ADR-011) ───────────────────────────────────────────
+
+  describe('addAirweaveCollectionToAllowlist', () => {
+    it('issues a jsonb_set UPDATE with field-locality + DISTINCT idempotency', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repo.addAirweaveCollectionToAllowlist('org-1', 'coll-readable-1');
+
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+      // Field-locality: never touches other metadata keys.
+      expect(sql).toContain('jsonb_set');
+      expect(sql).toContain("'{allowedAirweaveCollectionIds}'");
+      // NULL-metadata initialization.
+      expect(sql).toContain("COALESCE(metadata, '{}'::jsonb)");
+      // Idempotency via DISTINCT against existing array || new id.
+      expect(sql).toContain('DISTINCT');
+      expect(sql).toContain('jsonb_array_elements_text');
+      expect(params).toEqual(['org-1', 'coll-readable-1']);
+    });
+  });
+
+  describe('removeAirweaveCollectionFromAllowlist', () => {
+    it('issues a jsonb_set UPDATE that filters the id out by inequality', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repo.removeAirweaveCollectionFromAllowlist(
+        'org-1',
+        'coll-readable-1',
+      );
+
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockQuery.mock.calls[0] as [string, unknown[]];
+      expect(sql).toContain('jsonb_set');
+      expect(sql).toContain("'{allowedAirweaveCollectionIds}'");
+      // Filter-out predicate (no-op when id not present).
+      expect(sql).toContain('WHERE value <> $2');
+      expect(params).toEqual(['org-1', 'coll-readable-1']);
+    });
+  });
+
+  describe('isAirweaveCollectionInAllowlist', () => {
+    it('returns true when the EXISTS subquery reports present=true', async () => {
+      mockQueryOne.mockResolvedValue({ present: true });
+
+      const result = await repo.isAirweaveCollectionInAllowlist(
+        'org-1',
+        'coll-readable-1',
+      );
+
+      expect(result).toBe(true);
+      expect(mockQueryOne).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockQueryOne.mock.calls[0] as [string, unknown[]];
+      expect(sql).toContain('jsonb_array_elements_text');
+      expect(sql).toContain("COALESCE(metadata->'allowedAirweaveCollectionIds'");
+      expect(params).toEqual(['org-1', 'coll-readable-1']);
+    });
+
+    it('returns false when present is false', async () => {
+      mockQueryOne.mockResolvedValue({ present: false });
+      expect(
+        await repo.isAirweaveCollectionInAllowlist('org-1', 'coll-readable-1'),
+      ).toBe(false);
+    });
+
+    it('returns false when queryOne returns null (organization not found)', async () => {
+      mockQueryOne.mockResolvedValue(null);
+      expect(
+        await repo.isAirweaveCollectionInAllowlist('missing-org', 'coll-1'),
+      ).toBe(false);
+    });
+  });
 });

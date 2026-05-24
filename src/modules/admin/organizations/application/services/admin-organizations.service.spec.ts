@@ -62,6 +62,9 @@ describe('AdminOrganizationsService', () => {
       getInvitations: jest.fn(),
       deleteInvitation: jest.fn(),
       getRoles: jest.fn(),
+      addAirweaveCollectionToAllowlist: jest.fn(),
+      removeAirweaveCollectionFromAllowlist: jest.fn(),
+      isAirweaveCollectionInAllowlist: jest.fn(),
     };
 
     const mockEmailService = {
@@ -1336,6 +1339,118 @@ describe('AdminOrganizationsService', () => {
       expect(result.assignableRoles).toEqual(
         expect.arrayContaining(['admin', 'manager', 'member', 'owner']),
       );
+    });
+  });
+
+  describe('airweave allowlist methods', () => {
+    // These methods are thin wrappers over the repository; the load-bearing
+    // invariants (jsonb_set idempotency, NULL metadata initialization,
+    // field-locality) live in the SQL itself and are guaranteed by the
+    // repository implementation. Service-level tests assert that the
+    // service correctly delegates with the right parameters and propagates
+    // the repository's result. Per ADR-011 § Decision 2.
+    describe('addAirweaveCollectionToAllowlist', () => {
+      it('delegates to the repository with org id + readable id', async () => {
+        orgRepo.addAirweaveCollectionToAllowlist.mockResolvedValue(undefined);
+
+        await service.addAirweaveCollectionToAllowlist(
+          'org-1',
+          'coll-readable-1',
+        );
+
+        expect(orgRepo.addAirweaveCollectionToAllowlist).toHaveBeenCalledWith(
+          'org-1',
+          'coll-readable-1',
+        );
+        expect(
+          orgRepo.addAirweaveCollectionToAllowlist,
+        ).toHaveBeenCalledTimes(1);
+      });
+
+      it('is safe to call twice with the same id (idempotency delegated to SQL)', async () => {
+        orgRepo.addAirweaveCollectionToAllowlist.mockResolvedValue(undefined);
+
+        await service.addAirweaveCollectionToAllowlist(
+          'org-1',
+          'coll-readable-1',
+        );
+        await service.addAirweaveCollectionToAllowlist(
+          'org-1',
+          'coll-readable-1',
+        );
+
+        expect(
+          orgRepo.addAirweaveCollectionToAllowlist,
+        ).toHaveBeenCalledTimes(2);
+        // Both calls carry the same params — SQL DISTINCT guarantees no dup.
+        expect(
+          orgRepo.addAirweaveCollectionToAllowlist,
+        ).toHaveBeenNthCalledWith(1, 'org-1', 'coll-readable-1');
+        expect(
+          orgRepo.addAirweaveCollectionToAllowlist,
+        ).toHaveBeenNthCalledWith(2, 'org-1', 'coll-readable-1');
+      });
+    });
+
+    describe('removeAirweaveCollectionFromAllowlist', () => {
+      it('delegates to the repository with org id + readable id', async () => {
+        orgRepo.removeAirweaveCollectionFromAllowlist.mockResolvedValue(
+          undefined,
+        );
+
+        await service.removeAirweaveCollectionFromAllowlist(
+          'org-1',
+          'coll-readable-1',
+        );
+
+        expect(
+          orgRepo.removeAirweaveCollectionFromAllowlist,
+        ).toHaveBeenCalledWith('org-1', 'coll-readable-1');
+      });
+
+      it('is safe to call when the id is not present (no-op delegated to SQL)', async () => {
+        orgRepo.removeAirweaveCollectionFromAllowlist.mockResolvedValue(
+          undefined,
+        );
+
+        await expect(
+          service.removeAirweaveCollectionFromAllowlist(
+            'org-1',
+            'never-added',
+          ),
+        ).resolves.toBeUndefined();
+      });
+    });
+
+    describe('isAirweaveCollectionInAllowlist', () => {
+      it('returns true when the repository reports the id is present', async () => {
+        orgRepo.isAirweaveCollectionInAllowlist.mockResolvedValue(true);
+
+        await expect(
+          service.isAirweaveCollectionInAllowlist('org-1', 'coll-readable-1'),
+        ).resolves.toBe(true);
+      });
+
+      it('returns false when the repository reports the id is absent', async () => {
+        orgRepo.isAirweaveCollectionInAllowlist.mockResolvedValue(false);
+
+        await expect(
+          service.isAirweaveCollectionInAllowlist('org-1', 'coll-readable-1'),
+        ).resolves.toBe(false);
+      });
+
+      it('returns false when the organization has NULL metadata (repo-level coalesce)', async () => {
+        // Repository SQL uses COALESCE(metadata->'allowedAirweaveCollectionIds', '[]'::jsonb)
+        // so NULL metadata produces false. Callers can rely on the boolean.
+        orgRepo.isAirweaveCollectionInAllowlist.mockResolvedValue(false);
+
+        await expect(
+          service.isAirweaveCollectionInAllowlist(
+            'org-null-metadata',
+            'any-id',
+          ),
+        ).resolves.toBe(false);
+      });
     });
   });
 });

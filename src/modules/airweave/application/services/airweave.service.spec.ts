@@ -1,11 +1,13 @@
 import { jest } from '@jest/globals';
 import {
   BadGatewayException,
+  ConflictException,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '../../../../shared/config';
+import { AdminOrganizationsService } from '../../../admin/organizations/application/services/admin-organizations.service';
 import { AIRWEAVE_SDK_CLIENT } from '../../infrastructure/airweave-sdk.provider';
 import { AirweaveService } from './airweave.service';
 
@@ -13,6 +15,7 @@ describe('AirweaveService', () => {
   let service: AirweaveService;
   let client: {
     collections: {
+      create: jest.Mock<any>;
       get: jest.Mock<any>;
       list: jest.Mock<any>;
       search: {
@@ -26,12 +29,18 @@ describe('AirweaveService', () => {
     getAirweaveApiKey: jest.Mock<any>;
     getAirweaveBaseUrl: jest.Mock<any>;
   };
+  let adminOrgService: {
+    findById: jest.Mock<any>;
+    addAirweaveCollectionToAllowlist: jest.Mock<any>;
+    isAirweaveCollectionInAllowlist: jest.Mock<any>;
+  };
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
   let fetchSpy: jest.SpiedFunction<typeof fetch>;
 
   beforeEach(async () => {
     client = {
       collections: {
+        create: jest.fn(),
         get: jest.fn(),
         list: jest.fn(),
         search: {
@@ -45,12 +54,18 @@ describe('AirweaveService', () => {
       getAirweaveApiKey: jest.fn().mockReturnValue('sk-airweave'),
       getAirweaveBaseUrl: jest.fn().mockReturnValue('https://api.airweave.ai'),
     };
+    adminOrgService = {
+      findById: jest.fn(),
+      addAirweaveCollectionToAllowlist: jest.fn(),
+      isAirweaveCollectionInAllowlist: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AirweaveService,
         { provide: AIRWEAVE_SDK_CLIENT, useValue: client },
         { provide: ConfigService, useValue: configService },
+        { provide: AdminOrganizationsService, useValue: adminOrgService },
       ],
     }).compile();
 
@@ -523,5 +538,180 @@ describe('AirweaveService', () => {
     });
 
     expect(result.results).toHaveLength(0);
+  });
+
+  // ── createCollection (Step 4a + 4b: happy path + adopt-on-409) ─────────
+
+  describe('createCollection', () => {
+    const orgRow = {
+      id: 'org-1',
+      slug: 'acme',
+      name: 'Acme',
+      metadata: null,
+      logo: null,
+      member_count: '1',
+      createdAt: new Date(),
+    };
+
+    const mappedReturnFromSdk = {
+      id: 'uuid-new',
+      name: 'My Coll',
+      readable_id: 'acme-my-coll-abcdef12',
+      organization_id: 'airweave-org',
+      created_at: '2026-05-23T00:00:00.000Z',
+      modified_at: '2026-05-23T00:00:00.000Z',
+      status: 'ACTIVE',
+      vector_size: 1536,
+      embedding_model_name: 'text-embedding-3-large',
+    };
+
+    function makeAirweaveError(statusCode: number, message = 'upstream') {
+      return Object.assign(new Error(message), { statusCode });
+    }
+
+    beforeEach(() => {
+      adminOrgService.findById.mockResolvedValue(orgRow);
+      adminOrgService.addAirweaveCollectionToAllowlist.mockResolvedValue(
+        undefined,
+      );
+      adminOrgService.isAirweaveCollectionInAllowlist.mockResolvedValue(false);
+    });
+
+    it('happy path — creates upstream and records ownership', async () => {
+      client.collections.create.mockResolvedValue(mappedReturnFromSdk);
+
+      const result = await service.createCollection({
+        name: 'My Coll',
+        organizationId: 'org-1',
+      });
+
+      // Deterministic id derives from orgSlug + slugified(name) + sha256[:8].
+      expect(client.collections.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'My Coll',
+          readable_id: expect.stringMatching(
+            /^acme-my-coll-[0-9a-f]{8}$/,
+          ) as unknown as string,
+        }),
+      );
+      expect(
+        adminOrgService.addAirweaveCollectionToAllowlist,
+      ).toHaveBeenCalledWith(
+        'org-1',
+        expect.stringMatching(
+          /^acme-my-coll-[0-9a-f]{8}$/,
+        ) as unknown as string,
+      );
+      expect(result.id).toBe('uuid-new');
+    });
+
+    it('uses slugHint when provided (overrides name slugification)', async () => {
+      client.collections.create.mockResolvedValue(mappedReturnFromSdk);
+
+      await service.createCollection({
+        name: 'A different display name',
+        slugHint: 'finance-reports',
+        organizationId: 'org-1',
+      });
+
+      expect(client.collections.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          readable_id: expect.stringMatching(
+            /^acme-finance-reports-[0-9a-f]{8}$/,
+          ) as unknown as string,
+        }),
+      );
+    });
+
+    it('throws NotFoundException when the organization cannot be found', async () => {
+      adminOrgService.findById.mockResolvedValue(null);
+
+      await expect(
+        service.createCollection({ name: 'X', organizationId: 'missing' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(client.collections.create).not.toHaveBeenCalled();
+    });
+
+    it('adopt-on-409 — returns existing record when our org already owns the conflicting id', async () => {
+      client.collections.create.mockRejectedValue(makeAirweaveError(409));
+      client.collections.get.mockResolvedValue(mappedReturnFromSdk);
+      adminOrgService.isAirweaveCollectionInAllowlist.mockResolvedValue(true);
+
+      const result = await service.createCollection({
+        name: 'My Coll',
+        organizationId: 'org-1',
+      });
+
+      expect(client.collections.get).toHaveBeenCalled();
+      // Adopt path skips a second addToAllowlist (already owned).
+      expect(
+        adminOrgService.addAirweaveCollectionToAllowlist,
+      ).not.toHaveBeenCalled();
+      expect(result.id).toBe('uuid-new');
+    });
+
+    it('adopt-on-409 — recovers an orphan by adding to allowlist when get succeeds but ownership absent', async () => {
+      // Scenario: prior attempt succeeded upstream + allowlist UPDATE failed.
+      // Retry hits 409; get returns the upstream record; allowlist doesn't
+      // have it yet → we ADD it now to heal the orphan.
+      client.collections.create.mockRejectedValue(makeAirweaveError(409));
+      client.collections.get.mockResolvedValue(mappedReturnFromSdk);
+      adminOrgService.isAirweaveCollectionInAllowlist.mockResolvedValue(false);
+
+      const result = await service.createCollection({
+        name: 'My Coll',
+        organizationId: 'org-1',
+      });
+
+      expect(
+        adminOrgService.addAirweaveCollectionToAllowlist,
+      ).toHaveBeenCalled();
+      expect(result.id).toBe('uuid-new');
+    });
+
+    it('adopt-on-409 secondary failure — 5xx on the disambiguating get → ServiceUnavailableException (503)', async () => {
+      client.collections.create.mockRejectedValue(makeAirweaveError(409));
+      client.collections.get.mockRejectedValue(makeAirweaveError(500));
+
+      await expect(
+        service.createCollection({ name: 'X', organizationId: 'org-1' }),
+      ).rejects.toThrow(ServiceUnavailableException);
+      // Failure mode row 17 — system left unchanged; retry is safe.
+      expect(
+        adminOrgService.addAirweaveCollectionToAllowlist,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('adopt-on-409 secondary failure — timeout on the get → ServiceUnavailableException (503)', async () => {
+      client.collections.create.mockRejectedValue(makeAirweaveError(409));
+      client.collections.get.mockRejectedValue(new Error('ETIMEDOUT'));
+
+      await expect(
+        service.createCollection({ name: 'X', organizationId: 'org-1' }),
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('Airweave create returns 5xx → BadGatewayException', async () => {
+      client.collections.create.mockRejectedValue(makeAirweaveError(500));
+
+      await expect(
+        service.createCollection({ name: 'X', organizationId: 'org-1' }),
+      ).rejects.toThrow(BadGatewayException);
+    });
+
+    it('Airweave OK + allowlist UPDATE fails → ConflictException naming the orphan readable_id', async () => {
+      client.collections.create.mockResolvedValue(mappedReturnFromSdk);
+      adminOrgService.addAirweaveCollectionToAllowlist.mockRejectedValue(
+        new Error('DB write failed'),
+      );
+
+      const failure = service.createCollection({
+        name: 'My Coll',
+        organizationId: 'org-1',
+      });
+
+      await expect(failure).rejects.toThrow(ConflictException);
+      await expect(failure).rejects.toThrow(/readable_id='acme-my-coll-/);
+    });
   });
 });

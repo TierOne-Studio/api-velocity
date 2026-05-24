@@ -44,6 +44,8 @@ This keeps skill files focused on *how* and the ADR file as the canonical *why*.
 | [007](./ADR-007-skill-vs-repo-conflict-resolution.md) | Skill-vs-repo conflict resolution (P3.5) — skill default, repo wins on structural | Accepted | 2026-04-30 |
 | [008](./ADR-008-no-ai-attribution.md) | No AI-attribution trailers in commits, PRs, issues, or releases | Accepted | 2026-04-30 |
 | [009](./ADR-009-clean-architecture-layering-for-modules.md) | Clean architecture / hexagonal layering for new modules (extends ADR-001) | Accepted | 2026-04-30 |
+| [010](./ADR-010-supersede-app-db-host-guard.md) | Supersede the host+port app-DB guard; rely on the read-only contract | Accepted | 2026-05-19 |
+| [011](./ADR-011-airweave-ownership-via-org-metadata.md) | Airweave collection ownership via `organization.metadata` allowlist | Accepted | 2026-05-23 |
 
 ## Adding a new ADR
 

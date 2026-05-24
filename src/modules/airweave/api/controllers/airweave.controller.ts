@@ -1,6 +1,8 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpException,
   HttpStatus,
@@ -12,17 +14,14 @@ import {
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { RequirePermissions, PermissionsGuard } from '../../../../shared';
-import {
-  AdminOrganizationsService,
-  getActiveOrganizationId,
-  getPlatformRole,
-} from '../../../admin';
+import { getActiveOrganizationId } from '../../../admin/users/utils/admin.utils';
+import { AirweaveAuthorizationService } from '../../application/services/airweave-authorization.service';
 import {
   AirweaveService,
-  type AirweaveCollectionSummary,
   type AirweaveSearchRetrievalStrategy,
   type AirweaveSearchTier,
 } from '../../application/services/airweave.service';
+import type { CreateCollectionBody } from '../dto/airweave.dto';
 
 type SearchCollectionBody = {
   query?: string;
@@ -48,7 +47,7 @@ const RETRIEVAL_STRATEGIES: AirweaveSearchRetrievalStrategy[] = [
 export class AirweaveController {
   constructor(
     private readonly airweaveService: AirweaveService,
-    private readonly adminOrganizationsService: AdminOrganizationsService,
+    private readonly authzService: AirweaveAuthorizationService,
   ) {}
 
   private requireTrimmedString(value: string, fieldName: string): string {
@@ -136,42 +135,59 @@ export class AirweaveController {
     });
 
     return {
-      data: await this.applyAirweaveAllowlist(collections, session),
+      data: await this.authzService.applyAirweaveAllowlist(
+        collections,
+        session,
+      ),
     };
   }
 
-  private async applyAirweaveAllowlist(
-    collections: AirweaveCollectionSummary[],
-    session: UserSession,
-  ): Promise<AirweaveCollectionSummary[]> {
-    const platformRole = getPlatformRole(session);
-    if (platformRole === 'superadmin') return collections;
+  @Post('collections')
+  @RequirePermissions('airweave:create')
+  async createCollection(
+    @Session() session: UserSession,
+    @Body() body: CreateCollectionBody,
+  ) {
+    const name = this.requireTrimmedString(body?.name ?? '', 'name');
+    const slugHint = body?.slugHint
+      ? this.requireValidSlugHint(body.slugHint)
+      : undefined;
 
-    const activeOrgId = getActiveOrganizationId(session);
-    if (!activeOrgId) return [];
+    const organizationId = getActiveOrganizationId(session);
+    if (!organizationId) {
+      // Mutating Airweave requires a concrete owning organization. Even
+      // superadmin must operate within an active org for create — there
+      // is no useful "global" owner for a new collection.
+      throw new ForbiddenException(
+        'Active organization required to create an Airweave collection',
+      );
+    }
 
-    const organization =
-      await this.adminOrganizationsService.findById(activeOrgId);
-    if (!organization) return [];
-
-    const allowed = this.readAllowedAirweaveCollectionIds(
-      organization.metadata,
-    );
-
-    if (allowed.length === 0) return [];
-    const allowedSet = new Set(allowed);
-    return collections.filter((collection) =>
-      allowedSet.has(collection.readableId),
-    );
+    return {
+      data: await this.airweaveService.createCollection({
+        name,
+        slugHint,
+        organizationId,
+      }),
+    };
   }
 
-  private readAllowedAirweaveCollectionIds(
-    metadata: Record<string, unknown> | null,
-  ): string[] {
-    if (!metadata) return [];
-    const raw = metadata['allowedAirweaveCollectionIds'];
-    if (!Array.isArray(raw)) return [];
-    return raw.filter((value): value is string => typeof value === 'string');
+  private requireValidSlugHint(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new BadRequestException('slugHint must be a non-empty string');
+    }
+    if (trimmed.length > 32) {
+      throw new BadRequestException(
+        'slugHint must be at most 32 characters long',
+      );
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(trimmed)) {
+      throw new BadRequestException(
+        'slugHint must contain only lowercase letters, digits, and dashes (no leading/trailing/consecutive dashes)',
+      );
+    }
+    return trimmed;
   }
 
   @Get('collections/:collectionId')

@@ -175,4 +175,23 @@ export interface IAdminOrgRepository {
 
   // Roles
   getRoles(organizationId: string | null): Promise<RoleRow[]>;
+
+  // Airweave collection ownership (per ADR-011)
+  //
+  // The allowlist `organization.metadata.allowedAirweaveCollectionIds: string[]`
+  // is mutated field-locally via `jsonb_set` to avoid stomping concurrent
+  // writes to other `metadata` fields (the existing `updateOrg` path is a
+  // full-overwrite of the JSON blob). All three methods are idempotent.
+  addAirweaveCollectionToAllowlist(
+    organizationId: string,
+    collectionReadableId: string,
+  ): Promise<void>;
+  removeAirweaveCollectionFromAllowlist(
+    organizationId: string,
+    collectionReadableId: string,
+  ): Promise<void>;
+  isAirweaveCollectionInAllowlist(
+    organizationId: string,
+    collectionReadableId: string,
+  ): Promise<boolean>;
 }

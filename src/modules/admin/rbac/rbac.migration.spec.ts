@@ -79,7 +79,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_016 already run
         .mockResolvedValueOnce(true) // rbac_017 already run
         .mockResolvedValueOnce(true) // rbac_018 already run
-        .mockResolvedValueOnce(true); // rbac_019 already run
+        .mockResolvedValueOnce(true) // rbac_019 already run
+        .mockResolvedValueOnce(true); // rbac_020 already run
 
       const consoleSpy = jest
         .spyOn(console, 'log')
@@ -113,7 +114,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false) // rbac_016 NOT run
         .mockResolvedValueOnce(false) // rbac_017 NOT run
         .mockResolvedValueOnce(true) // rbac_018 already run
-        .mockResolvedValueOnce(true); // rbac_019 already run
+        .mockResolvedValueOnce(true) // rbac_019 already run
+        .mockResolvedValueOnce(true); // rbac_020 already run
 
       // rbac_013 calls seedDefaultOrganization → UPSERT returns new org id.
       // Use mockImplementation so it isn't consumed by earlier migrations that also call queryOne.
@@ -440,12 +442,20 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce({ id: 'perm-project-update' })
         .mockResolvedValueOnce({ id: 'perm-project-manage-sources' })
         .mockResolvedValueOnce({ id: 'perm-dashboard-view' })
+        // rbac_020 — manager gains airweave: create / read / update /
+        // manage-sources (no delete; see ADR-011 asymmetry).
+        .mockResolvedValueOnce({ id: 'perm-airweave-create' })
+        .mockResolvedValueOnce({ id: 'perm-airweave-read' })
+        .mockResolvedValueOnce({ id: 'perm-airweave-update' })
+        .mockResolvedValueOnce({ id: 'perm-airweave-manage-sources' })
         .mockResolvedValueOnce({ id: 'member-role-1' })
         .mockResolvedValueOnce({ id: 'perm-member-org-read' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-read' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-create' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-stream' })
-        .mockResolvedValueOnce({ id: 'perm-member-project-read' });
+        .mockResolvedValueOnce({ id: 'perm-member-project-read' })
+        // rbac_020 — member gains airweave:read only.
+        .mockResolvedValueOnce({ id: 'perm-member-airweave-read' });
 
       await service.normalizeOrganizationDefaultRolePermissions();
 
@@ -487,6 +497,15 @@ describe('RbacMigrationService', () => {
           'manage-sources',
           'dashboard',
           'view',
+          // rbac_020 — manager airweave permissions (no 'delete', per ADR-011).
+          'airweave',
+          'create',
+          'airweave',
+          'read',
+          'airweave',
+          'update',
+          'airweave',
+          'manage-sources',
         ],
       );
       expect(dbService.query).toHaveBeenCalledWith(
@@ -502,6 +521,9 @@ describe('RbacMigrationService', () => {
           'chat',
           'stream',
           'project',
+          'read',
+          // rbac_020 — member airweave (read only).
+          'airweave',
           'read',
         ],
       );
@@ -1048,7 +1070,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_016 already run
         .mockResolvedValueOnce(true) // rbac_017 already run
         .mockResolvedValueOnce(true) // rbac_018 already run
-        .mockResolvedValueOnce(true); // rbac_019 already run
+        .mockResolvedValueOnce(true) // rbac_019 already run
+        .mockResolvedValueOnce(true); // rbac_020 already run
 
       // Needed by backfillRolePermissions and assignAllPermissionsToAdmin
       dbService.queryOne.mockResolvedValue(null);
@@ -1474,7 +1497,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_016
         .mockResolvedValueOnce(true) // rbac_017
         .mockResolvedValueOnce(false) // rbac_018 NOT run
-        .mockResolvedValueOnce(true); // rbac_019 already run
+        .mockResolvedValueOnce(true) // rbac_019 already run
+        .mockResolvedValueOnce(true); // rbac_020 already run
 
       dbService.query.mockImplementation(async (sql: string) => {
         if (sql.includes('SELECT id FROM organization')) return [];
@@ -1488,6 +1512,129 @@ describe('RbacMigrationService', () => {
         'rbac_018_add_dashboard_permission',
       );
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('1 new'));
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('addAirweavePermissions', () => {
+    // Mirrors addProjectPermissions test pattern (rbac_014). Verifies:
+    //  - The 5 airweave:* permissions are inserted into the permissions table.
+    //  - Superadmin is granted them (matches established repo pattern of
+    //    redundant grants even though PermissionsGuard bypasses superadmin
+    //    by code — see ADR-011 "Decision" and the architectural note in
+    //    addAirweavePermissions().)
+    //  - Global + org-scoped admin/manager/member roles are re-synced.
+    //
+    // Note on per-role asymmetry: manager has 'manage-sources' but not
+    // 'delete'. This is encoded in the ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS
+    // constant in rbac.migration.ts (visible at PR-diff time) and is the
+    // load-bearing intent per ADR-011 § "Consequences > Negative". Testing
+    // the constant content here would require exposing private module state;
+    // PR review + ADR are the durable enforcement surface.
+    it('inserts the 5 airweave permissions and syncs all roles', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes("IN ('admin', 'manager', 'member')"))
+          return [
+            { id: 'g-admin', name: 'admin' },
+            { id: 'g-manager', name: 'manager' },
+            { id: 'g-member', name: 'member' },
+          ];
+        if (sql.includes('SELECT id FROM organization'))
+          return [{ id: 'org-1' }];
+        return [];
+      });
+
+      dbService.queryOne.mockImplementation(
+        async (sql: string, params?: unknown[]) => {
+          if (sql.includes("name = 'superadmin'"))
+            return { id: 'superadmin-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'admin'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-admin-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'manager'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-manager-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'member'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-member-id' };
+          return null;
+        },
+      );
+
+      await service.addAirweavePermissions();
+
+      // 5 airweave:* permissions inserted
+      for (const action of [
+        'create',
+        'read',
+        'update',
+        'delete',
+        'manage-sources',
+      ]) {
+        expect(dbService.query).toHaveBeenCalledWith(
+          expect.stringContaining('INSERT INTO permissions'),
+          expect.arrayContaining(['airweave', action]),
+        );
+      }
+
+      // Superadmin grant (redundant per ADR-011 — matches repo pattern)
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining("p.resource = 'airweave'"),
+        ['superadmin-id'],
+      );
+
+      // Org-scoped role syncs
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining("name = 'admin'"),
+        ['org-1'],
+      );
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining("name = 'manager'"),
+        ['org-1'],
+      );
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining("name = 'member'"),
+        ['org-1'],
+      );
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('airweave permissions added'),
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('skips org-scoped roles when none found', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes("IN ('admin', 'manager', 'member')")) return [];
+        if (sql.includes('SELECT id FROM organization'))
+          return [{ id: 'org-1' }];
+        return [];
+      });
+
+      dbService.queryOne.mockResolvedValue(null);
+
+      await service.addAirweavePermissions();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('airweave permissions added'),
+      );
       consoleSpy.mockRestore();
     });
   });
