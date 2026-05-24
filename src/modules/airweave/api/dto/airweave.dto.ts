@@ -1,4 +1,42 @@
 /**
+ * Discriminated union for `POST /api/airweave/collections/:id/source-connections`.
+ *
+ * Two `authentication.kind` branches:
+ *  - `direct`: credentials passed inline (API key, password, etc.) — Airweave
+ *    creates the connection synchronously and (per `sync_immediately: true`)
+ *    kicks off an initial sync. Available now (Step 6).
+ *  - `oauth`: returns a `sessionToken` for the frontend to open the Airweave
+ *    portal and complete the browser OAuth flow. Available in Step 8.
+ *
+ * One endpoint, two branches — frontend hits a single URL. Per ADR-011
+ * § Decision 9 (discriminated union; KISS).
+ */
+export interface CreateSourceConnectionBodyDirect {
+  name: string;
+  shortName: string;
+  authentication: {
+    kind: 'direct';
+    credentials: Record<string, unknown>;
+  };
+}
+
+export interface CreateSourceConnectionBodyOAuth {
+  name: string;
+  /** Airweave source type identifier (e.g. 'slack', 'notion'). Used as
+   *  both the SDK `short_name` field and the source the OAuth flow targets. */
+  shortName: string;
+  authentication: {
+    kind: 'oauth';
+    /** Optional post-OAuth landing URL for the user's browser. */
+    redirectUri?: string;
+  };
+}
+
+export type CreateSourceConnectionBody =
+  | CreateSourceConnectionBodyDirect
+  | CreateSourceConnectionBodyOAuth;
+
+/**
  * Request body for `POST /api/airweave/collections`.
  *
  * The server derives the Airweave `readable_id` from `(orgSlug, slugHint

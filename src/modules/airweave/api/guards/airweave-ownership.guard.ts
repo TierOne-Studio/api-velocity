@@ -4,9 +4,15 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
+import { ConfigService } from '../../../../shared/config';
+import {
+  getActiveOrganizationId,
+  getPlatformRole,
+} from '../../../admin/users/utils/admin.utils';
 import {
   AIRWEAVE_OWNERSHIP_KEY,
   type AirweaveOwnershipSource,
@@ -17,6 +23,9 @@ type GuardedRequest = {
   session?: UserSession;
   params?: Record<string, unknown>;
   body?: Record<string, unknown>;
+  url?: string;
+  originalUrl?: string;
+  method?: string;
 };
 
 /**
@@ -41,9 +50,12 @@ type GuardedRequest = {
  */
 @Injectable()
 export class AirweaveOwnershipGuard implements CanActivate {
+  private readonly logger = new Logger(AirweaveOwnershipGuard.name);
+
   constructor(
     private readonly reflector: Reflector,
     private readonly authzService: AirweaveAuthorizationService,
+    private readonly configService: ConfigService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -70,9 +82,40 @@ export class AirweaveOwnershipGuard implements CanActivate {
       );
     }
 
-    await this.authzService.assertOwnership(request.session, rawValue.trim());
+    const collectionReadableId = rawValue.trim();
 
-    return true;
+    try {
+      await this.authzService.assertOwnership(
+        request.session,
+        collectionReadableId,
+      );
+      return true;
+    } catch (error) {
+      if (!(error instanceof ForbiddenException)) throw error;
+
+      // Read-lockdown flag (ADR-011 § Decision 4 + Step 10a/10b). When the
+      // flag is OFF (default), we log a structured warning so SRE can
+      // observe cross-org reads in production before flipping to enforce.
+      // When ON, the 403 propagates as normal.
+      if (this.configService.getAirweaveReadLockdownEnforce()) {
+        throw error;
+      }
+
+      this.logger.warn(
+        // Structured payload as a single JSON string so downstream log
+        // aggregators can parse it without a custom transport.
+        `airweave.read_would_403 ${JSON.stringify({
+          userId: request.session.user.id,
+          userRole: getPlatformRole(request.session),
+          orgId: getActiveOrganizationId(request.session),
+          collectionReadableId,
+          route: request.originalUrl ?? request.url ?? null,
+          method: request.method ?? null,
+          source: source.source,
+        })}`,
+      );
+      return true;
+    }
   }
 
   private extractValue(

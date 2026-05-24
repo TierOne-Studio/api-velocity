@@ -2,6 +2,8 @@ import { createHash, randomBytes } from 'crypto';
 import {
   BadGatewayException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -10,10 +12,16 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { AirweaveSDK } from '@airweave/sdk';
+import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { ConfigService } from '../../../../shared/config';
 // Deep imports to bypass the admin barrel (ESM-only `better-auth/crypto`
 // chain breaks jest's CJS loader — see airweave-authorization.service.ts).
 import { AdminOrganizationsService } from '../../../admin/organizations/application/services/admin-organizations.service';
+import { AirweaveAuthorizationService } from './airweave-authorization.service';
+import {
+  PROJECTS_REPOSITORY,
+  type IProjectsRepository,
+} from '../../../projects/domain/repositories/projects.repository.interface';
 import {
   AIRWEAVE_SDK_CLIENT,
   type AirweaveSdkClient,
@@ -107,6 +115,24 @@ export type AirweaveConnectSessionParams = {
   endUserId: string;
 };
 
+export type CreateAirweaveSourceConnectionParams = {
+  /** Parent collection's `readable_id` — caller is expected to have been
+   *  gated by `AirweaveOwnershipGuard` already. */
+  collectionReadableId: string;
+  name: string;
+  shortName: string;
+  authentication:
+    | { kind: 'direct'; credentials: Record<string, unknown> }
+    | { kind: 'oauth'; redirectUri?: string; endUserId: string };
+};
+
+export type CreateAirweaveSourceConnectionResult = {
+  sourceConnection: AirweaveSourceConnectionSummary;
+  /** Present only on the OAuth branch (Step 8); the frontend opens the
+   *  Airweave portal using this token. */
+  sessionToken?: string;
+};
+
 export type AirweaveConnectSession = {
   sessionToken: string;
 };
@@ -134,6 +160,11 @@ export class AirweaveService {
     private readonly configService?: ConfigService,
     @Optional()
     private readonly adminOrganizationsService?: AdminOrganizationsService,
+    @Optional()
+    @Inject(PROJECTS_REPOSITORY)
+    private readonly projectsRepository?: IProjectsRepository,
+    @Optional()
+    private readonly authzService?: AirweaveAuthorizationService,
   ) {}
 
   async listCollections(
@@ -377,6 +408,299 @@ export class AirweaveService {
   }
 
   /**
+   * Rename an Airweave collection. Pass-through to the SDK; does NOT
+   * touch the allowlist (rename doesn't change ownership). Caller is
+   * expected to have been gated by `AirweaveOwnershipGuard` already.
+   */
+  async updateCollection(
+    readableId: string,
+    update: { name: string },
+  ): Promise<AirweaveCollectionDetail> {
+    const client = this.requireClient();
+    try {
+      const updated = await client.collections.update(readableId, {
+        name: update.name,
+      });
+      return this.mapCollectionDetail(updated);
+    } catch (error) {
+      this.handleUpstreamError(
+        'update collection',
+        error,
+        'Collection not found',
+      );
+    }
+  }
+
+  /**
+   * Delete an Airweave collection AND remove it from the org's allowlist.
+   *
+   * Pre-flight: if any `project_data_source` row with kind='airweave_collection'
+   * references this readable_id, refuse with 409 + the list of project IDs +
+   * names. The caller (frontend) is expected to surface this so the user
+   * can detach the sources first. Per ADR-011 failure mode #4 — no cascade.
+   *
+   * On Airweave 404: proceed with allowlist cleanup anyway (the upstream is
+   * the source-of-truth for "exists"; allowlist may have stale entries).
+   * Per failure mode #5.
+   */
+  async deleteCollection(
+    readableId: string,
+    organizationId: string,
+  ): Promise<void> {
+    const client = this.requireClient();
+    const orgService = this.requireAdminOrganizationsService();
+    const projectsRepo = this.requireProjectsRepository();
+
+    const referencingProjects =
+      await projectsRepo.findProjectsReferencingAirweaveCollection(readableId);
+
+    if (referencingProjects.length > 0) {
+      throw new ConflictException({
+        message:
+          'Collection is in use by one or more projects. Detach the data sources before deleting.',
+        collectionReadableId: readableId,
+        projects: referencingProjects,
+      });
+    }
+
+    try {
+      await client.collections.delete(readableId);
+    } catch (error) {
+      // Upstream 404 → already gone. Proceed with local cleanup so the
+      // allowlist doesn't keep a stale entry forever.
+      if (this.getErrorStatusCode(error) !== 404) {
+        this.handleUpstreamError('delete collection', error);
+      }
+      this.logger.warn(
+        `[AirweaveService] delete: upstream returned 404 for '${readableId}' — proceeding with allowlist cleanup`,
+      );
+    }
+
+    await orgService.removeAirweaveCollectionFromAllowlist(
+      organizationId,
+      readableId,
+    );
+  }
+
+  /**
+   * Create a source connection inside an Airweave collection.
+   *
+   * Two branches discriminated by `authentication.kind`:
+   *  - **direct** (Step 6): credentials passed inline, `sync_immediately: true`
+   *    so Airweave kicks off the initial sync immediately. Returns
+   *    `{ sourceConnection }` only.
+   *  - **oauth** (Step 8): currently throws `NotImplementedException` (501).
+   *    Step 8 will wire it to the existing `createConnectSession` and return
+   *    `{ sourceConnection, sessionToken }`.
+   *
+   * Caller is expected to have been gated by `AirweaveOwnershipGuard`
+   * (the parent collection's `readable_id` is the route param + the user's
+   * active org must own it).
+   */
+  async createSourceConnection(
+    params: CreateAirweaveSourceConnectionParams,
+  ): Promise<CreateAirweaveSourceConnectionResult> {
+    const client = this.requireClient();
+
+    if (params.authentication.kind === 'direct') {
+      try {
+        const created = await client.sourceConnections.create({
+          name: params.name,
+          short_name: params.shortName,
+          readable_collection_id: params.collectionReadableId,
+          sync_immediately: true,
+          authentication: { credentials: params.authentication.credentials },
+        });
+        return { sourceConnection: this.mapSourceConnection(created) };
+      } catch (error) {
+        this.handleUpstreamError('create source connection', error);
+      }
+    }
+
+    // OAuth branch (Step 8): Airweave creates the connection in `pending`
+    // state. We then issue a connect-session token via the existing
+    // `createConnectSession` flow so the frontend can open the portal and
+    // complete the browser OAuth handshake. The initial sync runs after
+    // successful auth (SDK default `sync_immediately: false` for oauth).
+    const oauth = params.authentication;
+    let created: AirweaveSDK.SourceConnection;
+    try {
+      created = await client.sourceConnections.create({
+        name: params.name,
+        short_name: params.shortName,
+        readable_collection_id: params.collectionReadableId,
+        sync_immediately: false,
+        ...(oauth.redirectUri ? { redirect_url: oauth.redirectUri } : {}),
+      });
+    } catch (error) {
+      this.handleUpstreamError('create source connection', error);
+    }
+
+    let session: AirweaveConnectSession;
+    try {
+      session = await this.createConnectSession({
+        readableCollectionId: params.collectionReadableId,
+        endUserId: oauth.endUserId,
+      });
+    } catch (error) {
+      // Source connection is created upstream but we couldn't issue a
+      // session token. Fail loudly so the frontend can retry the reauth
+      // endpoint instead of leaving the user with no way to authenticate.
+      this.logger.error(
+        `[AirweaveService] OAuth create succeeded (id=${created.id}) but connect-session failed`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new BadGatewayException(
+        `Source connection ${created.id} was created but the OAuth session token could not be issued; call POST /source-connections/${created.id}/reauth to retry.`,
+      );
+    }
+
+    return {
+      sourceConnection: this.mapSourceConnection(created),
+      sessionToken: session.sessionToken,
+    };
+  }
+
+  /**
+   * Rename a source connection. Per ADR-011 § Decision 7 (inline lookup-then-
+   * gate), the parent-collection ownership check is performed in this method
+   * — NOT a Guard variant — to avoid coupling the Guard layer to upstream I/O.
+   * One Airweave round-trip on the auth path; the `get(id)` IS the source of
+   * the parent's `readable_collection_id`.
+   */
+  async updateSourceConnection(
+    sourceConnectionId: string,
+    session: UserSession,
+    update: { name: string },
+  ): Promise<AirweaveSourceConnectionSummary> {
+    const client = this.requireClient();
+    const conn = await this.fetchAndAssertOwnership(
+      client,
+      sourceConnectionId,
+      session,
+    );
+    try {
+      const updated = await client.sourceConnections.update(
+        sourceConnectionId,
+        { name: update.name },
+      );
+      return this.mapSourceConnection(updated);
+    } catch (error) {
+      this.handleUpstreamError(
+        'update source connection',
+        error,
+        `Source connection ${conn.id} not found`,
+      );
+    }
+  }
+
+  /**
+   * Delete a source connection. Inline ownership check (see updateSourceConnection).
+   * Airweave cancels any in-flight sync server-side per Assumption A5 (ADR-011).
+   */
+  async deleteSourceConnection(
+    sourceConnectionId: string,
+    session: UserSession,
+  ): Promise<void> {
+    const client = this.requireClient();
+    await this.fetchAndAssertOwnership(client, sourceConnectionId, session);
+    try {
+      await client.sourceConnections.delete(sourceConnectionId);
+    } catch (error) {
+      this.handleUpstreamError(
+        'delete source connection',
+        error,
+        'Source connection not found',
+      );
+    }
+  }
+
+  /**
+   * Initiate a re-authentication flow for an OAuth source connection.
+   * Returns a fresh `sessionToken` the frontend uses to open the Airweave
+   * portal and complete the new OAuth handshake.
+   *
+   * Returns 400 when the connection's `auth_method` is direct — re-auth is
+   * meaningless for credential-based connections (the caller should PATCH
+   * with new credentials instead).
+   */
+  async reauthSourceConnection(
+    sourceConnectionId: string,
+    session: UserSession,
+  ): Promise<{ sessionToken: string }> {
+    const client = this.requireClient();
+    const conn = await this.fetchAndAssertOwnership(
+      client,
+      sourceConnectionId,
+      session,
+    );
+
+    // SDK's `SourceConnection.auth.method` is the canonical field (not the
+    // mapper's optional `auth_method` widening). OAuth-browser is the only
+    // method that needs a re-auth round-trip; direct / oauth_token /
+    // auth_provider rotate credentials via PATCH or upstream provider config.
+    const method = conn.auth?.method;
+    if (method && method !== 'oauth_browser') {
+      throw new BadGatewayException(
+        `Re-auth is only available for OAuth-browser source connections (this one uses '${method}')`,
+      );
+    }
+
+    const connectSession = await this.createConnectSession({
+      readableCollectionId: conn.readable_collection_id,
+      endUserId: session.user.id,
+    });
+    return { sessionToken: connectSession.sessionToken };
+  }
+
+  /**
+   * Inline lookup-then-gate helper: fetches the source connection from
+   * Airweave to discover its parent collection's `readable_id`, then defers
+   * to `AirweaveAuthorizationService.assertOwnership` (which throws 403
+   * for non-owning callers, no-ops for superadmin).
+   *
+   * `getSourceConnection` errors are mapped via `handleUpstreamError`
+   * (404 → NotFoundException with a clean message; other → BadGateway).
+   */
+  private async fetchAndAssertOwnership(
+    client: NonNullable<AirweaveSdkClient>,
+    sourceConnectionId: string,
+    session: UserSession,
+  ): Promise<AirweaveSDK.SourceConnection> {
+    const authz = this.requireAuthzService();
+    let conn: AirweaveSDK.SourceConnection;
+    try {
+      conn = await client.sourceConnections.get(sourceConnectionId);
+    } catch (error) {
+      this.handleUpstreamError(
+        'lookup source connection',
+        error,
+        'Source connection not found',
+      );
+    }
+    await authz.assertOwnership(session, conn.readable_collection_id);
+    return conn;
+  }
+
+  private requireAuthzService(): AirweaveAuthorizationService {
+    if (!this.authzService) {
+      throw new ServiceUnavailableException(
+        'Airweave integration is not configured (authorization service missing)',
+      );
+    }
+    return this.authzService;
+  }
+
+  private requireProjectsRepository(): IProjectsRepository {
+    if (!this.projectsRepository) {
+      throw new ServiceUnavailableException(
+        'Airweave integration is not configured (projects repository missing)',
+      );
+    }
+    return this.projectsRepository;
+  }
+
+  /**
    * Disambiguate an Airweave 409 on create. Either:
    *  - we already own this id (legitimate retry → return existing record),
    *  - someone else owns it (genuine cross-org conflict → throw 409),
@@ -587,16 +911,67 @@ export class AirweaveService {
           ? error
           : JSON.stringify(error);
 
-    console.error('[AirweaveService] Airweave request failed', {
-      action,
-      error: formattedError,
-    });
+    // Per ADR-004: NestJS Logger; embed `action` in the message.
+    this.logger.error(
+      `Airweave request failed during '${action}': ${formattedError}`,
+    );
 
-    if (notFoundMessage && this.getErrorStatusCode(error) === 404) {
+    const statusCode = this.getErrorStatusCode(error);
+
+    if (notFoundMessage && statusCode === 404) {
       throw new NotFoundException(notFoundMessage);
     }
 
+    if (statusCode === 429) {
+      // Per ADR-011 § Decision 12 (failure-mode row 13): pass `429`
+      // through to the caller. We CANNOT add the upstream `Retry-After`
+      // as a real HTTP header from inside a thrown exception (ADR-003
+      // forbids the global filter that would normally do that), so we
+      // surface the seconds value in the response BODY. Clients should
+      // read `retryAfterSeconds` if present.
+      const retryAfter = this.extractRetryAfterSeconds(error);
+      throw new HttpException(
+        {
+          message: `Rate limited by Airweave during '${action}'`,
+          ...(retryAfter !== null ? { retryAfterSeconds: retryAfter } : {}),
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     throw new BadGatewayException(`Failed to ${action}`);
+  }
+
+  /**
+   * Best-effort parse of the upstream `Retry-After` header into seconds.
+   * Returns null when the header is missing, malformed, or in HTTP-date
+   * format (we don't try to compute deltas from absolute dates here —
+   * clients can re-issue with exponential backoff).
+   */
+  private extractRetryAfterSeconds(error: unknown): number | null {
+    if (
+      typeof error !== 'object' ||
+      error === null ||
+      !('rawResponse' in error)
+    ) {
+      return null;
+    }
+    const rawResponse = (error as { rawResponse?: unknown }).rawResponse;
+    if (typeof rawResponse !== 'object' || rawResponse === null) return null;
+    const headers = (rawResponse as { headers?: unknown }).headers;
+    if (
+      !headers ||
+      typeof headers !== 'object' ||
+      typeof (headers as { get?: unknown }).get !== 'function'
+    ) {
+      return null;
+    }
+    const value = (headers as { get: (k: string) => string | null }).get(
+      'retry-after',
+    );
+    if (!value) return null;
+    const seconds = Number.parseInt(value, 10);
+    return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
   }
 
   private getErrorStatusCode(error: unknown): number | null {

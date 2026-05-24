@@ -13,6 +13,7 @@ import {
   BadRequestException,
   ExecutionContext,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
@@ -33,6 +34,9 @@ function makeContext(
     session?: UserSession;
     params?: Record<string, unknown>;
     body?: Record<string, unknown>;
+    url?: string;
+    originalUrl?: string;
+    method?: string;
   } = {},
 ): ExecutionContext {
   return {
@@ -60,19 +64,29 @@ function makeReflector(
 
 describe('AirweaveOwnershipGuard', () => {
   let authzService: jest.Mocked<AirweaveAuthorizationService>;
+  let configService: { getAirweaveReadLockdownEnforce: jest.Mock };
 
   beforeEach(() => {
     authzService = {
       assertOwnership: jest.fn(),
       applyAirweaveAllowlist: jest.fn(),
     } as unknown as jest.Mocked<AirweaveAuthorizationService>;
+    configService = {
+      // Default — flag OFF mirrors production default; tests opt-in to ON.
+      getAirweaveReadLockdownEnforce: jest.fn().mockReturnValue(false),
+    };
   });
 
-  it('returns true (no-op) when the handler is not decorated', async () => {
-    const guard = new AirweaveOwnershipGuard(
-      makeReflector(undefined),
+  function makeGuard(source: AirweaveOwnershipSource | undefined) {
+    return new AirweaveOwnershipGuard(
+      makeReflector(source),
       authzService as never,
+      configService as never,
     );
+  }
+
+  it('returns true (no-op) when the handler is not decorated', async () => {
+    const guard = makeGuard(undefined);
 
     const result = await guard.canActivate(
       makeContext({
@@ -86,10 +100,7 @@ describe('AirweaveOwnershipGuard', () => {
   });
 
   it('throws ForbiddenException when no session is attached to the request', async () => {
-    const guard = new AirweaveOwnershipGuard(
-      makeReflector({ source: 'param', name: 'collectionId' }),
-      authzService as never,
-    );
+    const guard = makeGuard({ source: 'param', name: 'collectionId' });
 
     await expect(
       guard.canActivate(
@@ -106,10 +117,7 @@ describe('AirweaveOwnershipGuard', () => {
 
     it('extracts the id from the named route param and delegates to assertOwnership', async () => {
       authzService.assertOwnership.mockResolvedValue(undefined);
-      const guard = new AirweaveOwnershipGuard(
-        makeReflector(source),
-        authzService as never,
-      );
+      const guard = makeGuard(source);
 
       const result = await guard.canActivate(
         makeContext({
@@ -127,10 +135,7 @@ describe('AirweaveOwnershipGuard', () => {
     });
 
     it('throws BadRequestException when the param is missing', async () => {
-      const guard = new AirweaveOwnershipGuard(
-        makeReflector(source),
-        authzService as never,
-      );
+      const guard = makeGuard(source);
 
       await expect(
         guard.canActivate(makeContext({ session: adminSession, params: {} })),
@@ -138,10 +143,7 @@ describe('AirweaveOwnershipGuard', () => {
     });
 
     it('throws BadRequestException when the param is an empty string', async () => {
-      const guard = new AirweaveOwnershipGuard(
-        makeReflector(source),
-        authzService as never,
-      );
+      const guard = makeGuard(source);
 
       await expect(
         guard.canActivate(
@@ -153,14 +155,16 @@ describe('AirweaveOwnershipGuard', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('propagates ForbiddenException from assertOwnership when the org does not own the collection', async () => {
+    it('propagates ForbiddenException from assertOwnership when the org does not own the collection (flag ON)', async () => {
+      // Step 10a: with flag OFF (default) the guard swallows + logs; the
+      // ForbiddenException only propagates when the lockdown is enforced.
+      configService.getAirweaveReadLockdownEnforce.mockReturnValue(true);
       authzService.assertOwnership.mockRejectedValue(
-        new ForbiddenException('Collection is not owned by your active organization'),
+        new ForbiddenException(
+          'Collection is not owned by your active organization',
+        ),
       );
-      const guard = new AirweaveOwnershipGuard(
-        makeReflector(source),
-        authzService as never,
-      );
+      const guard = makeGuard(source);
 
       await expect(
         guard.canActivate(
@@ -181,10 +185,7 @@ describe('AirweaveOwnershipGuard', () => {
 
     it('extracts the id from the named body field and delegates to assertOwnership', async () => {
       authzService.assertOwnership.mockResolvedValue(undefined);
-      const guard = new AirweaveOwnershipGuard(
-        makeReflector(source),
-        authzService as never,
-      );
+      const guard = makeGuard(source);
 
       const result = await guard.canActivate(
         makeContext({
@@ -201,10 +202,7 @@ describe('AirweaveOwnershipGuard', () => {
     });
 
     it('throws BadRequestException when the body field is non-string', async () => {
-      const guard = new AirweaveOwnershipGuard(
-        makeReflector(source),
-        authzService as never,
-      );
+      const guard = makeGuard(source);
 
       await expect(
         guard.canActivate(
@@ -214,6 +212,81 @@ describe('AirweaveOwnershipGuard', () => {
           }),
         ),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ── Step 10a: read-lockdown flag (observe vs enforce) ─────────────────
+
+  describe('AIRWEAVE_READ_LOCKDOWN_ENFORCE flag', () => {
+    const source: AirweaveOwnershipSource = {
+      source: 'param',
+      name: 'collectionId',
+    };
+
+    it('flag OFF (default) — ForbiddenException is swallowed + warning logged + request allowed', async () => {
+      configService.getAirweaveReadLockdownEnforce.mockReturnValue(false);
+      authzService.assertOwnership.mockRejectedValue(
+        new ForbiddenException('not owned'),
+      );
+      const loggerSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      const guard = makeGuard(source);
+
+      const result = await guard.canActivate(
+        makeContext({
+          session: adminSession,
+          params: { collectionId: 'legacy-coll' },
+          url: '/api/airweave/collections/legacy-coll',
+          method: 'GET',
+        }),
+      );
+
+      expect(result).toBe(true);
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('airweave.read_would_403'),
+      );
+      const logged = loggerSpy.mock.calls[0][0] as string;
+      // Structured fields included.
+      expect(logged).toContain('"userId":"user-admin"');
+      expect(logged).toContain('"orgId":"org-1"');
+      expect(logged).toContain('"collectionReadableId":"legacy-coll"');
+      expect(logged).toContain('"route":"/api/airweave/collections/legacy-coll"');
+      loggerSpy.mockRestore();
+    });
+
+    it('flag ON — ForbiddenException propagates (enforce mode)', async () => {
+      configService.getAirweaveReadLockdownEnforce.mockReturnValue(true);
+      authzService.assertOwnership.mockRejectedValue(
+        new ForbiddenException('not owned'),
+      );
+      const guard = makeGuard(source);
+
+      await expect(
+        guard.canActivate(
+          makeContext({
+            session: adminSession,
+            params: { collectionId: 'legacy-coll' },
+          }),
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('flag does not affect non-ForbiddenException errors (still thrown)', async () => {
+      configService.getAirweaveReadLockdownEnforce.mockReturnValue(false);
+      authzService.assertOwnership.mockRejectedValue(
+        new Error('unexpected database failure'),
+      );
+      const guard = makeGuard(source);
+
+      await expect(
+        guard.canActivate(
+          makeContext({
+            session: adminSession,
+            params: { collectionId: 'coll-1' },
+          }),
+        ),
+      ).rejects.toThrow('unexpected database failure');
     });
   });
 });

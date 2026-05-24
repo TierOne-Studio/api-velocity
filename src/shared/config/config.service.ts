@@ -77,6 +77,19 @@ export class ConfigService {
     return process.env.AIRWEAVE_BASE_URL || 'https://api.airweave.ai';
   }
 
+  /**
+   * Feature flag for per-collection read-path ownership enforcement.
+   * Defaults to `false` (observe-only). When `false`, the
+   * `AirweaveOwnershipGuard` logs a structured `airweave.read_would_403`
+   * warning for cross-org reads of collection-scoped endpoints but ALLOWS
+   * the request. Flip to `true` after a soak window of zero would-403 events
+   * from legitimate frontend traffic — see ADR-011 § Decision 4 and Step 10b
+   * of the airweave-collections-crud plan.
+   */
+  getAirweaveReadLockdownEnforce(): boolean {
+    return process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE === 'true';
+  }
+
   getOpenAiApiKey(): string | null {
     return process.env.OPENAI_API_KEY?.trim() || null;
   }

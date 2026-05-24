@@ -48,4 +48,19 @@ export interface IProjectsRepository {
   deleteSource(projectId: string, sourceId: string): Promise<boolean>;
   countSources(projectId: string): Promise<number>;
   countConversations(projectId: string): Promise<number>;
+
+  /**
+   * Find every project that references the given Airweave collection's
+   * `readable_id` via a `project_data_source` row with
+   * `kind = 'airweave_collection'`. Used by `AirweaveService.deleteCollection`
+   * to produce a 409 Conflict response (per ADR-011 § failure mode #4)
+   * when a collection is still in use by one or more projects.
+   *
+   * Returns the bare minimum needed for the 409 body — `{ id, name }`. No
+   * cross-org filter: collection ownership lives in the org allowlist (not
+   * here), so this is purely a "what is using this id" query.
+   */
+  findProjectsReferencingAirweaveCollection(
+    collectionReadableId: string,
+  ): Promise<Array<{ id: string; name: string }>>;
 }

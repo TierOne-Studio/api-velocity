@@ -2,11 +2,13 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   HttpException,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -15,13 +17,21 @@ import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { RequirePermissions, PermissionsGuard } from '../../../../shared';
 import { getActiveOrganizationId } from '../../../admin/users/utils/admin.utils';
+import {
+  RequireAirweaveOwnership,
+  RequireAirweaveOwnershipFromBody,
+} from '../decorators/require-airweave-ownership.decorator';
+import { AirweaveOwnershipGuard } from '../guards/airweave-ownership.guard';
 import { AirweaveAuthorizationService } from '../../application/services/airweave-authorization.service';
 import {
   AirweaveService,
   type AirweaveSearchRetrievalStrategy,
   type AirweaveSearchTier,
 } from '../../application/services/airweave.service';
-import type { CreateCollectionBody } from '../dto/airweave.dto';
+import type {
+  CreateCollectionBody,
+  CreateSourceConnectionBody,
+} from '../dto/airweave.dto';
 
 type SearchCollectionBody = {
   query?: string;
@@ -43,7 +53,7 @@ const RETRIEVAL_STRATEGIES: AirweaveSearchRetrievalStrategy[] = [
 ];
 
 @Controller('api/airweave')
-@UseGuards(PermissionsGuard)
+@UseGuards(PermissionsGuard, AirweaveOwnershipGuard)
 export class AirweaveController {
   constructor(
     private readonly airweaveService: AirweaveService,
@@ -121,7 +131,7 @@ export class AirweaveController {
   }
 
   @Get('collections')
-  @RequirePermissions('organization:read')
+  @RequirePermissions('airweave:read')
   async listCollections(
     @Session() session: UserSession,
     @Query('search') search?: string,
@@ -172,6 +182,158 @@ export class AirweaveController {
     };
   }
 
+  @Patch('collections/:collectionId')
+  @RequirePermissions('airweave:update')
+  @RequireAirweaveOwnership('collectionId')
+  async updateCollection(
+    @Param('collectionId') collectionId: string,
+    @Body() body: { name?: string },
+  ) {
+    const name = this.requireTrimmedString(body?.name ?? '', 'name');
+    return {
+      data: await this.airweaveService.updateCollection(
+        this.requireTrimmedString(collectionId, 'collectionId'),
+        { name },
+      ),
+    };
+  }
+
+  @Post('collections/:collectionId/source-connections')
+  @RequirePermissions('airweave:manage-sources')
+  @RequireAirweaveOwnership('collectionId')
+  async createSourceConnection(
+    @Session() session: UserSession,
+    @Param('collectionId') collectionId: string,
+    @Body() body: CreateSourceConnectionBody,
+  ) {
+    const collectionReadableId = this.requireTrimmedString(
+      collectionId,
+      'collectionId',
+    );
+    const name = this.requireTrimmedString(body?.name ?? '', 'name');
+    const shortName = this.requireTrimmedString(
+      body?.shortName ?? '',
+      'shortName',
+    );
+
+    const auth = body?.authentication;
+    if (!auth || (auth.kind !== 'direct' && auth.kind !== 'oauth')) {
+      throw new BadRequestException(
+        "authentication.kind must be 'direct' or 'oauth'",
+      );
+    }
+
+    if (auth.kind === 'direct') {
+      if (
+        !auth.credentials ||
+        typeof auth.credentials !== 'object' ||
+        Array.isArray(auth.credentials)
+      ) {
+        throw new BadRequestException(
+          'authentication.credentials must be a non-array object',
+        );
+      }
+      return {
+        data: await this.airweaveService.createSourceConnection({
+          collectionReadableId,
+          name,
+          shortName,
+          authentication: { kind: 'direct', credentials: auth.credentials },
+        }),
+      };
+    }
+
+    // OAuth branch (Step 8): service creates upstream + issues a connect
+    // session; response carries { sourceConnection, sessionToken }.
+    const redirectUri =
+      typeof auth.redirectUri === 'string' && auth.redirectUri.trim()
+        ? auth.redirectUri.trim()
+        : undefined;
+    return {
+      data: await this.airweaveService.createSourceConnection({
+        collectionReadableId,
+        name,
+        shortName,
+        authentication: {
+          kind: 'oauth',
+          redirectUri,
+          endUserId: session.user.id,
+        },
+      }),
+    };
+  }
+
+  @Delete('collections/:collectionId')
+  @RequirePermissions('airweave:delete')
+  @RequireAirweaveOwnership('collectionId')
+  async deleteCollection(
+    @Session() session: UserSession,
+    @Param('collectionId') collectionId: string,
+  ) {
+    const organizationId = getActiveOrganizationId(session);
+    if (!organizationId) {
+      // The Guard already approved the call (superadmin bypass or org owns
+      // the collection), so reaching here without an active org means
+      // superadmin without acting-as-org context — refuse mutation, defer
+      // to a future "claim flow" for superadmin-side bulk operations.
+      throw new ForbiddenException(
+        'Active organization required to delete an Airweave collection',
+      );
+    }
+    await this.airweaveService.deleteCollection(
+      this.requireTrimmedString(collectionId, 'collectionId'),
+      organizationId,
+    );
+    return { data: { deleted: true, collectionId } };
+  }
+
+  @Patch('source-connections/:id')
+  @RequirePermissions('airweave:manage-sources')
+  async updateSourceConnection(
+    @Session() session: UserSession,
+    @Param('id') id: string,
+    @Body() body: { name?: string },
+  ) {
+    const sourceConnectionId = this.requireTrimmedString(id, 'id');
+    const name = this.requireTrimmedString(body?.name ?? '', 'name');
+    return {
+      data: await this.airweaveService.updateSourceConnection(
+        sourceConnectionId,
+        session,
+        { name },
+      ),
+    };
+  }
+
+  @Post('source-connections/:id/reauth')
+  @RequirePermissions('airweave:manage-sources')
+  async reauthSourceConnection(
+    @Session() session: UserSession,
+    @Param('id') id: string,
+  ) {
+    const sourceConnectionId = this.requireTrimmedString(id, 'id');
+    return {
+      data: await this.airweaveService.reauthSourceConnection(
+        sourceConnectionId,
+        session,
+      ),
+    };
+  }
+
+  @Delete('source-connections/:id')
+  @RequirePermissions('airweave:manage-sources')
+  async deleteSourceConnection(
+    @Session() session: UserSession,
+    @Param('id') id: string,
+  ) {
+    const sourceConnectionId = this.requireTrimmedString(id, 'id');
+    await this.airweaveService.deleteSourceConnection(
+      sourceConnectionId,
+      session,
+    );
+    return { data: { deleted: true, sourceConnectionId } };
+  }
+
   private requireValidSlugHint(value: string): string {
     const trimmed = value.trim();
     if (!trimmed) {
@@ -191,7 +353,8 @@ export class AirweaveController {
   }
 
   @Get('collections/:collectionId')
-  @RequirePermissions('organization:read')
+  @RequirePermissions('airweave:read')
+  @RequireAirweaveOwnership('collectionId')
   async getCollection(@Param('collectionId') collectionId: string) {
     return {
       data: await this.airweaveService.getCollection(
@@ -201,7 +364,8 @@ export class AirweaveController {
   }
 
   @Post('collections/:collectionId/search')
-  @RequirePermissions('organization:read')
+  @RequirePermissions('airweave:read')
+  @RequireAirweaveOwnership('collectionId')
   async searchCollection(
     @Param('collectionId') collectionId: string,
     @Body() body: SearchCollectionBody,
@@ -235,7 +399,8 @@ export class AirweaveController {
   }
 
   @Get('sources/:collectionId')
-  @RequirePermissions('organization:read')
+  @RequirePermissions('airweave:read')
+  @RequireAirweaveOwnership('collectionId')
   async listSourceConnections(@Param('collectionId') collectionId: string) {
     return {
       data: await this.airweaveService.listSourceConnections(
@@ -245,7 +410,8 @@ export class AirweaveController {
   }
 
   @Post('connect/session')
-  @RequirePermissions('organization:read')
+  @RequirePermissions('airweave:read')
+  @RequireAirweaveOwnershipFromBody('collectionId')
   async createConnectSession(
     @Session() session: UserSession,
     @Body() body: CreateConnectSessionBody,

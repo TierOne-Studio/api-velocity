@@ -2,13 +2,16 @@ import { jest } from '@jest/globals';
 import {
   BadGatewayException,
   ConflictException,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '../../../../shared/config';
 import { AdminOrganizationsService } from '../../../admin/organizations/application/services/admin-organizations.service';
+import { PROJECTS_REPOSITORY } from '../../../projects/domain/repositories/projects.repository.interface';
 import { AIRWEAVE_SDK_CLIENT } from '../../infrastructure/airweave-sdk.provider';
+import { AirweaveAuthorizationService } from './airweave-authorization.service';
 import { AirweaveService } from './airweave.service';
 
 describe('AirweaveService', () => {
@@ -18,12 +21,20 @@ describe('AirweaveService', () => {
       create: jest.Mock<any>;
       get: jest.Mock<any>;
       list: jest.Mock<any>;
+      update: jest.Mock<any>;
+      delete: jest.Mock<any>;
       search: {
         classic: jest.Mock<any>;
         instant: jest.Mock<any>;
       };
     };
-    sourceConnections: { list: jest.Mock<any>; get: jest.Mock<any> };
+    sourceConnections: {
+      list: jest.Mock<any>;
+      get: jest.Mock<any>;
+      create: jest.Mock<any>;
+      update: jest.Mock<any>;
+      delete: jest.Mock<any>;
+    };
   };
   let configService: {
     getAirweaveApiKey: jest.Mock<any>;
@@ -32,7 +43,15 @@ describe('AirweaveService', () => {
   let adminOrgService: {
     findById: jest.Mock<any>;
     addAirweaveCollectionToAllowlist: jest.Mock<any>;
+    removeAirweaveCollectionFromAllowlist: jest.Mock<any>;
     isAirweaveCollectionInAllowlist: jest.Mock<any>;
+  };
+  let projectsRepo: {
+    findProjectsReferencingAirweaveCollection: jest.Mock<any>;
+  };
+  let authzService: {
+    assertOwnership: jest.Mock<any>;
+    applyAirweaveAllowlist: jest.Mock<any>;
   };
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
   let fetchSpy: jest.SpiedFunction<typeof fetch>;
@@ -43,12 +62,20 @@ describe('AirweaveService', () => {
         create: jest.fn(),
         get: jest.fn(),
         list: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
         search: {
           classic: jest.fn(),
           instant: jest.fn(),
         },
       },
-      sourceConnections: { list: jest.fn(), get: jest.fn() },
+      sourceConnections: {
+        list: jest.fn(),
+        get: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
     };
     configService = {
       getAirweaveApiKey: jest.fn().mockReturnValue('sk-airweave'),
@@ -57,7 +84,15 @@ describe('AirweaveService', () => {
     adminOrgService = {
       findById: jest.fn(),
       addAirweaveCollectionToAllowlist: jest.fn(),
+      removeAirweaveCollectionFromAllowlist: jest.fn(),
       isAirweaveCollectionInAllowlist: jest.fn(),
+    };
+    projectsRepo = {
+      findProjectsReferencingAirweaveCollection: jest.fn(),
+    };
+    authzService = {
+      assertOwnership: jest.fn(),
+      applyAirweaveAllowlist: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -66,6 +101,8 @@ describe('AirweaveService', () => {
         { provide: AIRWEAVE_SDK_CLIENT, useValue: client },
         { provide: ConfigService, useValue: configService },
         { provide: AdminOrganizationsService, useValue: adminOrgService },
+        { provide: PROJECTS_REPOSITORY, useValue: projectsRepo },
+        { provide: AirweaveAuthorizationService, useValue: authzService },
       ],
     }).compile();
 
@@ -357,16 +394,84 @@ describe('AirweaveService', () => {
     );
   });
 
-  it('wraps upstream SDK failures with a bad gateway error', async () => {
+  it('wraps upstream SDK failures with a bad gateway error and logs via NestJS Logger', async () => {
+    // Step 9: handleUpstreamError swapped console.error for NestJS Logger
+    // (ADR-004). Spy at the Logger prototype level since the instance is
+    // private inside AirweaveService.
+    const loggerSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
     client.collections.list.mockRejectedValue(new Error('upstream error'));
 
     await expect(service.listCollections()).rejects.toBeInstanceOf(
       BadGatewayException,
     );
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      '[AirweaveService] Airweave request failed',
-      expect.objectContaining({ action: 'list collections' }),
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining(`during 'list collections'`),
     );
+    loggerSpy.mockRestore();
+  });
+
+  // Step 9: 429 pass-through (failure-mode row 13).
+  describe('429 pass-through', () => {
+    function make429(retryAfterValue?: string | null) {
+      const err = Object.assign(new Error('rate limited'), { statusCode: 429 });
+      if (retryAfterValue !== undefined) {
+        Object.assign(err, {
+          rawResponse: {
+            headers: {
+              get: (key: string) =>
+                key.toLowerCase() === 'retry-after'
+                  ? (retryAfterValue ?? null)
+                  : null,
+            },
+          },
+        });
+      }
+      return err;
+    }
+
+    it('surfaces upstream 429 as HttpException status 429', async () => {
+      client.collections.list.mockRejectedValue(make429('30'));
+
+      try {
+        await service.listCollections();
+        throw new Error('expected throw');
+      } catch (caught: any) {
+        expect(caught.getStatus()).toBe(429);
+        expect(caught.getResponse()).toMatchObject({
+          retryAfterSeconds: 30,
+        });
+      }
+    });
+
+    it('omits retryAfterSeconds when the upstream did not send the header', async () => {
+      client.collections.list.mockRejectedValue(make429());
+
+      try {
+        await service.listCollections();
+        throw new Error('expected throw');
+      } catch (caught: any) {
+        expect(caught.getStatus()).toBe(429);
+        expect(caught.getResponse()).not.toHaveProperty('retryAfterSeconds');
+      }
+    });
+
+    it('omits retryAfterSeconds when the header value is non-numeric', async () => {
+      // RFC also allows HTTP-date format; we deliberately do not parse those
+      // — clients can fall back to exponential backoff.
+      client.collections.list.mockRejectedValue(
+        make429('Wed, 21 Oct 2026 07:28:00 GMT'),
+      );
+
+      try {
+        await service.listCollections();
+        throw new Error('expected throw');
+      } catch (caught: any) {
+        expect(caught.getStatus()).toBe(429);
+        expect(caught.getResponse()).not.toHaveProperty('retryAfterSeconds');
+      }
+    });
   });
 
   it('throws service unavailable when connect is requested without an API key', async () => {
@@ -712,6 +817,380 @@ describe('AirweaveService', () => {
 
       await expect(failure).rejects.toThrow(ConflictException);
       await expect(failure).rejects.toThrow(/readable_id='acme-my-coll-/);
+    });
+  });
+
+  // ── updateCollection (Step 5: rename pass-through) ────────────────────
+
+  describe('updateCollection', () => {
+    const updatedFromSdk = {
+      id: 'uuid-1',
+      name: 'Renamed Coll',
+      readable_id: 'acme-foo-abcdef12',
+      organization_id: 'airweave-org',
+      created_at: '2026-05-23T00:00:00.000Z',
+      modified_at: '2026-05-23T01:00:00.000Z',
+      status: 'ACTIVE',
+      vector_size: 1536,
+      embedding_model_name: 'text-embedding-3-large',
+    };
+
+    it('renames upstream and returns the mapped detail', async () => {
+      client.collections.update.mockResolvedValue(updatedFromSdk);
+
+      const result = await service.updateCollection('acme-foo-abcdef12', {
+        name: 'Renamed Coll',
+      });
+
+      expect(client.collections.update).toHaveBeenCalledWith(
+        'acme-foo-abcdef12',
+        { name: 'Renamed Coll' },
+      );
+      expect(result.name).toBe('Renamed Coll');
+    });
+
+    it('maps upstream 404 to NotFoundException', async () => {
+      client.collections.update.mockRejectedValue(
+        Object.assign(new Error('not found'), { statusCode: 404 }),
+      );
+
+      await expect(
+        service.updateCollection('missing-id', { name: 'X' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ── deleteCollection (Step 5: references check + 404 idempotency) ─────
+
+  describe('deleteCollection', () => {
+    it('refuses with 409 + project list when active project_data_source rows reference the id', async () => {
+      projectsRepo.findProjectsReferencingAirweaveCollection.mockResolvedValue([
+        { id: 'proj-1', name: 'General' },
+        { id: 'proj-2', name: 'Analytics' },
+      ]);
+
+      const failure = service.deleteCollection('acme-foo-abcdef12', 'org-1');
+      await expect(failure).rejects.toThrow(ConflictException);
+      // Airweave + allowlist untouched.
+      expect(client.collections.delete).not.toHaveBeenCalled();
+      expect(
+        adminOrgService.removeAirweaveCollectionFromAllowlist,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('deletes upstream + removes from allowlist on the clean path', async () => {
+      projectsRepo.findProjectsReferencingAirweaveCollection.mockResolvedValue(
+        [],
+      );
+      client.collections.delete.mockResolvedValue(undefined);
+      adminOrgService.removeAirweaveCollectionFromAllowlist.mockResolvedValue(
+        undefined,
+      );
+
+      await service.deleteCollection('acme-foo-abcdef12', 'org-1');
+
+      expect(client.collections.delete).toHaveBeenCalledWith(
+        'acme-foo-abcdef12',
+      );
+      expect(
+        adminOrgService.removeAirweaveCollectionFromAllowlist,
+      ).toHaveBeenCalledWith('org-1', 'acme-foo-abcdef12');
+    });
+
+    it('proceeds with allowlist cleanup when upstream returns 404 (failure mode #5)', async () => {
+      projectsRepo.findProjectsReferencingAirweaveCollection.mockResolvedValue(
+        [],
+      );
+      client.collections.delete.mockRejectedValue(
+        Object.assign(new Error('gone'), { statusCode: 404 }),
+      );
+      adminOrgService.removeAirweaveCollectionFromAllowlist.mockResolvedValue(
+        undefined,
+      );
+
+      await expect(
+        service.deleteCollection('already-gone', 'org-1'),
+      ).resolves.toBeUndefined();
+      expect(
+        adminOrgService.removeAirweaveCollectionFromAllowlist,
+      ).toHaveBeenCalledWith('org-1', 'already-gone');
+    });
+
+    it('propagates non-404 upstream failures as BadGatewayException without touching allowlist', async () => {
+      projectsRepo.findProjectsReferencingAirweaveCollection.mockResolvedValue(
+        [],
+      );
+      client.collections.delete.mockRejectedValue(
+        Object.assign(new Error('upstream broke'), { statusCode: 500 }),
+      );
+
+      await expect(
+        service.deleteCollection('acme-foo-abcdef12', 'org-1'),
+      ).rejects.toThrow(BadGatewayException);
+      expect(
+        adminOrgService.removeAirweaveCollectionFromAllowlist,
+      ).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── createSourceConnection (Step 6: direct branch + OAuth-501 placeholder) ─
+
+  describe('createSourceConnection', () => {
+    const sdkReturn = {
+      id: 'src-uuid-1',
+      name: 'Slack Workspace',
+      short_name: 'slack',
+      readable_collection_id: 'acme-foo-abcdef12',
+      created_at: '2026-05-23T00:00:00.000Z',
+      modified_at: '2026-05-23T00:00:00.000Z',
+      is_authenticated: true,
+      entity_count: 0,
+      auth_method: 'direct',
+      status: 'ACTIVE',
+    };
+
+    it('direct branch — creates with sync_immediately=true and maps the response', async () => {
+      client.sourceConnections.create.mockResolvedValue(sdkReturn);
+
+      const result = await service.createSourceConnection({
+        collectionReadableId: 'acme-foo-abcdef12',
+        name: 'Slack Workspace',
+        shortName: 'slack',
+        authentication: {
+          kind: 'direct',
+          credentials: { token: 'xoxb-...' },
+        },
+      });
+
+      expect(client.sourceConnections.create).toHaveBeenCalledWith({
+        name: 'Slack Workspace',
+        short_name: 'slack',
+        readable_collection_id: 'acme-foo-abcdef12',
+        sync_immediately: true,
+        authentication: { credentials: { token: 'xoxb-...' } },
+      });
+      expect(result.sessionToken).toBeUndefined();
+      expect(result.sourceConnection.id).toBe('src-uuid-1');
+      expect(result.sourceConnection.shortName).toBe('slack');
+    });
+
+    it('OAuth branch — creates with sync_immediately=false and returns sessionToken', async () => {
+      client.sourceConnections.create.mockResolvedValue({
+        ...sdkReturn,
+        auth: { method: 'oauth_browser', authenticated: false },
+      });
+      fetchSpy.mockResolvedValue({
+        ok: true,
+        json: async () => ({ session_token: 'connect-tok-xyz' }),
+      } as unknown as Response);
+
+      const result = await service.createSourceConnection({
+        collectionReadableId: 'acme-foo-abcdef12',
+        name: 'Slack Workspace',
+        shortName: 'slack',
+        authentication: { kind: 'oauth', endUserId: 'user-1' },
+      });
+
+      expect(client.sourceConnections.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          short_name: 'slack',
+          sync_immediately: false,
+        }),
+      );
+      expect(result.sessionToken).toBe('connect-tok-xyz');
+      expect(result.sourceConnection.id).toBe('src-uuid-1');
+    });
+
+    it('OAuth branch — forwards optional redirectUri to the SDK', async () => {
+      client.sourceConnections.create.mockResolvedValue(sdkReturn);
+      fetchSpy.mockResolvedValue({
+        ok: true,
+        json: async () => ({ session_token: 'tok' }),
+      } as unknown as Response);
+
+      await service.createSourceConnection({
+        collectionReadableId: 'acme-foo-abcdef12',
+        name: 'Slack',
+        shortName: 'slack',
+        authentication: {
+          kind: 'oauth',
+          endUserId: 'user-1',
+          redirectUri: 'https://app.velocity/done',
+        },
+      });
+
+      expect(client.sourceConnections.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          redirect_url: 'https://app.velocity/done',
+        }),
+      );
+    });
+
+    it('OAuth branch — create OK + session token issuance fails → BadGatewayException', async () => {
+      client.sourceConnections.create.mockResolvedValue(sdkReturn);
+      fetchSpy.mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: 'upstream broke',
+      } as unknown as Response);
+
+      await expect(
+        service.createSourceConnection({
+          collectionReadableId: 'acme-foo-abcdef12',
+          name: 'Slack',
+          shortName: 'slack',
+          authentication: { kind: 'oauth', endUserId: 'user-1' },
+        }),
+      ).rejects.toThrow(BadGatewayException);
+    });
+
+    it('direct branch — Airweave rejects credentials → BadGatewayException', async () => {
+      client.sourceConnections.create.mockRejectedValue(
+        Object.assign(new Error('invalid token'), { statusCode: 400 }),
+      );
+
+      await expect(
+        service.createSourceConnection({
+          collectionReadableId: 'acme-foo-abcdef12',
+          name: 'Slack Workspace',
+          shortName: 'slack',
+          authentication: { kind: 'direct', credentials: { token: 'bad' } },
+        }),
+      ).rejects.toThrow(BadGatewayException);
+    });
+  });
+
+  // ── Step 7: source-connection UPDATE / DELETE / REAUTH ────────────────
+
+  describe('source-connection inline-gated mutations', () => {
+    const directSdkConn = {
+      id: 'src-uuid-1',
+      name: 'Slack Workspace',
+      short_name: 'slack',
+      readable_collection_id: 'acme-foo-abcdef12',
+      organization_id: 'airweave-org',
+      created_at: '2026-05-23T00:00:00.000Z',
+      modified_at: '2026-05-23T00:00:00.000Z',
+      status: 'ACTIVE',
+      // SDK's canonical field — reauthSourceConnection reads conn.auth?.method
+      auth: { method: 'direct', authenticated: true },
+    };
+
+    const oauthSdkConn = {
+      ...directSdkConn,
+      auth: { method: 'oauth_browser', authenticated: true },
+    };
+
+    const adminSession = {
+      user: { id: 'user-admin', role: 'admin' },
+      session: { activeOrganizationId: 'org-1' },
+    } as never;
+
+    beforeEach(() => {
+      authzService.assertOwnership.mockResolvedValue(undefined);
+    });
+
+    describe('updateSourceConnection', () => {
+      it('looks up parent collection, asserts ownership, then renames', async () => {
+        client.sourceConnections.get.mockResolvedValue(directSdkConn);
+        client.sourceConnections.update.mockResolvedValue({
+          ...directSdkConn,
+          name: 'Renamed',
+        });
+
+        const result = await service.updateSourceConnection(
+          'src-uuid-1',
+          adminSession,
+          { name: 'Renamed' },
+        );
+
+        expect(authzService.assertOwnership).toHaveBeenCalledWith(
+          adminSession,
+          'acme-foo-abcdef12',
+        );
+        expect(client.sourceConnections.update).toHaveBeenCalledWith(
+          'src-uuid-1',
+          { name: 'Renamed' },
+        );
+        expect(result.name).toBe('Renamed');
+      });
+
+      it('propagates the ownership-rejection 403 from authzService', async () => {
+        client.sourceConnections.get.mockResolvedValue(directSdkConn);
+        authzService.assertOwnership.mockRejectedValue(
+          Object.assign(new Error('not owned'), { status: 403 }),
+        );
+
+        await expect(
+          service.updateSourceConnection('src-uuid-1', adminSession, {
+            name: 'X',
+          }),
+        ).rejects.toThrow();
+        expect(client.sourceConnections.update).not.toHaveBeenCalled();
+      });
+
+      it('maps source-connection 404 to NotFoundException', async () => {
+        client.sourceConnections.get.mockRejectedValue(
+          Object.assign(new Error('gone'), { statusCode: 404 }),
+        );
+
+        await expect(
+          service.updateSourceConnection('missing', adminSession, {
+            name: 'X',
+          }),
+        ).rejects.toThrow(NotFoundException);
+      });
+    });
+
+    describe('deleteSourceConnection', () => {
+      it('looks up parent, asserts ownership, then deletes', async () => {
+        client.sourceConnections.get.mockResolvedValue(directSdkConn);
+        client.sourceConnections.delete.mockResolvedValue(undefined);
+
+        await service.deleteSourceConnection('src-uuid-1', adminSession);
+
+        expect(authzService.assertOwnership).toHaveBeenCalledWith(
+          adminSession,
+          'acme-foo-abcdef12',
+        );
+        expect(client.sourceConnections.delete).toHaveBeenCalledWith(
+          'src-uuid-1',
+        );
+      });
+    });
+
+    describe('reauthSourceConnection', () => {
+      // createConnectSession uses fetch (not the SDK client); stub it.
+      function stubConnectSession(token: string) {
+        fetchSpy.mockResolvedValue({
+          ok: true,
+          json: async () => ({ session_token: token }),
+        } as unknown as Response);
+      }
+
+      it('returns a fresh sessionToken for an OAuth source connection', async () => {
+        client.sourceConnections.get.mockResolvedValue(oauthSdkConn);
+        stubConnectSession('connect-token-xyz');
+
+        const result = await service.reauthSourceConnection(
+          'src-uuid-1',
+          adminSession,
+        );
+
+        expect(result.sessionToken).toBe('connect-token-xyz');
+        expect(authzService.assertOwnership).toHaveBeenCalledWith(
+          adminSession,
+          'acme-foo-abcdef12',
+        );
+      });
+
+      it('rejects re-auth for direct-auth source connections', async () => {
+        client.sourceConnections.get.mockResolvedValue(directSdkConn);
+
+        await expect(
+          service.reauthSourceConnection('src-uuid-1', adminSession),
+        ).rejects.toThrow(BadGatewayException);
+      });
     });
   });
 });

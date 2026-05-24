@@ -198,4 +198,17 @@ export class ProjectsDatabaseRepository implements IProjectsRepository {
     );
     return Number(row?.count ?? 0);
   }
+
+  async findProjectsReferencingAirweaveCollection(
+    collectionReadableId: string,
+  ): Promise<Array<{ id: string; name: string }>> {
+    return this.db.query<{ id: string; name: string }>(
+      `SELECT DISTINCT p.id, p.name
+         FROM project p
+         JOIN project_data_source pds ON pds.project_id = p.id
+        WHERE pds.kind = 'airweave_collection'
+          AND pds.config->>'collectionReadableId' = $1`,
+      [collectionReadableId],
+    );
+  }
 }

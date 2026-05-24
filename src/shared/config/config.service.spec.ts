@@ -308,6 +308,30 @@ describe('ConfigService', () => {
     });
   });
 
+  describe('getAirweaveReadLockdownEnforce', () => {
+    it('returns false by default (observe-only mode per ADR-011 Step 10a)', () => {
+      delete process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE;
+
+      expect(new ConfigService().getAirweaveReadLockdownEnforce()).toBe(false);
+    });
+
+    it('returns true only when explicitly set to the string "true"', () => {
+      process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE = 'true';
+
+      expect(new ConfigService().getAirweaveReadLockdownEnforce()).toBe(true);
+    });
+
+    it('returns false for any other value (no truthy coercion)', () => {
+      process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE = '1';
+      expect(new ConfigService().getAirweaveReadLockdownEnforce()).toBe(false);
+
+      process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE = 'yes';
+      expect(new ConfigService().getAirweaveReadLockdownEnforce()).toBe(false);
+
+      delete process.env.AIRWEAVE_READ_LOCKDOWN_ENFORCE;
+    });
+  });
+
   describe('getOpenAiApiKey', () => {
     it('returns OPENAI_API_KEY when set', () => {
       process.env.OPENAI_API_KEY = 'sk-openai';

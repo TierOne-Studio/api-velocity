@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { AdminModule } from '../admin';
 import { AirweaveModule } from '../airweave/airweave.module';
 import { DatabaseModule } from '../../shared/infrastructure/database/database.module';
@@ -15,7 +15,16 @@ import { PROJECTS_REPOSITORY } from './domain/repositories/projects.repository.i
 import { ProjectsMigrationService } from './projects.migration';
 
 @Module({
-  imports: [DatabaseModule, AdminModule, AirweaveModule, SqlConnectionsModule],
+  imports: [
+    DatabaseModule,
+    AdminModule,
+    // forwardRef: AirweaveModule injects PROJECTS_REPOSITORY (Step 5 of the
+    // airweave-collections-crud feature). ProjectsModule still needs
+    // AirweaveModule for AirweaveCollectionProvider. forwardRef resolves
+    // the resulting init cycle.
+    forwardRef(() => AirweaveModule),
+    SqlConnectionsModule,
+  ],
   controllers: [ProjectsController],
   providers: [
     ProjectsService,

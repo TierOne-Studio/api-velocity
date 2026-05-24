@@ -37,6 +37,13 @@ describe('AirweaveController', () => {
       listSourceConnections: jest.fn(),
       getSourceConnection: jest.fn(),
       createConnectSession: jest.fn(),
+      createCollection: jest.fn(),
+      updateCollection: jest.fn(),
+      deleteCollection: jest.fn(),
+      createSourceConnection: jest.fn(),
+      updateSourceConnection: jest.fn(),
+      deleteSourceConnection: jest.fn(),
+      reauthSourceConnection: jest.fn(),
     } as unknown as jest.Mocked<AirweaveService>;
 
     authzService = {
@@ -340,6 +347,245 @@ describe('AirweaveController', () => {
         controller.createCollection(noOrgSession, { name: 'X' }),
       ).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
       expect(airweaveService.createCollection).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── PATCH /collections/:id (Step 5: rename) ──────────────────────────────
+
+  describe('updateCollection', () => {
+    it('delegates to AirweaveService.updateCollection with trimmed values', async () => {
+      (airweaveService.updateCollection as jest.Mock).mockResolvedValue({
+        id: 'uuid-1',
+        name: 'Renamed',
+      } as never);
+
+      const result = await controller.updateCollection('  acme-foo-abc  ', {
+        name: '  Renamed  ',
+      });
+
+      expect(airweaveService.updateCollection).toHaveBeenCalledWith(
+        'acme-foo-abc',
+        { name: 'Renamed' },
+      );
+      expect(result).toEqual({ data: { id: 'uuid-1', name: 'Renamed' } });
+    });
+
+    it('rejects empty name with 400', async () => {
+      await expect(
+        controller.updateCollection('coll-1', { name: '   ' }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+  });
+
+  // ── DELETE /collections/:id (Step 5: 409 on refs / 200 on clean) ─────────
+
+  describe('deleteCollection', () => {
+    it('delegates to AirweaveService.deleteCollection with the active org id', async () => {
+      (airweaveService.deleteCollection as jest.Mock).mockResolvedValue(
+        undefined as never,
+      );
+
+      const result = await controller.deleteCollection(
+        adminSession,
+        'acme-foo-abc',
+      );
+
+      expect(airweaveService.deleteCollection).toHaveBeenCalledWith(
+        'acme-foo-abc',
+        'org-1',
+      );
+      expect(result).toEqual({
+        data: { deleted: true, collectionId: 'acme-foo-abc' },
+      });
+    });
+
+    it('throws ForbiddenException when caller has no active organization', async () => {
+      const noOrgSession = {
+        user: { id: 'user-super', role: 'superadmin' },
+        session: { activeOrganizationId: null },
+      } as never;
+
+      await expect(
+        controller.deleteCollection(noOrgSession, 'coll-1'),
+      ).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
+      expect(airweaveService.deleteCollection).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── POST /collections/:id/source-connections (Step 6: direct only) ───────
+
+  describe('createSourceConnection', () => {
+    it('direct branch — delegates to AirweaveService.createSourceConnection', async () => {
+      (airweaveService.createSourceConnection as jest.Mock).mockResolvedValue(
+        { sourceConnection: { id: 'src-1' } } as never,
+      );
+
+      const result = await controller.createSourceConnection(
+        adminSession,
+        '  acme-foo-abc  ',
+        {
+          name: '  Slack Workspace  ',
+          shortName: '  slack  ',
+          authentication: {
+            kind: 'direct',
+            credentials: { token: 'xoxb-...' },
+          },
+        },
+      );
+
+      expect(airweaveService.createSourceConnection).toHaveBeenCalledWith({
+        collectionReadableId: 'acme-foo-abc',
+        name: 'Slack Workspace',
+        shortName: 'slack',
+        authentication: { kind: 'direct', credentials: { token: 'xoxb-...' } },
+      });
+      expect(result).toEqual({ data: { sourceConnection: { id: 'src-1' } } });
+    });
+
+    it('OAuth branch — passes through with end-user id from session', async () => {
+      (airweaveService.createSourceConnection as jest.Mock).mockResolvedValue(
+        { sourceConnection: { id: 'src-2' }, sessionToken: 'tok' } as never,
+      );
+
+      await controller.createSourceConnection(adminSession, 'acme-foo-abc', {
+        name: 'Slack OAuth',
+        shortName: 'slack',
+        authentication: { kind: 'oauth' },
+      });
+
+      expect(airweaveService.createSourceConnection).toHaveBeenCalledWith({
+        collectionReadableId: 'acme-foo-abc',
+        name: 'Slack OAuth',
+        shortName: 'slack',
+        authentication: {
+          kind: 'oauth',
+          redirectUri: undefined,
+          endUserId: 'user-admin',
+        },
+      });
+    });
+
+    it('OAuth branch — passes redirectUri when provided (trimmed)', async () => {
+      (airweaveService.createSourceConnection as jest.Mock).mockResolvedValue(
+        { sourceConnection: { id: 'src-3' }, sessionToken: 'tok' } as never,
+      );
+
+      await controller.createSourceConnection(adminSession, 'acme-foo-abc', {
+        name: 'Slack',
+        shortName: 'slack',
+        authentication: {
+          kind: 'oauth',
+          redirectUri: '  https://app.velocity/done  ',
+        },
+      });
+
+      expect(airweaveService.createSourceConnection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          authentication: expect.objectContaining({
+            redirectUri: 'https://app.velocity/done',
+          }),
+        }),
+      );
+    });
+
+    it('rejects an unknown authentication.kind with 400', async () => {
+      await expect(
+        controller.createSourceConnection(adminSession, 'acme-foo-abc', {
+          name: 'X',
+          shortName: 'slack',
+          authentication: { kind: 'magic' } as never,
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+
+    it('rejects empty shortName with 400', async () => {
+      await expect(
+        controller.createSourceConnection(adminSession, 'acme-foo-abc', {
+          name: 'X',
+          shortName: '   ',
+          authentication: { kind: 'direct', credentials: {} },
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+
+    it('direct branch — rejects non-object credentials with 400', async () => {
+      await expect(
+        controller.createSourceConnection(adminSession, 'acme-foo-abc', {
+          name: 'X',
+          shortName: 'slack',
+          authentication: {
+            kind: 'direct',
+            credentials: 'not-an-object' as never,
+          },
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+  });
+
+  // ── Step 7: source-connection mutations (inline lookup-then-gate) ─────
+
+  describe('source-connection mutation endpoints', () => {
+    it('updateSourceConnection — delegates with trimmed values', async () => {
+      (airweaveService.updateSourceConnection as jest.Mock).mockResolvedValue(
+        { id: 'src-1', name: 'Renamed' } as never,
+      );
+
+      const result = await controller.updateSourceConnection(
+        adminSession,
+        '  src-uuid-1  ',
+        { name: '  Renamed  ' },
+      );
+
+      expect(airweaveService.updateSourceConnection).toHaveBeenCalledWith(
+        'src-uuid-1',
+        adminSession,
+        { name: 'Renamed' },
+      );
+      expect(result).toEqual({ data: { id: 'src-1', name: 'Renamed' } });
+    });
+
+    it('updateSourceConnection — rejects empty name with 400', async () => {
+      await expect(
+        controller.updateSourceConnection(adminSession, 'src-1', {
+          name: '   ',
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+
+    it('reauthSourceConnection — delegates and returns sessionToken envelope', async () => {
+      (airweaveService.reauthSourceConnection as jest.Mock).mockResolvedValue(
+        { sessionToken: 'connect-tok' } as never,
+      );
+
+      const result = await controller.reauthSourceConnection(
+        adminSession,
+        'src-1',
+      );
+
+      expect(airweaveService.reauthSourceConnection).toHaveBeenCalledWith(
+        'src-1',
+        adminSession,
+      );
+      expect(result).toEqual({ data: { sessionToken: 'connect-tok' } });
+    });
+
+    it('deleteSourceConnection — delegates and returns deleted envelope', async () => {
+      (airweaveService.deleteSourceConnection as jest.Mock).mockResolvedValue(
+        undefined as never,
+      );
+
+      const result = await controller.deleteSourceConnection(
+        adminSession,
+        'src-1',
+      );
+
+      expect(airweaveService.deleteSourceConnection).toHaveBeenCalledWith(
+        'src-1',
+        adminSession,
+      );
+      expect(result).toEqual({
+        data: { deleted: true, sourceConnectionId: 'src-1' },
+      });
     });
   });
 });
