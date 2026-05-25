@@ -27,8 +27,6 @@ export interface CreateSourceConnectionBodyOAuth {
   shortName: string;
   authentication: {
     kind: 'oauth';
-    /** Optional post-OAuth landing URL for the user's browser. */
-    redirectUri?: string;
   };
 }
 

@@ -123,7 +123,7 @@ export type CreateAirweaveSourceConnectionParams = {
   shortName: string;
   authentication:
     | { kind: 'direct'; credentials: Record<string, unknown> }
-    | { kind: 'oauth'; redirectUri?: string; endUserId: string };
+    | { kind: 'oauth'; endUserId: string };
 };
 
 export type CreateAirweaveSourceConnectionResult = {
@@ -571,7 +571,6 @@ export class AirweaveService {
         short_name: params.shortName,
         readable_collection_id: params.collectionReadableId,
         sync_immediately: false,
-        ...(oauth.redirectUri ? { redirect_url: oauth.redirectUri } : {}),
       });
     } catch (error) {
       this.handleUpstreamError('create source connection', error);

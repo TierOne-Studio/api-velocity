@@ -1,10 +1,34 @@
 # ADR-011: Airweave collection ownership via `organization.metadata` allowlist
 
-**Status:** Accepted (Decision 3 + Decision 4 amended 2026-05-23 after security review)
+**Status:** Accepted (Decision 3 + Decision 4 amended 2026-05-23 after security review; OAuth-transport client contract amended 2026-05-25)
 **Date:** 2026-05-23
 **Deciders:** Engineering (api-velocity)
 
 > **Amendment 1 (2026-05-23) — post-security-review.** The original Decision 3 used a *deterministic* `readable_id` (sha256-of-inputs) to enable "adopt-on-409" recovery. Security review found two HIGH issues: (a) a deterministic suffix is `O(1)` derivable by any caller who knows the target org's slug + a collection display name (org slugs are public; display names often leak via OAuth callback URLs and share links), and (b) the adopt-on-409 "recover-by-add" branch could silently grant cross-org ownership under slug-rename or legacy-id-match conditions. The decision was re-architected to use a true **random** suffix and to surface 409 as a real conflict (no adoption). Decision 3 below reflects the amended contract; Alt C is now the chosen approach, not rejected. Decision 4's default was also tightened to enforce in non-prod environments.
+
+> **Amendment 2 (2026-05-25) — post-SPA-recon: OAuth client transport correction.** The SPA-side OAuth source-connection flow was originally built (spa-velocity `feat/airweave-collections-crud` commit `0a87506`) against a wrong understanding of Airweave's integration model. We assumed Airweave used an **open-new-tab + URL-encoded `?session_token=`** redirect-style portal at `https://app.airweave.ai/connect`. The actual Airweave Connect contract — confirmed at [docs.airweave.ai/connect](https://docs.airweave.ai/connect) — is an **iframe widget hosted at `https://connect.airweave.ai`** that transports the session token via **`postMessage` (`REQUEST_TOKEN` / `TOKEN_RESPONSE`)** and uses the official **`@airweave/connect-react` SDK** with the `useAirweaveConnect` hook for React consumers. The SDK auto-portals the iframe, enforces origin pinning, and emits `CONNECTION_CREATED` / `CLOSE` callbacks; URL-based token transport is never used. The original SPA implementation never worked against the real Airweave service.
+>
+> **Backend impact: NONE.** The backend's `POST /api/airweave/connect/session` + the OAuth-branch `POST /api/airweave/collections/:id/source-connections` already returned `sessionToken` in the exact shape the SDK's `getSessionToken` callback consumes — by accident, the right contract was built. The relevant Airweave docs quote is: *"Your backend creates a short-lived session token, your frontend passes it to the widget via postMessage."* Our backend implements the former; the SPA SDK now implements the latter.
+>
+> **The one backend cleanup (this amendment's code change):** the `redirectUri?: string` field on the OAuth discriminant of `CreateSourceConnectionBody` (api DTO) + the mirror field on `CreateAirweaveSourceConnectionParams` (service-internal type) + the corresponding `redirect_url` spread in the SDK call body were inherited from the wrong-contract design and never consumed in practice. Airweave Connect does NOT support a redirect URI — `CONNECTION_CREATED` / `CLOSE` postMessage callbacks replace it entirely. **Removed in this amendment.** Backward-compat preserved: per ADR-005 (no global ValidationPipe), unknown body fields are silently ignored, so any old client still sending `redirectUri` keeps working — the wire just drops the field on the floor.
+>
+> **SPA-side files affected** (in spa-velocity `feat/airweave-collections-crud`, R-OAuth Steps 0-6, separate PR):
+> - DELETE `src/features/Airweave/hooks/useAirweaveOAuthPortal.ts` + spec
+> - DELETE `src/features/Airweave/lib/popup-blocked-toast.ts`
+> - NEW `src/features/Airweave/hooks/useAirweaveConnectModal.ts` (thin SDK wrapper)
+> - REFACTOR `CreateSourceConnectionDialog.tsx` (OAuth tab now feeds token up to page-level modal; `DirectAuthForm` migrates to `zodResolver`)
+> - REFACTOR `ReauthSourceConnectionButton.tsx` (uses the wrapper)
+> - REFACTOR `AirweaveCollectionDetailPage.tsx` (lift `useAirweaveConnectModal` to page level via ref-mirror pattern; drop the "OAuth in progress" banner — SDK's `onSuccess` invalidates cache automatically)
+> - RENAME `VITE_AIRWEAVE_PORTAL_URL` → `VITE_AIRWEAVE_CONNECT_URL`
+> - KEEP `<meta name="referrer" content="strict-origin">` (general SPA hardening, not OAuth-specific)
+> - KEEP `scrubSessionToken` (defense-in-depth on backend error messages)
+>
+> **Shape decisions (user-confirmed):**
+> - **Token lifecycle (Path B)**: SPA reuses the cached `sessionToken` from the backend's create-source-connection response (one network call). On token staleness (>10 min TTL elapsed before SDK's `getSessionToken` callback fires) → SDK `onError` → toast "Click Reauth on the row to retry." No silent fallback; the Reauth row is the SDK-paved recovery surface.
+> - **`onClose('cancel')` UX**: toast `Source created in pending state — complete OAuth later via Reauth on the row, or delete the row.` Pending source-connection row stays for user to resume; no auto-delete.
+> - **Env var rename**: `VITE_AIRWEAVE_PORTAL_URL` → `VITE_AIRWEAVE_CONNECT_URL`. Default `https://connect.airweave.ai`. Override via SDK's `connectUrl` prop for self-hosted Airweave.
+> - **Scrubber retention**: `scrubSessionToken` kept as defense-in-depth on any backend error message that might accidentally embed a session token. URL-based leakage is gone with postMessage, but error-string leakage is independent.
+> - **Referrer meta tag retention**: general SPA-wide document hardening (not OAuth-specific). Zero runtime cost; protects all `target="_blank"` + `window.open` call sites in the SPA.
 
 ## Context
 

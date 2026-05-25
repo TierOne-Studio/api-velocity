@@ -244,12 +244,12 @@ export class AirweaveController {
       };
     }
 
-    // OAuth branch (Step 8): service creates upstream + issues a connect
-    // session; response carries { sourceConnection, sessionToken }.
-    const redirectUri =
-      typeof auth.redirectUri === 'string' && auth.redirectUri.trim()
-        ? auth.redirectUri.trim()
-        : undefined;
+    // OAuth branch: service creates upstream + issues a connect session;
+    // response carries { sourceConnection, sessionToken }. The SPA's
+    // @airweave/connect-react SDK consumes the sessionToken via its
+    // getSessionToken callback and drives the OAuth handshake via the
+    // hosted Airweave Connect widget (postMessage transport, NOT a
+    // redirect-uri flow). See ADR-011 § Amendment 2 (2026-05-25).
     return {
       data: await this.airweaveService.createSourceConnection({
         collectionReadableId,
@@ -257,7 +257,6 @@ export class AirweaveController {
         shortName,
         authentication: {
           kind: 'oauth',
-          redirectUri,
           endUserId: session.user.id,
         },
       }),

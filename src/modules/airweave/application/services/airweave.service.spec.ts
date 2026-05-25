@@ -1007,7 +1007,12 @@ describe('AirweaveService', () => {
       expect(result.sourceConnection.id).toBe('src-uuid-1');
     });
 
-    it('OAuth branch — forwards optional redirectUri to the SDK', async () => {
+    it('OAuth branch — does NOT forward redirect_url to the SDK (removed per ADR-011 Amendment 2 — @airweave/connect-react uses postMessage)', async () => {
+      // The redirect_url field was inherited from the wrong-contract
+      // (open-new-tab) design and is dead code under the iframe+postMessage
+      // SDK. Service must not include it in the SDK call body — the SDK
+      // signals completion via CONNECTION_CREATED postMessage, not via
+      // a redirect roundtrip.
       client.sourceConnections.create.mockResolvedValue(sdkReturn);
       fetchSpy.mockResolvedValue({
         ok: true,
@@ -1021,15 +1026,12 @@ describe('AirweaveService', () => {
         authentication: {
           kind: 'oauth',
           endUserId: 'user-1',
-          redirectUri: 'https://app.velocity/done',
         },
       });
 
-      expect(client.sourceConnections.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          redirect_url: 'https://app.velocity/done',
-        }),
-      );
+      const sdkCallArg = client.sourceConnections.create.mock
+        .calls[0][0] as Record<string, unknown>;
+      expect(sdkCallArg).not.toHaveProperty('redirect_url');
     });
 
     it('OAuth branch — create OK + session token issuance fails → BadGatewayException naming the orphan source-connection id (QA gap #3)', async () => {

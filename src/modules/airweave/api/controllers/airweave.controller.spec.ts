@@ -492,13 +492,16 @@ describe('AirweaveController', () => {
         shortName: 'slack',
         authentication: {
           kind: 'oauth',
-          redirectUri: undefined,
           endUserId: 'user-admin',
         },
       });
     });
 
-    it('OAuth branch — passes redirectUri when provided (trimmed)', async () => {
+    it('OAuth branch — does NOT forward redirectUri (removed per ADR-011 Amendment 2 — SDK uses postMessage, not redirect)', async () => {
+      // Backward-compat: backend silently accepts unknown body fields
+      // (no global ValidationPipe per ADR-005). An old client that still
+      // sends `redirectUri` won't break the wire — the field just gets
+      // dropped on the floor by the controller's narrowed type.
       (airweaveService.createSourceConnection as jest.Mock).mockResolvedValue(
         { sourceConnection: { id: 'src-3' }, sessionToken: 'tok' } as never,
       );
@@ -508,17 +511,20 @@ describe('AirweaveController', () => {
         shortName: 'slack',
         authentication: {
           kind: 'oauth',
-          redirectUri: '  https://app.velocity/done  ',
+          // Stale field from a hypothetical pre-Amendment-2 client.
+          // Controller no longer reads this; service-call payload omits it.
+          ...({ redirectUri: '  https://app.velocity/done  ' } as Record<
+            string,
+            unknown
+          >),
         },
       });
 
-      expect(airweaveService.createSourceConnection).toHaveBeenCalledWith(
-        expect.objectContaining({
-          authentication: expect.objectContaining({
-            redirectUri: 'https://app.velocity/done',
-          }),
-        }),
-      );
+      const call = (airweaveService.createSourceConnection as jest.Mock).mock
+        .calls[0][0] as {
+        authentication: Record<string, unknown>;
+      };
+      expect(call.authentication).not.toHaveProperty('redirectUri');
     });
 
     it('rejects an unknown authentication.kind with 400', async () => {
