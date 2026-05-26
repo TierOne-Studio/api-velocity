@@ -610,7 +610,7 @@ describe('AdminOrgDatabaseRepository', () => {
   // ─── Airweave allowlist (ADR-011) ───────────────────────────────────────────
 
   describe('addAirweaveCollectionToAllowlist', () => {
-    it('issues a jsonb_set UPDATE with field-locality + DISTINCT idempotency', async () => {
+    it('issues a jsonb_set UPDATE with field-locality + DISTINCT idempotency + explicit ::jsonb / ::text casts', async () => {
       mockQuery.mockResolvedValue([]);
 
       await repo.addAirweaveCollectionToAllowlist('org-1', 'coll-readable-1');
@@ -620,8 +620,15 @@ describe('AdminOrgDatabaseRepository', () => {
       // Field-locality: never touches other metadata keys.
       expect(sql).toContain('jsonb_set');
       expect(sql).toContain("'{allowedAirweaveCollectionIds}'");
-      // NULL-metadata initialization.
-      expect(sql).toContain("COALESCE(metadata, '{}'::jsonb)");
+      // NULL-metadata initialization — note the ::jsonb cast: the column
+      // is TEXT (better-auth-managed), not JSONB. Without the cast,
+      // Postgres errors with "operator does not exist: text -> unknown".
+      expect(sql).toContain("COALESCE(metadata::jsonb, '{}'::jsonb)");
+      // jsonb_set returns jsonb; the TEXT column requires an explicit
+      // back-cast on assignment.
+      expect(sql).toMatch(/\)::text\s+WHERE id = \$1/);
+      // The field-access inside the DISTINCT subquery also uses ::jsonb.
+      expect(sql).toContain("metadata::jsonb->'allowedAirweaveCollectionIds'");
       // Idempotency via DISTINCT against existing array || new id.
       expect(sql).toContain('DISTINCT');
       expect(sql).toContain('jsonb_array_elements_text');
@@ -630,7 +637,7 @@ describe('AdminOrgDatabaseRepository', () => {
   });
 
   describe('removeAirweaveCollectionFromAllowlist', () => {
-    it('issues a jsonb_set UPDATE that filters the id out by inequality', async () => {
+    it('issues a jsonb_set UPDATE that filters the id out + uses ::jsonb / ::text casts', async () => {
       mockQuery.mockResolvedValue([]);
 
       await repo.removeAirweaveCollectionFromAllowlist(
@@ -644,6 +651,11 @@ describe('AdminOrgDatabaseRepository', () => {
       expect(sql).toContain("'{allowedAirweaveCollectionIds}'");
       // Filter-out predicate (no-op when id not present).
       expect(sql).toContain('WHERE value <> $2');
+      // TEXT column → must cast both ways. Regression guard for the
+      // "operator does not exist: text -> unknown" bug.
+      expect(sql).toContain("COALESCE(metadata::jsonb, '{}'::jsonb)");
+      expect(sql).toContain("metadata::jsonb->'allowedAirweaveCollectionIds'");
+      expect(sql).toMatch(/\)::text\s+WHERE id = \$1/);
       expect(params).toEqual(['org-1', 'coll-readable-1']);
     });
   });
@@ -661,7 +673,11 @@ describe('AdminOrgDatabaseRepository', () => {
       expect(mockQueryOne).toHaveBeenCalledTimes(1);
       const [sql, params] = mockQueryOne.mock.calls[0] as [string, unknown[]];
       expect(sql).toContain('jsonb_array_elements_text');
-      expect(sql).toContain("COALESCE(metadata->'allowedAirweaveCollectionIds'");
+      // TEXT column → ::jsonb cast required. Regression guard for the
+      // "operator does not exist: text -> unknown" bug.
+      expect(sql).toContain(
+        "COALESCE(metadata::jsonb->'allowedAirweaveCollectionIds'",
+      );
       expect(params).toEqual(['org-1', 'coll-readable-1']);
     });
 

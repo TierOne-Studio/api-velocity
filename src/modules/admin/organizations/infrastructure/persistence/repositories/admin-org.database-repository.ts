@@ -584,23 +584,29 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     organizationId: string,
     collectionReadableId: string,
   ): Promise<void> {
+    // NOTE: `organization.metadata` is a TEXT column (better-auth stores
+    // its serialized JSON as a string). Every jsonb operator below needs
+    // an explicit `metadata::jsonb` cast, and the jsonb_set result must
+    // be cast back to ::text on assignment — Postgres does NOT do these
+    // casts implicitly. Caught by e2e airweave smoke after unit specs
+    // (mocked DB) shipped without execution-level coverage.
     await this.db.query(
       `UPDATE organization
          SET metadata = jsonb_set(
-           COALESCE(metadata, '{}'::jsonb),
+           COALESCE(metadata::jsonb, '{}'::jsonb),
            '{allowedAirweaveCollectionIds}',
            (
              SELECT to_jsonb(
                ARRAY(
                  SELECT DISTINCT value
                  FROM jsonb_array_elements_text(
-                   COALESCE(metadata->'allowedAirweaveCollectionIds', '[]'::jsonb) || to_jsonb($2::text)
+                   COALESCE(metadata::jsonb->'allowedAirweaveCollectionIds', '[]'::jsonb) || to_jsonb($2::text)
                  ) AS value
                )
              )
            ),
            true
-         )
+         )::text
        WHERE id = $1`,
       [organizationId, collectionReadableId],
     );
@@ -615,24 +621,26 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     organizationId: string,
     collectionReadableId: string,
   ): Promise<void> {
+    // See `addAirweaveCollectionToAllowlist` for the ::jsonb / ::text
+    // casting rationale (TEXT column from better-auth).
     await this.db.query(
       `UPDATE organization
          SET metadata = jsonb_set(
-           COALESCE(metadata, '{}'::jsonb),
+           COALESCE(metadata::jsonb, '{}'::jsonb),
            '{allowedAirweaveCollectionIds}',
            (
              SELECT to_jsonb(
                ARRAY(
                  SELECT value
                  FROM jsonb_array_elements_text(
-                   COALESCE(metadata->'allowedAirweaveCollectionIds', '[]'::jsonb)
+                   COALESCE(metadata::jsonb->'allowedAirweaveCollectionIds', '[]'::jsonb)
                  ) AS value
                  WHERE value <> $2
                )
              )
            ),
            true
-         )
+         )::text
        WHERE id = $1`,
       [organizationId, collectionReadableId],
     );
@@ -647,11 +655,14 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     organizationId: string,
     collectionReadableId: string,
   ): Promise<boolean> {
+    // See `addAirweaveCollectionToAllowlist` for the ::jsonb casting
+    // rationale (TEXT column from better-auth). Read-only path —
+    // no ::text back-cast needed.
     const row = await this.db.queryOne<{ present: boolean }>(
       `SELECT EXISTS (
          SELECT 1
          FROM jsonb_array_elements_text(
-           COALESCE(metadata->'allowedAirweaveCollectionIds', '[]'::jsonb)
+           COALESCE(metadata::jsonb->'allowedAirweaveCollectionIds', '[]'::jsonb)
          ) AS value
          WHERE value = $2
        ) AS present
