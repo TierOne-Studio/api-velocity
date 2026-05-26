@@ -30,6 +30,26 @@
 > - **Scrubber retention**: `scrubSessionToken` kept as defense-in-depth on any backend error message that might accidentally embed a session token. URL-based leakage is gone with postMessage, but error-string leakage is independent.
 > - **Referrer meta tag retention**: general SPA-wide document hardening (not OAuth-specific). Zero runtime cost; protects all `target="_blank"` + `window.open` call sites in the SPA.
 
+> **Amendment 3 (2026-05-26) — post-manual-test: BYOC (Bring Your Own Client) pass-through.** Manual smoke testing of the Amendment-2 OAuth flow surfaced an empty Airweave Connect widget for Slack: the modal opened, the postMessage handshake succeeded, the `Pending Auth` badge rendered — but no "Authorize" button. Root cause: the shared Airweave account doesn't have a preconfigured Slack OAuth app, so the widget can't generate the upstream consent URL. Airweave's API exposes this as the `Source.requires_byoc` flag and accepts per-source-connection BYOC fields on the create call: `client_id` / `client_secret` (OAuth2) or `consumer_key` / `consumer_secret` (OAuth1), plus an optional `redirect_uri`.
+>
+> **The mechanism Amendment 2 dropped is partially restored.** Amendment 2 removed `redirectUri` because the SDK's postMessage transport doesn't need it for the widget round-trip. Amendment 3 brings back `redirectUri` (and adds the four BYOC secret fields) — NOT as transport for the SDK handshake, but as **pass-through** to Airweave's `OAuthBrowserAuthentication` schema. Airweave stores these tied to the source-connection; Velocity persists nothing.
+>
+> **In-scope code changes:**
+> - `airweave.dto.ts` — `CreateSourceConnectionBodyOAuth.authentication` gets 5 optional fields: `clientId`, `clientSecret`, `consumerKey`, `consumerSecret`, `redirectUri`.
+> - `airweave.controller.ts` — new helper `trimAndPick` trims and drops empty-string values, so callers never accidentally forward `""` as a secret.
+> - `airweave.service.ts` — new helper `buildOAuthBrowserAuth` maps camelCase Velocity fields to snake_case SDK fields, returns `undefined` when no BYOC fields are present (preserves the shared-OAuth-app code path verbatim).
+> - SPA: `CreateSourceConnectionDialog.tsx` adds an "Advanced — Bring your own OAuth app" `<details>` disclosure with the 5 inputs. Zod schema (`createOAuthSourceConnectionSchema`) treats all 5 as optional and strips empty strings.
+>
+> **Out-of-scope (deliberately, see "Alternatives considered" §C):**
+> - Org-level provider-credential storage in Velocity's own DB. The BYOC values live in Airweave only; if the user wants configure-once UX across many collections, that's a future ADR. Storing third-party OAuth app secrets in our DB takes on encryption + rotation + audit-log responsibility for something Airweave already handles.
+>
+> **Security posture:**
+> - Velocity never persists BYOC values; they round-trip from form → `POST /api/airweave/collections/:id/source-connections` body → Airweave's database. Same lifecycle as the existing `direct` auth `credentials` blob (which the dialog has carried since the initial PR).
+> - All five fields are scrubbed at the boundary (trim + drop-empty in the controller, transform-to-undefined in the Zod schema) so the wire never carries `""` as a secret.
+> - The dialog's secret inputs use `type="password"` + `autoComplete="off"` so browser-side credential managers don't auto-fill with the user's own login creds and the values don't leak via developer tools history.
+>
+> **Backward-compat:** existing callers that omit the BYOC fields entirely keep working — the service detects "no BYOC fields present" and omits the `authentication` key on the SDK call (which is exactly what the pre-Amendment-3 code did). Only the new affordance is additive; nothing breaks.
+
 ## Context
 
 Today the Airweave integration in `src/modules/airweave/` exposes only read operations against a single shared Airweave account: `listCollections`, `getCollection`, `searchCollection`, `listSourceConnections`, plus `createConnectSession` for the end-user OAuth flow. Collections must be created out-of-band in the Airweave portal, and a superadmin (or a one-time migration) records which collections each org may see by appending the `readable_id` to `organization.metadata.allowedAirweaveCollectionIds: string[]`. The current readers:

@@ -123,7 +123,16 @@ export type CreateAirweaveSourceConnectionParams = {
   shortName: string;
   authentication:
     | { kind: 'direct'; credentials: Record<string, unknown> }
-    | { kind: 'oauth'; endUserId: string };
+    | {
+        kind: 'oauth';
+        endUserId: string;
+        /** BYOC pass-through (ADR-011 § Amendment 3). All five optional. */
+        clientId?: string;
+        clientSecret?: string;
+        consumerKey?: string;
+        consumerSecret?: string;
+        redirectUri?: string;
+      };
 };
 
 export type CreateAirweaveSourceConnectionResult = {
@@ -563,7 +572,15 @@ export class AirweaveService {
     // `createConnectSession` flow so the frontend can open the portal and
     // complete the browser OAuth handshake. The initial sync runs after
     // successful auth (SDK default `sync_immediately: false` for oauth).
+    //
+    // BYOC pass-through (ADR-011 § Amendment 3): if the caller supplied
+    // any of the OAuthBrowserAuthentication fields, forward them to the
+    // SDK as `authentication: {...}`. Required for sources where the
+    // shared Airweave account doesn't have a preconfigured OAuth app
+    // (e.g., Slack on a fresh account — visible via the Source's
+    // `requires_byoc: true` flag). We do NOT persist these on our side.
     const oauth = params.authentication;
+    const byocAuth = buildOAuthBrowserAuth(oauth);
     let created: AirweaveSDK.SourceConnection;
     try {
       created = await client.sourceConnections.create({
@@ -571,6 +588,7 @@ export class AirweaveService {
         short_name: params.shortName,
         readable_collection_id: params.collectionReadableId,
         sync_immediately: false,
+        ...(byocAuth ? { authentication: byocAuth } : {}),
       });
     } catch (error) {
       this.handleUpstreamError('create source connection', error);
@@ -988,4 +1006,54 @@ export class AirweaveService {
 
     return null;
   }
+}
+
+/**
+ * Map a Velocity-side OAuth source-connection params object to the
+ * Airweave SDK's `OAuthBrowserAuthentication` shape — but only if at
+ * least one BYOC field is present. Returns `undefined` when the caller
+ * provided no BYOC fields, in which case the SDK call must NOT include
+ * an `authentication` key at all (Airweave then uses the shared
+ * account's preconfigured OAuth app, if any).
+ *
+ * Exported for unit-testability (covers every branch of the
+ * "any-field-present" decision + every field-name mapping).
+ */
+export function buildOAuthBrowserAuth(oauth: {
+  clientId?: string;
+  clientSecret?: string;
+  consumerKey?: string;
+  consumerSecret?: string;
+  redirectUri?: string;
+}):
+  | {
+      client_id?: string;
+      client_secret?: string;
+      consumer_key?: string;
+      consumer_secret?: string;
+      redirect_uri?: string;
+    }
+  | undefined {
+  const hasAny =
+    !!oauth.clientId ||
+    !!oauth.clientSecret ||
+    !!oauth.consumerKey ||
+    !!oauth.consumerSecret ||
+    !!oauth.redirectUri;
+  if (!hasAny) return undefined;
+  return {
+    ...(oauth.clientId !== undefined ? { client_id: oauth.clientId } : {}),
+    ...(oauth.clientSecret !== undefined
+      ? { client_secret: oauth.clientSecret }
+      : {}),
+    ...(oauth.consumerKey !== undefined
+      ? { consumer_key: oauth.consumerKey }
+      : {}),
+    ...(oauth.consumerSecret !== undefined
+      ? { consumer_secret: oauth.consumerSecret }
+      : {}),
+    ...(oauth.redirectUri !== undefined
+      ? { redirect_uri: oauth.redirectUri }
+      : {}),
+  };
 }

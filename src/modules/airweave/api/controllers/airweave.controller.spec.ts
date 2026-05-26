@@ -497,13 +497,9 @@ describe('AirweaveController', () => {
       });
     });
 
-    it('OAuth branch — does NOT forward redirectUri (removed per ADR-011 Amendment 2 — SDK uses postMessage, not redirect)', async () => {
-      // Backward-compat: backend silently accepts unknown body fields
-      // (no global ValidationPipe per ADR-005). An old client that still
-      // sends `redirectUri` won't break the wire — the field just gets
-      // dropped on the floor by the controller's narrowed type.
+    it('OAuth branch — forwards BYOC fields (clientId/clientSecret/consumerKey/consumerSecret/redirectUri) trimmed, omits empty strings (ADR-011 Amendment 3)', async () => {
       (airweaveService.createSourceConnection as jest.Mock).mockResolvedValue(
-        { sourceConnection: { id: 'src-3' }, sessionToken: 'tok' } as never,
+        { sourceConnection: { id: 'src-byoc' }, sessionToken: 'tok' } as never,
       );
 
       await controller.createSourceConnection(adminSession, 'acme-foo-abc', {
@@ -511,12 +507,15 @@ describe('AirweaveController', () => {
         shortName: 'slack',
         authentication: {
           kind: 'oauth',
-          // Stale field from a hypothetical pre-Amendment-2 client.
-          // Controller no longer reads this; service-call payload omits it.
-          ...({ redirectUri: '  https://app.velocity/done  ' } as Record<
-            string,
-            unknown
-          >),
+          ...({
+            clientId: '  client-abc  ',
+            clientSecret: 'secret-xyz',
+            // OAuth1 fields and an empty redirectUri to cover trimming
+            // + the "drop empty" rule on the same call.
+            consumerKey: 'ck-1',
+            consumerSecret: '   ',
+            redirectUri: '',
+          } as Record<string, unknown>),
         },
       });
 
@@ -524,7 +523,38 @@ describe('AirweaveController', () => {
         .calls[0][0] as {
         authentication: Record<string, unknown>;
       };
+      expect(call.authentication).toMatchObject({
+        kind: 'oauth',
+        endUserId: 'user-admin',
+        clientId: 'client-abc', // trimmed
+        clientSecret: 'secret-xyz',
+        consumerKey: 'ck-1',
+      });
+      // Whitespace-only / empty values must NOT reach the service —
+      // we never forward an empty secret to Airweave.
+      expect(call.authentication).not.toHaveProperty('consumerSecret');
       expect(call.authentication).not.toHaveProperty('redirectUri');
+    });
+
+    it('OAuth branch — when no BYOC fields are provided, only kind+endUserId reach the service (preserves the shared-OAuth-app path)', async () => {
+      (airweaveService.createSourceConnection as jest.Mock).mockResolvedValue(
+        { sourceConnection: { id: 'src-no-byoc' }, sessionToken: 'tok' } as never,
+      );
+
+      await controller.createSourceConnection(adminSession, 'acme-foo-abc', {
+        name: 'Slack',
+        shortName: 'slack',
+        authentication: { kind: 'oauth' },
+      });
+
+      const call = (airweaveService.createSourceConnection as jest.Mock).mock
+        .calls[0][0] as {
+        authentication: Record<string, unknown>;
+      };
+      expect(call.authentication).toEqual({
+        kind: 'oauth',
+        endUserId: 'user-admin',
+      });
     });
 
     it('rejects an unknown authentication.kind with 400', async () => {

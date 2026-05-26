@@ -250,6 +250,13 @@ export class AirweaveController {
     // getSessionToken callback and drives the OAuth handshake via the
     // hosted Airweave Connect widget (postMessage transport, NOT a
     // redirect-uri flow). See ADR-011 § Amendment 2 (2026-05-25).
+    //
+    // BYOC pass-through (ADR-011 § Amendment 3 — 2026-05-26):
+    // optionally forward `clientId` / `clientSecret` (OAuth2) or
+    // `consumerKey` / `consumerSecret` (OAuth1) when the source
+    // requires the caller to bring their own OAuth app. All five
+    // fields are trimmed and only included when non-empty so we never
+    // ship an empty-string secret to Airweave by accident.
     return {
       data: await this.airweaveService.createSourceConnection({
         collectionReadableId,
@@ -258,6 +265,13 @@ export class AirweaveController {
         authentication: {
           kind: 'oauth',
           endUserId: session.user.id,
+          ...trimAndPick(auth, [
+            'clientId',
+            'clientSecret',
+            'consumerKey',
+            'consumerSecret',
+            'redirectUri',
+          ]),
         },
       }),
     };
@@ -426,4 +440,30 @@ export class AirweaveController {
       }),
     };
   }
+}
+
+/**
+ * Pick the named string keys from `src`, trim them, and only include
+ * keys whose trimmed value is non-empty. Used to scrub user-supplied
+ * BYOC fields (clientId/clientSecret/...) before forwarding to
+ * Airweave — an empty-string secret is never what the caller meant.
+ *
+ * Module-scoped (not a method) so it can be unit-tested in isolation
+ * and reused by future controllers that have the same shape.
+ */
+function trimAndPick<K extends string>(
+  src: unknown,
+  keys: readonly K[],
+): Partial<Record<K, string>> {
+  if (!src || typeof src !== 'object') return {};
+  const obj = src as Record<string, unknown>;
+  const out: Partial<Record<K, string>> = {};
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === 'string') {
+      const trimmed = v.trim();
+      if (trimmed.length > 0) out[k] = trimmed;
+    }
+  }
+  return out;
 }
