@@ -121,25 +121,19 @@ export type CreateAirweaveSourceConnectionParams = {
   collectionReadableId: string;
   name: string;
   shortName: string;
-  authentication:
-    | { kind: 'direct'; credentials: Record<string, unknown> }
-    | {
-        kind: 'oauth';
-        endUserId: string;
-        /** BYOC pass-through (ADR-011 § Amendment 3). All five optional. */
-        clientId?: string;
-        clientSecret?: string;
-        consumerKey?: string;
-        consumerSecret?: string;
-        redirectUri?: string;
-      };
+  /**
+   * ADR-011 § Amendment 4: OAuth branch removed. Direct-only here;
+   * OAuth flows go through `createConnectSession` + the SDK catalog
+   * widget, which creates the source-connection itself after auth.
+   */
+  authentication: { kind: 'direct'; credentials: Record<string, unknown> };
 };
 
 export type CreateAirweaveSourceConnectionResult = {
   sourceConnection: AirweaveSourceConnectionSummary;
-  /** Present only on the OAuth branch (Step 8); the frontend opens the
-   *  Airweave portal using this token. */
-  sessionToken?: string;
+  // ADR-011 § Amendment 4: `sessionToken` field removed — OAuth flows
+  // get their session token from `POST /api/airweave/connect/session`
+  // (collection-scoped), not from a source-create response.
 };
 
 export type AirweaveConnectSession = {
@@ -567,65 +561,17 @@ export class AirweaveService {
       return { sourceConnection: this.mapSourceConnection(created) };
     }
 
-    // OAuth branch (Step 8): Airweave creates the connection in `pending`
-    // state. We then issue a connect-session token via the existing
-    // `createConnectSession` flow so the frontend can open the portal and
-    // complete the browser OAuth handshake. The initial sync runs after
-    // successful auth (SDK default `sync_immediately: false` for oauth).
-    //
-    // BYOC pass-through (ADR-011 § Amendment 3): if the caller supplied
-    // any of the OAuthBrowserAuthentication fields, forward them to the
-    // SDK as `authentication: {...}`. Required for sources where the
-    // shared Airweave account doesn't have a preconfigured OAuth app
-    // (e.g., Slack on a fresh account — visible via the Source's
-    // `requires_byoc: true` flag). We do NOT persist these on our side.
-    const oauth = params.authentication;
-    const byocAuth = buildOAuthBrowserAuth(oauth);
-    let created: AirweaveSDK.SourceConnection;
-    try {
-      created = await client.sourceConnections.create({
-        name: params.name,
-        short_name: params.shortName,
-        readable_collection_id: params.collectionReadableId,
-        sync_immediately: false,
-        ...(byocAuth ? { authentication: byocAuth } : {}),
-      });
-    } catch (error) {
-      this.handleUpstreamError('create source connection', error);
-    }
-
-    let session: AirweaveConnectSession;
-    try {
-      session = await this.createConnectSession({
-        readableCollectionId: params.collectionReadableId,
-        endUserId: oauth.endUserId,
-      });
-    } catch (error) {
-      // Source connection is created upstream but we couldn't issue a
-      // session token. Fail loudly so the frontend can retry the reauth
-      // endpoint instead of leaving the user with no way to authenticate.
-      this.logger.error(
-        `[AirweaveService] OAuth create succeeded (id=${created.id}) but connect-session failed`,
-        error instanceof Error ? error.stack : String(error),
-      );
-      throw new BadGatewayException(
-        `Source connection ${created.id} was created but the OAuth session token could not be issued; call POST /source-connections/${created.id}/reauth to retry.`,
-      );
-    }
-
-    this.logger.log(
-      `airweave.source_connection.created ${JSON.stringify({
-        collectionReadableId: params.collectionReadableId,
-        sourceConnectionId: created.id,
-        shortName: params.shortName,
-        authMethod: 'oauth',
-      })}`,
+    // ADR-011 § Amendment 4: OAuth flows are no longer handled here.
+    // The catalog-widget flow uses `createConnectSession` + the SDK,
+    // and Airweave creates the source-connection itself after the
+    // user picks a source and authenticates inside the widget.
+    // TypeScript narrows `params.authentication.kind` to `'direct'`
+    // above, so this fallthrough is structurally unreachable — leave
+    // a fail-loud exception in case a future caller adds a new variant
+    // and forgets to handle it.
+    throw new BadGatewayException(
+      `Unsupported authentication kind. OAuth source-connections must be created via the catalog widget (POST /api/airweave/connect/session + SDK), not this endpoint.`,
     );
-
-    return {
-      sourceConnection: this.mapSourceConnection(created),
-      sessionToken: session.sessionToken,
-    };
   }
 
   /**
@@ -1008,52 +954,7 @@ export class AirweaveService {
   }
 }
 
-/**
- * Map a Velocity-side OAuth source-connection params object to the
- * Airweave SDK's `OAuthBrowserAuthentication` shape — but only if at
- * least one BYOC field is present. Returns `undefined` when the caller
- * provided no BYOC fields, in which case the SDK call must NOT include
- * an `authentication` key at all (Airweave then uses the shared
- * account's preconfigured OAuth app, if any).
- *
- * Exported for unit-testability (covers every branch of the
- * "any-field-present" decision + every field-name mapping).
- */
-export function buildOAuthBrowserAuth(oauth: {
-  clientId?: string;
-  clientSecret?: string;
-  consumerKey?: string;
-  consumerSecret?: string;
-  redirectUri?: string;
-}):
-  | {
-      client_id?: string;
-      client_secret?: string;
-      consumer_key?: string;
-      consumer_secret?: string;
-      redirect_uri?: string;
-    }
-  | undefined {
-  const hasAny =
-    !!oauth.clientId ||
-    !!oauth.clientSecret ||
-    !!oauth.consumerKey ||
-    !!oauth.consumerSecret ||
-    !!oauth.redirectUri;
-  if (!hasAny) return undefined;
-  return {
-    ...(oauth.clientId !== undefined ? { client_id: oauth.clientId } : {}),
-    ...(oauth.clientSecret !== undefined
-      ? { client_secret: oauth.clientSecret }
-      : {}),
-    ...(oauth.consumerKey !== undefined
-      ? { consumer_key: oauth.consumerKey }
-      : {}),
-    ...(oauth.consumerSecret !== undefined
-      ? { consumer_secret: oauth.consumerSecret }
-      : {}),
-    ...(oauth.redirectUri !== undefined
-      ? { redirect_uri: oauth.redirectUri }
-      : {}),
-  };
-}
+// ADR-011 § Amendment 4: `buildOAuthBrowserAuth` removed along with
+// the OAuth branch of `createSourceConnection`. The catalog widget
+// collects BYOC credentials inside its own form; Velocity no longer
+// constructs an OAuthBrowserAuthentication payload.

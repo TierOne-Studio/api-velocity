@@ -50,6 +50,29 @@
 >
 > **Backward-compat:** existing callers that omit the BYOC fields entirely keep working — the service detects "no BYOC fields present" and omits the `authentication` key on the SDK call (which is exactly what the pre-Amendment-3 code did). Only the new affordance is additive; nothing breaks.
 
+> **Amendment 4 (2026-05-26) — post-manual-test #2: catalog-widget UX correction.** Manual smoke against the Amendment-3 OAuth-create endpoint surfaced two compounding UX bugs that revealed a deeper architectural mistake: (a) users could type a free-text `shortName` that wasn't a valid Airweave connector identifier (`"slack 2"` → 404 from Airweave → 502 from our backend); (b) even with a valid `shortName`, the SDK widget opened pre-pinned to a single source instead of showing the catalog the docs at [docs.airweave.ai/connect](https://docs.airweave.ai/connect) describe. Re-reading the docs revealed the actual contract: **the SDK widget is a catalog browser** — the user picks the source INSIDE the widget, the widget collects credentials INSIDE, and the widget tells Airweave to create the source-connection AFTER the user authenticates. Pre-creating a source-connection via `POST /source-connections` + opening the widget against it was never the right model.
+>
+> **Amendment 2 + Amendment 3 are partially reverted as a result.** The architectural switch is from "Velocity pre-creates the source-connection with name+shortName(+BYOC) then opens the widget with a token bound to that source" to "Velocity issues a session token for the collection, opens the widget, and the widget creates the source-connection after the user picks + authenticates."
+>
+> **Code changes:**
+> - **Backend:** drop the OAuth branch from `createSourceConnection` (service + controller + DTO). Drop `buildOAuthBrowserAuth` helper + `trimAndPick` helper (Amendment 3 leftovers). Tighten `POST /api/airweave/connect/session` permission from `airweave:read` to `airweave:manage-sources` (the session token grants the holder source-creation rights). The old OAuth body shape now rejects with 400 + a clear pointer at the new flow (regression-pinned in `airweave.controller.spec.ts`).
+> - **SPA:** delete the OAuth tab + BYOC disclosure from `CreateSourceConnectionDialog` (now direct-only — title renamed to "Add direct source connection"). Drop `pendingTokenRef` + `onOAuthSubmit` plumbing from `AirweaveCollectionDetailPage`. Add a new primary CTA on the page: "Connect a source" — opens the SDK catalog widget directly via `useAirweaveConnectModal`'s `open()`. Page-level `getSessionToken` now calls `POST /api/airweave/connect/session` on every invocation (fresh token per click, no caching). Existing "Add direct source" stays as a secondary affordance for API-key sources.
+>
+> **Why the OAuth-create endpoint was wrong:**
+> - It bound the widget to a single pre-pinned source → no catalog UX.
+> - It created orphan source-connection rows when the user cancelled the widget (visible in user's manual test screenshots — `"slack"` row stuck at `Pending Auth`).
+> - It required the user to know the Airweave connector identifier upfront — a leaky implementation detail that doesn't surface in the widget.
+>
+> **Why BYOC moved into the widget:** the catalog widget already has a BYOC form per source. Velocity collecting BYOC fields in a pre-create dialog meant duplicating that UI badly + storing nothing useful (the values went straight to Airweave anyway). The widget handles it natively, including provider-specific field labels.
+>
+> **What stays:**
+> - `Direct` source-creation dialog (renamed) — still useful for users with API keys / DSNs in hand who don't need the catalog browser.
+> - `Reauth` row action — still routes through `POST /api/airweave/source-connections/:id/reauth` to re-issue a session token for an existing source-connection.
+> - `POST /api/airweave/connect/session` endpoint — was always the right path; just promoted from secondary to canonical.
+> - `useAirweaveConnectModal` wrapper hook — unchanged in shape; `getSessionToken` semantics changed from "read a stashed pre-create token" to "fetch a fresh token from /connect/session".
+>
+> **Live-validated end-to-end:** the `airweave-live.spec.ts` e2e (real Airweave + real backend + real Postgres) clicks the new "Connect a source" button, asserts the SDK iframe mounts at `connect.airweave.ai` with the proper `airweave-connect-root` portal div on `document.body`. The catalog UI inside the iframe is then the user's to drive.
+
 ## Context
 
 Today the Airweave integration in `src/modules/airweave/` exposes only read operations against a single shared Airweave account: `listCollections`, `getCollection`, `searchCollection`, `listSourceConnections`, plus `createConnectSession` for the end-user OAuth flow. Collections must be created out-of-band in the Airweave portal, and a superadmin (or a one-time migration) records which collections each org may see by appending the `readable_id` to `organization.metadata.allowedAirweaveCollectionIds: string[]`. The current readers:

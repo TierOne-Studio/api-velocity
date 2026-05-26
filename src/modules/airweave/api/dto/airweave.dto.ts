@@ -20,41 +20,20 @@ export interface CreateSourceConnectionBodyDirect {
   };
 }
 
-export interface CreateSourceConnectionBodyOAuth {
-  name: string;
-  /** Airweave source type identifier (e.g. 'slack', 'notion'). Used as
-   *  both the SDK `short_name` field and the source the OAuth flow targets. */
-  shortName: string;
-  authentication: {
-    kind: 'oauth';
-    /**
-     * BYOC (Bring Your Own Client) fields — forwarded verbatim to
-     * Airweave's `OAuthBrowserAuthentication` schema. Required when the
-     * source has `requires_byoc: true` (e.g., the shared Airweave
-     * account does not have a pre-configured OAuth app for this
-     * provider). Optional otherwise.
-     *
-     * All five are pass-through secrets. We do NOT persist them on our
-     * side — Airweave stores them tied to the source-connection. See
-     * ADR-011 § Amendment 3 (2026-05-26).
-     */
-    /** OAuth2 client id (custom app). */
-    clientId?: string;
-    /** OAuth2 client secret (custom app). */
-    clientSecret?: string;
-    /** OAuth1 consumer key (custom app). */
-    consumerKey?: string;
-    /** OAuth1 consumer secret (custom app). */
-    consumerSecret?: string;
-    /** Optional override of the OAuth redirect URI (Airweave's default
-     *  is the Connect widget origin; rarely needed). */
-    redirectUri?: string;
-  };
-}
-
-export type CreateSourceConnectionBody =
-  | CreateSourceConnectionBodyDirect
-  | CreateSourceConnectionBodyOAuth;
+/**
+ * NOTE — ADR-011 § Amendment 4 (2026-05-26): the OAuth branch was
+ * removed from this endpoint. The catalog-widget flow uses
+ * `POST /api/airweave/connect/session` instead, and the SDK widget
+ * creates the source-connection (with the user's chosen source +
+ * credentials) AFTER the user authenticates. Pre-creating a source-
+ * connection here was an architectural mistake — see Amendment 4 for
+ * the full explanation.
+ *
+ * Direct auth remains here as an advanced path for users who already
+ * have non-OAuth credentials (e.g., a Postgres DSN, a Stripe API key)
+ * and want to bypass the widget entirely.
+ */
+export type CreateSourceConnectionBody = CreateSourceConnectionBodyDirect;
 
 /**
  * Request body for `POST /api/airweave/collections`.

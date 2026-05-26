@@ -475,86 +475,29 @@ describe('AirweaveController', () => {
       expect(result).toEqual({ data: { sourceConnection: { id: 'src-1' } } });
     });
 
-    it('OAuth branch — passes through with end-user id from session', async () => {
-      (airweaveService.createSourceConnection as jest.Mock).mockResolvedValue(
-        { sourceConnection: { id: 'src-2' }, sessionToken: 'tok' } as never,
-      );
-
-      await controller.createSourceConnection(adminSession, 'acme-foo-abc', {
-        name: 'Slack OAuth',
-        shortName: 'slack',
-        authentication: { kind: 'oauth' },
-      });
-
-      expect(airweaveService.createSourceConnection).toHaveBeenCalledWith({
-        collectionReadableId: 'acme-foo-abc',
-        name: 'Slack OAuth',
-        shortName: 'slack',
-        authentication: {
-          kind: 'oauth',
-          endUserId: 'user-admin',
+    it('OAuth branch — REJECTED with 400 + clear explanation pointing at the new flow (ADR-011 Amendment 4)', async () => {
+      // The OAuth branch of this endpoint was removed in Amendment 4
+      // because pre-creating a source-connection breaks the catalog-
+      // widget UX (user gets a single-source pre-pinned modal instead
+      // of the source picker). New flow: POST /api/airweave/connect/session
+      // + SDK widget creates the source-connection after user authenticates.
+      const promise = controller.createSourceConnection(
+        adminSession,
+        'acme-foo-abc',
+        {
+          name: 'Slack',
+          shortName: 'slack',
+          authentication: { kind: 'oauth' } as never,
         },
-      });
-    });
-
-    it('OAuth branch — forwards BYOC fields (clientId/clientSecret/consumerKey/consumerSecret/redirectUri) trimmed, omits empty strings (ADR-011 Amendment 3)', async () => {
-      (airweaveService.createSourceConnection as jest.Mock).mockResolvedValue(
-        { sourceConnection: { id: 'src-byoc' }, sessionToken: 'tok' } as never,
       );
-
-      await controller.createSourceConnection(adminSession, 'acme-foo-abc', {
-        name: 'Slack',
-        shortName: 'slack',
-        authentication: {
-          kind: 'oauth',
-          ...({
-            clientId: '  client-abc  ',
-            clientSecret: 'secret-xyz',
-            // OAuth1 fields and an empty redirectUri to cover trimming
-            // + the "drop empty" rule on the same call.
-            consumerKey: 'ck-1',
-            consumerSecret: '   ',
-            redirectUri: '',
-          } as Record<string, unknown>),
-        },
+      await expect(promise).rejects.toMatchObject({
+        status: HttpStatus.BAD_REQUEST,
       });
-
-      const call = (airweaveService.createSourceConnection as jest.Mock).mock
-        .calls[0][0] as {
-        authentication: Record<string, unknown>;
-      };
-      expect(call.authentication).toMatchObject({
-        kind: 'oauth',
-        endUserId: 'user-admin',
-        clientId: 'client-abc', // trimmed
-        clientSecret: 'secret-xyz',
-        consumerKey: 'ck-1',
-      });
-      // Whitespace-only / empty values must NOT reach the service —
-      // we never forward an empty secret to Airweave.
-      expect(call.authentication).not.toHaveProperty('consumerSecret');
-      expect(call.authentication).not.toHaveProperty('redirectUri');
-    });
-
-    it('OAuth branch — when no BYOC fields are provided, only kind+endUserId reach the service (preserves the shared-OAuth-app path)', async () => {
-      (airweaveService.createSourceConnection as jest.Mock).mockResolvedValue(
-        { sourceConnection: { id: 'src-no-byoc' }, sessionToken: 'tok' } as never,
-      );
-
-      await controller.createSourceConnection(adminSession, 'acme-foo-abc', {
-        name: 'Slack',
-        shortName: 'slack',
-        authentication: { kind: 'oauth' },
-      });
-
-      const call = (airweaveService.createSourceConnection as jest.Mock).mock
-        .calls[0][0] as {
-        authentication: Record<string, unknown>;
-      };
-      expect(call.authentication).toEqual({
-        kind: 'oauth',
-        endUserId: 'user-admin',
-      });
+      await expect(promise).rejects.toThrow(/connect\/session/);
+      await expect(promise).rejects.toThrow(/Amendment 4/);
+      // Service must NOT be called — the rejection happens at the
+      // controller boundary, no source-connection is created.
+      expect(airweaveService.createSourceConnection).not.toHaveBeenCalled();
     });
 
     it('rejects an unknown authentication.kind with 400', async () => {

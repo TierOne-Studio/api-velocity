@@ -217,62 +217,48 @@ export class AirweaveController {
       'shortName',
     );
 
-    const auth = body?.authentication;
-    if (!auth || (auth.kind !== 'direct' && auth.kind !== 'oauth')) {
+    // ADR-011 § Amendment 4 (2026-05-26): only the direct branch is
+    // supported here. OAuth flows use the catalog widget — see
+    // `POST /api/airweave/connect/session` + the SDK on the SPA side.
+    // An `auth.kind: 'oauth'` body is rejected with 400 + a clear
+    // explanation so old clients fail loudly instead of silently
+    // mis-creating source-connections.
+    //
+    // The DTO type narrows `auth.kind` to `'direct'`, but we widen at
+    // runtime to defend against old clients (e.g., a stale SPA build
+    // that still ships the OAuth body shape). TypeScript can't see
+    // wire-shape mismatches; the runtime check is load-bearing.
+    const auth = body?.authentication as
+      | CreateSourceConnectionBody['authentication']
+      | { kind: 'oauth' }
+      | undefined;
+    if (auth && auth.kind === 'oauth') {
       throw new BadRequestException(
-        "authentication.kind must be 'direct' or 'oauth'",
+        "authentication.kind 'oauth' is no longer supported on this endpoint. " +
+          'Use POST /api/airweave/connect/session and open the SDK catalog widget; ' +
+          'Airweave will create the source-connection after the user authenticates ' +
+          '(see ADR-011 Amendment 4).',
       );
     }
-
-    if (auth.kind === 'direct') {
-      if (
-        !auth.credentials ||
-        typeof auth.credentials !== 'object' ||
-        Array.isArray(auth.credentials)
-      ) {
-        throw new BadRequestException(
-          'authentication.credentials must be a non-array object',
-        );
-      }
-      return {
-        data: await this.airweaveService.createSourceConnection({
-          collectionReadableId,
-          name,
-          shortName,
-          authentication: { kind: 'direct', credentials: auth.credentials },
-        }),
-      };
+    if (!auth || auth.kind !== 'direct') {
+      throw new BadRequestException("authentication.kind must be 'direct'");
     }
 
-    // OAuth branch: service creates upstream + issues a connect session;
-    // response carries { sourceConnection, sessionToken }. The SPA's
-    // @airweave/connect-react SDK consumes the sessionToken via its
-    // getSessionToken callback and drives the OAuth handshake via the
-    // hosted Airweave Connect widget (postMessage transport, NOT a
-    // redirect-uri flow). See ADR-011 § Amendment 2 (2026-05-25).
-    //
-    // BYOC pass-through (ADR-011 § Amendment 3 — 2026-05-26):
-    // optionally forward `clientId` / `clientSecret` (OAuth2) or
-    // `consumerKey` / `consumerSecret` (OAuth1) when the source
-    // requires the caller to bring their own OAuth app. All five
-    // fields are trimmed and only included when non-empty so we never
-    // ship an empty-string secret to Airweave by accident.
+    if (
+      !auth.credentials ||
+      typeof auth.credentials !== 'object' ||
+      Array.isArray(auth.credentials)
+    ) {
+      throw new BadRequestException(
+        'authentication.credentials must be a non-array object',
+      );
+    }
     return {
       data: await this.airweaveService.createSourceConnection({
         collectionReadableId,
         name,
         shortName,
-        authentication: {
-          kind: 'oauth',
-          endUserId: session.user.id,
-          ...trimAndPick(auth, [
-            'clientId',
-            'clientSecret',
-            'consumerKey',
-            'consumerSecret',
-            'redirectUri',
-          ]),
-        },
+        authentication: { kind: 'direct', credentials: auth.credentials },
       }),
     };
   }
@@ -423,8 +409,20 @@ export class AirweaveController {
     };
   }
 
+  /**
+   * Issue an Airweave Connect session token for a collection. The SPA
+   * opens the SDK's catalog widget with this token; the user picks a
+   * source, authenticates (OAuth or BYOC), and the widget tells Airweave
+   * to create the source-connection under this collection.
+   *
+   * Per ADR-011 § Amendment 4 (2026-05-26), this is now the primary
+   * (and only) entry point for OAuth-driven source-connection creation.
+   * Permission tightened from `airweave:read` to `airweave:manage-sources`
+   * because the session token grants the holder the ability to create
+   * source-connections — that's a manage operation, not a read.
+   */
   @Post('connect/session')
-  @RequirePermissions('airweave:read')
+  @RequirePermissions('airweave:manage-sources')
   @RequireAirweaveOwnershipFromBody('collectionId')
   async createConnectSession(
     @Session() session: UserSession,
@@ -442,28 +440,6 @@ export class AirweaveController {
   }
 }
 
-/**
- * Pick the named string keys from `src`, trim them, and only include
- * keys whose trimmed value is non-empty. Used to scrub user-supplied
- * BYOC fields (clientId/clientSecret/...) before forwarding to
- * Airweave — an empty-string secret is never what the caller meant.
- *
- * Module-scoped (not a method) so it can be unit-tested in isolation
- * and reused by future controllers that have the same shape.
- */
-function trimAndPick<K extends string>(
-  src: unknown,
-  keys: readonly K[],
-): Partial<Record<K, string>> {
-  if (!src || typeof src !== 'object') return {};
-  const obj = src as Record<string, unknown>;
-  const out: Partial<Record<K, string>> = {};
-  for (const k of keys) {
-    const v = obj[k];
-    if (typeof v === 'string') {
-      const trimmed = v.trim();
-      if (trimmed.length > 0) out[k] = trimmed;
-    }
-  }
-  return out;
-}
+// ADR-011 § Amendment 4: `trimAndPick` removed alongside the OAuth
+// branch's BYOC pass-through. The catalog widget handles BYOC entry
+// inside its own form, so no controller-side scrub is needed.

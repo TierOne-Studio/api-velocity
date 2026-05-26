@@ -12,49 +12,11 @@ import { AdminOrganizationsService } from '../../../admin/organizations/applicat
 import { PROJECTS_REPOSITORY } from '../../../projects/domain/repositories/projects.repository.interface';
 import { AIRWEAVE_SDK_CLIENT } from '../../infrastructure/airweave-sdk.provider';
 import { AirweaveAuthorizationService } from './airweave-authorization.service';
-import { AirweaveService, buildOAuthBrowserAuth } from './airweave.service';
+import { AirweaveService } from './airweave.service';
 
-describe('buildOAuthBrowserAuth (ADR-011 Amendment 3 — BYOC pass-through)', () => {
-  it('returns undefined when no BYOC fields are present', () => {
-    expect(buildOAuthBrowserAuth({})).toBeUndefined();
-  });
-
-  it('maps clientId/clientSecret to OAuth2 snake_case fields', () => {
-    expect(
-      buildOAuthBrowserAuth({ clientId: 'abc', clientSecret: 'xyz' }),
-    ).toEqual({ client_id: 'abc', client_secret: 'xyz' });
-  });
-
-  it('maps consumerKey/consumerSecret to OAuth1 snake_case fields', () => {
-    expect(
-      buildOAuthBrowserAuth({ consumerKey: 'ck', consumerSecret: 'cs' }),
-    ).toEqual({ consumer_key: 'ck', consumer_secret: 'cs' });
-  });
-
-  it('maps redirectUri to redirect_uri', () => {
-    expect(buildOAuthBrowserAuth({ redirectUri: 'https://x' })).toEqual({
-      redirect_uri: 'https://x',
-    });
-  });
-
-  it('includes ALL provided fields when caller mixes OAuth1 + OAuth2 + redirect (Airweave validates the combo itself)', () => {
-    expect(
-      buildOAuthBrowserAuth({
-        clientId: 'ci',
-        clientSecret: 'cs2',
-        consumerKey: 'ck',
-        consumerSecret: 'cs1',
-        redirectUri: 'https://x',
-      }),
-    ).toEqual({
-      client_id: 'ci',
-      client_secret: 'cs2',
-      consumer_key: 'ck',
-      consumer_secret: 'cs1',
-      redirect_uri: 'https://x',
-    });
-  });
-});
+// ADR-011 § Amendment 4: `buildOAuthBrowserAuth` removed alongside the
+// OAuth branch of `createSourceConnection`. BYOC entry now lives inside
+// the SDK's catalog widget, not in a controller-side scrub helper.
 
 describe('AirweaveService', () => {
   let service: AirweaveService;
@@ -1017,157 +979,22 @@ describe('AirweaveService', () => {
         sync_immediately: true,
         authentication: { credentials: { token: 'xoxb-...' } },
       });
-      expect(result.sessionToken).toBeUndefined();
+      // Direct branch returns only sourceConnection — sessionToken
+      // was removed from the result shape in ADR-011 Amendment 4
+      // (OAuth flows get the token from /connect/session, not from
+      // a source-connection create response).
       expect(result.sourceConnection.id).toBe('src-uuid-1');
       expect(result.sourceConnection.shortName).toBe('slack');
     });
 
-    it('OAuth branch — creates with sync_immediately=false and returns sessionToken', async () => {
-      client.sourceConnections.create.mockResolvedValue({
-        ...sdkReturn,
-        auth: { method: 'oauth_browser', authenticated: false },
-      });
-      fetchSpy.mockResolvedValue({
-        ok: true,
-        json: async () => ({ session_token: 'connect-tok-xyz' }),
-      } as unknown as Response);
-
-      const result = await service.createSourceConnection({
-        collectionReadableId: 'acme-foo-abcdef12',
-        name: 'Slack Workspace',
-        shortName: 'slack',
-        authentication: { kind: 'oauth', endUserId: 'user-1' },
-      });
-
-      expect(client.sourceConnections.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          short_name: 'slack',
-          sync_immediately: false,
-        }),
-      );
-      expect(result.sessionToken).toBe('connect-tok-xyz');
-      expect(result.sourceConnection.id).toBe('src-uuid-1');
-    });
-
-    it('OAuth branch — omits authentication field entirely when caller provides no BYOC values (shared-OAuth-app path preserved)', async () => {
-      // Per Amendment 3: when no BYOC fields are present, the SDK call
-      // must NOT include an `authentication` key at all. Airweave then
-      // uses the shared account's preconfigured OAuth app (the original
-      // pre-Amendment-3 behavior).
-      client.sourceConnections.create.mockResolvedValue(sdkReturn);
-      fetchSpy.mockResolvedValue({
-        ok: true,
-        json: async () => ({ session_token: 'tok' }),
-      } as unknown as Response);
-
-      await service.createSourceConnection({
-        collectionReadableId: 'acme-foo-abcdef12',
-        name: 'Slack',
-        shortName: 'slack',
-        authentication: {
-          kind: 'oauth',
-          endUserId: 'user-1',
-        },
-      });
-
-      const sdkCallArg = client.sourceConnections.create.mock
-        .calls[0][0] as Record<string, unknown>;
-      expect(sdkCallArg).not.toHaveProperty('authentication');
-      expect(sdkCallArg).not.toHaveProperty('redirect_url');
-    });
-
-    it('OAuth branch — forwards BYOC fields (clientId/clientSecret/consumerKey/consumerSecret/redirectUri) to the SDK with snake_case keys per ADR-011 Amendment 3', async () => {
-      // BYOC pass-through proves the inline-credentials path that lets
-      // users supply their own OAuth app credentials (per ADR-011
-      // Amendment 3). Each Velocity-side camelCase field must map to
-      // its Airweave SDK snake_case counterpart.
-      client.sourceConnections.create.mockResolvedValue(sdkReturn);
-      fetchSpy.mockResolvedValue({
-        ok: true,
-        json: async () => ({ session_token: 'tok' }),
-      } as unknown as Response);
-
-      await service.createSourceConnection({
-        collectionReadableId: 'acme-foo-abcdef12',
-        name: 'Slack BYOC',
-        shortName: 'slack',
-        authentication: {
-          kind: 'oauth',
-          endUserId: 'user-1',
-          clientId: 'client-abc',
-          clientSecret: 'secret-xyz',
-          consumerKey: 'ck-1',
-          consumerSecret: 'cs-1',
-          redirectUri: 'https://app.velocity/done',
-        },
-      });
-
-      const sdkCallArg = client.sourceConnections.create.mock
-        .calls[0][0] as { authentication: Record<string, unknown> };
-      expect(sdkCallArg.authentication).toEqual({
-        client_id: 'client-abc',
-        client_secret: 'secret-xyz',
-        consumer_key: 'ck-1',
-        consumer_secret: 'cs-1',
-        redirect_uri: 'https://app.velocity/done',
-      });
-    });
-
-    it('OAuth branch — partial BYOC (only clientId+clientSecret) sends only those two snake_case keys', async () => {
-      // OAuth2 BYOC commonly provides just client_id + client_secret.
-      // Verifies the helper omits unprovided fields rather than sending
-      // `undefined` (Airweave would interpret that as a request to
-      // reset).
-      client.sourceConnections.create.mockResolvedValue(sdkReturn);
-      fetchSpy.mockResolvedValue({
-        ok: true,
-        json: async () => ({ session_token: 'tok' }),
-      } as unknown as Response);
-
-      await service.createSourceConnection({
-        collectionReadableId: 'acme-foo-abcdef12',
-        name: 'Slack',
-        shortName: 'slack',
-        authentication: {
-          kind: 'oauth',
-          endUserId: 'user-1',
-          clientId: 'client-abc',
-          clientSecret: 'secret-xyz',
-        },
-      });
-
-      const sdkCallArg = client.sourceConnections.create.mock
-        .calls[0][0] as { authentication: Record<string, unknown> };
-      expect(sdkCallArg.authentication).toEqual({
-        client_id: 'client-abc',
-        client_secret: 'secret-xyz',
-      });
-    });
-
-    it('OAuth branch — create OK + session token issuance fails → BadGatewayException naming the orphan source-connection id (QA gap #3)', async () => {
-      // Per ADR-011: when Airweave create succeeds but connect-session
-      // fails, the caller-facing message MUST name the orphan source-
-      // connection id so the frontend can recover via the reauth endpoint.
-      client.sourceConnections.create.mockResolvedValue(sdkReturn);
-      fetchSpy.mockResolvedValue({
-        ok: false,
-        status: 500,
-        statusText: 'upstream broke',
-      } as unknown as Response);
-
-      const failure = service.createSourceConnection({
-        collectionReadableId: 'acme-foo-abcdef12',
-        name: 'Slack',
-        shortName: 'slack',
-        authentication: { kind: 'oauth', endUserId: 'user-1' },
-      });
-
-      await expect(failure).rejects.toThrow(BadGatewayException);
-      // Orphan source-connection id is named verbatim.
-      await expect(failure).rejects.toThrow(/src-uuid-1/);
-      // And the message points the caller at the recovery endpoint.
-      await expect(failure).rejects.toThrow(/reauth/);
-    });
+    // ── ADR-011 § Amendment 4 ──────────────────────────────────────
+    // The OAuth-branch test suite (originally Step 8 + Amendment 3
+    // BYOC pass-through) was removed because the OAuth branch itself
+    // is gone. OAuth source-connection creation now happens entirely
+    // inside the SDK catalog widget. The controller spec keeps a
+    // single regression-pin asserting that an OAuth body is rejected
+    // with a 400 + clear pointer at the new flow (see
+    // `airweave.controller.spec.ts` — "OAuth branch — REJECTED").
 
     it('direct branch — Airweave rejects credentials → BadGatewayException', async () => {
       client.sourceConnections.create.mockRejectedValue(
