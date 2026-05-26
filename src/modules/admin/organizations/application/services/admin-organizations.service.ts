@@ -286,6 +286,57 @@ export class AdminOrganizationsService {
   }
 
   /**
+   * Add an Airweave collection's `readable_id` to this org's allowlist.
+   *
+   * The allowlist (`organization.metadata.allowedAirweaveCollectionIds`) is
+   * the single source of truth for Airweave collection ownership per ADR-011.
+   * The underlying SQL is `jsonb_set` with DISTINCT to guarantee idempotency
+   * AND field-locality (will not stomp other `metadata` fields).
+   *
+   * Callers do NOT need to read-modify-write — pass the org id + readable id
+   * and the operation is atomic at the database layer.
+   */
+  async addAirweaveCollectionToAllowlist(
+    organizationId: string,
+    collectionReadableId: string,
+  ): Promise<void> {
+    await this.orgRepo.addAirweaveCollectionToAllowlist(
+      organizationId,
+      collectionReadableId,
+    );
+  }
+
+  /**
+   * Remove an Airweave collection's `readable_id` from this org's allowlist.
+   * No-op when the id is not present. Per ADR-011 § Decision 2.
+   */
+  async removeAirweaveCollectionFromAllowlist(
+    organizationId: string,
+    collectionReadableId: string,
+  ): Promise<void> {
+    await this.orgRepo.removeAirweaveCollectionFromAllowlist(
+      organizationId,
+      collectionReadableId,
+    );
+  }
+
+  /**
+   * Membership check used by the adopt-on-409 recovery path (Step 4b of the
+   * airweave-collections-crud plan) and the airweave ownership guard.
+   * Returns `false` when the organization has NULL metadata or the allowlist
+   * field is absent.
+   */
+  async isAirweaveCollectionInAllowlist(
+    organizationId: string,
+    collectionReadableId: string,
+  ): Promise<boolean> {
+    return this.orgRepo.isAirweaveCollectionInAllowlist(
+      organizationId,
+      collectionReadableId,
+    );
+  }
+
+  /**
    * Get members of an organization
    */
   async getMembers(organizationId: string): Promise<

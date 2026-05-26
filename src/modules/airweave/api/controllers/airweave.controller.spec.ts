@@ -10,7 +10,7 @@ jest.mock('@thallesp/nestjs-better-auth', () => ({
 import { HttpStatus } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { PermissionsGuard } from '../../../../shared';
-import { AdminOrganizationsService } from '../../../admin';
+import { AirweaveAuthorizationService } from '../../application/services/airweave-authorization.service';
 import { AirweaveService } from '../../application/services/airweave.service';
 import { AirweaveController } from './airweave.controller';
 
@@ -27,7 +27,7 @@ const adminSession = {
 describe('AirweaveController', () => {
   let controller: AirweaveController;
   let airweaveService: jest.Mocked<AirweaveService>;
-  let adminOrganizationsService: jest.Mocked<AdminOrganizationsService>;
+  let authzService: jest.Mocked<AirweaveAuthorizationService>;
 
   beforeEach(() => {
     airweaveService = {
@@ -37,16 +37,21 @@ describe('AirweaveController', () => {
       listSourceConnections: jest.fn(),
       getSourceConnection: jest.fn(),
       createConnectSession: jest.fn(),
+      createCollection: jest.fn(),
+      updateCollection: jest.fn(),
+      deleteCollection: jest.fn(),
+      createSourceConnection: jest.fn(),
+      updateSourceConnection: jest.fn(),
+      deleteSourceConnection: jest.fn(),
+      reauthSourceConnection: jest.fn(),
     } as unknown as jest.Mocked<AirweaveService>;
 
-    adminOrganizationsService = {
-      findById: jest.fn(),
-    } as unknown as jest.Mocked<AdminOrganizationsService>;
+    authzService = {
+      applyAirweaveAllowlist: jest.fn(),
+      assertOwnership: jest.fn(),
+    } as unknown as jest.Mocked<AirweaveAuthorizationService>;
 
-    controller = new AirweaveController(
-      airweaveService,
-      adminOrganizationsService,
-    );
+    controller = new AirweaveController(airweaveService, authzService);
   });
 
   it('applies class-level PermissionsGuard', () => {
@@ -60,6 +65,7 @@ describe('AirweaveController', () => {
 
   it('lists collections with parsed query params (superadmin sees all)', async () => {
     airweaveService.listCollections.mockResolvedValue([]);
+    authzService.applyAirweaveAllowlist.mockResolvedValue([]);
 
     await controller.listCollections(
       superadminSession,
@@ -75,29 +81,32 @@ describe('AirweaveController', () => {
     });
   });
 
-  it('filters collections via org allowlist for non-superadmin', async () => {
-    airweaveService.listCollections.mockResolvedValue([
+  it('delegates LIST filtering to AirweaveAuthorizationService.applyAirweaveAllowlist', async () => {
+    // Filter behavior itself is covered by airweave-authorization.service.spec.ts.
+    // Here we only assert the controller delegates with (collections, session)
+    // and returns whatever the service returns.
+    const fetched = [
       { readableId: 'allowed-1' } as never,
       { readableId: 'blocked-2' } as never,
-    ]);
-    adminOrganizationsService.findById.mockResolvedValue({
-      id: 'org-1',
-      metadata: { allowedAirweaveCollectionIds: ['allowed-1'] },
-    } as never);
+    ];
+    const filtered = [{ readableId: 'allowed-1' } as never];
+    airweaveService.listCollections.mockResolvedValue(fetched);
+    authzService.applyAirweaveAllowlist.mockResolvedValue(filtered);
 
     const result = await controller.listCollections(adminSession);
 
-    expect(result).toEqual({ data: [{ readableId: 'allowed-1' }] });
+    expect(authzService.applyAirweaveAllowlist).toHaveBeenCalledWith(
+      fetched,
+      adminSession,
+    );
+    expect(result).toEqual({ data: filtered });
   });
 
-  it('returns empty list when org has no allowlist and caller is not superadmin', async () => {
+  it('returns empty list when the authz service narrows everything away', async () => {
     airweaveService.listCollections.mockResolvedValue([
       { readableId: 'any-1' } as never,
     ]);
-    adminOrganizationsService.findById.mockResolvedValue({
-      id: 'org-1',
-      metadata: null,
-    } as never);
+    authzService.applyAirweaveAllowlist.mockResolvedValue([]);
 
     const result = await controller.listCollections(adminSession);
 
@@ -275,6 +284,320 @@ describe('AirweaveController', () => {
       search: undefined,
       limit: undefined,
       skip: undefined,
+    });
+  });
+
+  // ── POST /collections (Step 4: createCollection) ─────────────────────────
+
+  describe('createCollection', () => {
+    beforeEach(() => {
+      (airweaveService as any).createCollection = jest.fn();
+    });
+
+    it('delegates to AirweaveService.createCollection with active org id', async () => {
+      (airweaveService.createCollection as jest.Mock).mockResolvedValue({
+        id: 'uuid-x',
+        readableId: 'acme-foo-abcdef12',
+      } as never);
+
+      const result = await controller.createCollection(adminSession, {
+        name: '  Foo  ',
+        slugHint: 'foo',
+      });
+
+      expect(airweaveService.createCollection).toHaveBeenCalledWith({
+        name: 'Foo',
+        slugHint: 'foo',
+        organizationId: 'org-1',
+        createdByUserId: 'user-admin',
+      });
+      expect(result).toEqual({ data: { id: 'uuid-x', readableId: 'acme-foo-abcdef12' } });
+    });
+
+    it('rejects empty/whitespace name with 400', async () => {
+      await expect(
+        controller.createCollection(adminSession, { name: '   ' }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+
+    it('rejects slugHint with disallowed characters', async () => {
+      await expect(
+        controller.createCollection(adminSession, {
+          name: 'X',
+          slugHint: 'Foo Bar', // space is not allowed
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+
+    it('rejects slugHint longer than 32 chars', async () => {
+      await expect(
+        controller.createCollection(adminSession, {
+          name: 'X',
+          slugHint: 'a'.repeat(33),
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+
+    it('accepts slugHint of exactly 32 chars (boundary — QA gap #4)', async () => {
+      (airweaveService.createCollection as jest.Mock).mockResolvedValue({
+        id: 'uuid',
+      } as never);
+
+      await controller.createCollection(adminSession, {
+        name: 'X',
+        slugHint: 'a'.repeat(32),
+      });
+
+      expect(airweaveService.createCollection).toHaveBeenCalledWith(
+        expect.objectContaining({ slugHint: 'a'.repeat(32) }),
+      );
+    });
+
+    it.each([
+      ['leading dash', '-foo'],
+      ['trailing dash', 'foo-'],
+      ['consecutive dashes', 'foo--bar'],
+      ['uppercase', 'FOO'],
+      ['unicode', 'café'],
+      ['underscore', 'foo_bar'],
+      ['space', 'foo bar'],
+    ])('rejects slugHint with %s ("%s") — QA gap #5', async (_label, slug) => {
+      await expect(
+        controller.createCollection(adminSession, {
+          name: 'X',
+          slugHint: slug,
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+
+    it('throws ForbiddenException when caller has no active organization', async () => {
+      const noOrgSession = {
+        user: { id: 'user-orphan', role: 'admin' },
+        session: { activeOrganizationId: null },
+      } as never;
+
+      await expect(
+        controller.createCollection(noOrgSession, { name: 'X' }),
+      ).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
+      expect(airweaveService.createCollection).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── PATCH /collections/:id (Step 5: rename) ──────────────────────────────
+
+  describe('updateCollection', () => {
+    it('delegates to AirweaveService.updateCollection with trimmed values', async () => {
+      (airweaveService.updateCollection as jest.Mock).mockResolvedValue({
+        id: 'uuid-1',
+        name: 'Renamed',
+      } as never);
+
+      const result = await controller.updateCollection('  acme-foo-abc  ', {
+        name: '  Renamed  ',
+      });
+
+      expect(airweaveService.updateCollection).toHaveBeenCalledWith(
+        'acme-foo-abc',
+        { name: 'Renamed' },
+      );
+      expect(result).toEqual({ data: { id: 'uuid-1', name: 'Renamed' } });
+    });
+
+    it('rejects empty name with 400', async () => {
+      await expect(
+        controller.updateCollection('coll-1', { name: '   ' }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+  });
+
+  // ── DELETE /collections/:id (Step 5: 409 on refs / 200 on clean) ─────────
+
+  describe('deleteCollection', () => {
+    it('delegates to AirweaveService.deleteCollection with the active org id', async () => {
+      (airweaveService.deleteCollection as jest.Mock).mockResolvedValue(
+        undefined as never,
+      );
+
+      const result = await controller.deleteCollection(
+        adminSession,
+        'acme-foo-abc',
+      );
+
+      expect(airweaveService.deleteCollection).toHaveBeenCalledWith(
+        'acme-foo-abc',
+        'org-1',
+      );
+      expect(result).toEqual({
+        data: { deleted: true, collectionId: 'acme-foo-abc' },
+      });
+    });
+
+    it('throws ForbiddenException when caller has no active organization', async () => {
+      const noOrgSession = {
+        user: { id: 'user-super', role: 'superadmin' },
+        session: { activeOrganizationId: null },
+      } as never;
+
+      await expect(
+        controller.deleteCollection(noOrgSession, 'coll-1'),
+      ).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
+      expect(airweaveService.deleteCollection).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── POST /collections/:id/source-connections (Step 6: direct only) ───────
+
+  describe('createSourceConnection', () => {
+    it('direct branch — delegates to AirweaveService.createSourceConnection', async () => {
+      (airweaveService.createSourceConnection as jest.Mock).mockResolvedValue(
+        { sourceConnection: { id: 'src-1' } } as never,
+      );
+
+      const result = await controller.createSourceConnection(
+        adminSession,
+        '  acme-foo-abc  ',
+        {
+          name: '  Slack Workspace  ',
+          shortName: '  slack  ',
+          authentication: {
+            kind: 'direct',
+            credentials: { token: 'xoxb-...' },
+          },
+        },
+      );
+
+      expect(airweaveService.createSourceConnection).toHaveBeenCalledWith({
+        collectionReadableId: 'acme-foo-abc',
+        name: 'Slack Workspace',
+        shortName: 'slack',
+        authentication: { kind: 'direct', credentials: { token: 'xoxb-...' } },
+      });
+      expect(result).toEqual({ data: { sourceConnection: { id: 'src-1' } } });
+    });
+
+    it('OAuth branch — REJECTED with 400 + clear explanation pointing at the new flow (ADR-011 Amendment 4)', async () => {
+      // The OAuth branch of this endpoint was removed in Amendment 4
+      // because pre-creating a source-connection breaks the catalog-
+      // widget UX (user gets a single-source pre-pinned modal instead
+      // of the source picker). New flow: POST /api/airweave/connect/session
+      // + SDK widget creates the source-connection after user authenticates.
+      const promise = controller.createSourceConnection(
+        adminSession,
+        'acme-foo-abc',
+        {
+          name: 'Slack',
+          shortName: 'slack',
+          authentication: { kind: 'oauth' } as never,
+        },
+      );
+      await expect(promise).rejects.toMatchObject({
+        status: HttpStatus.BAD_REQUEST,
+      });
+      await expect(promise).rejects.toThrow(/connect\/session/);
+      await expect(promise).rejects.toThrow(/Amendment 4/);
+      // Service must NOT be called — the rejection happens at the
+      // controller boundary, no source-connection is created.
+      expect(airweaveService.createSourceConnection).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown authentication.kind with 400', async () => {
+      await expect(
+        controller.createSourceConnection(adminSession, 'acme-foo-abc', {
+          name: 'X',
+          shortName: 'slack',
+          authentication: { kind: 'magic' } as never,
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+
+    it('rejects empty shortName with 400', async () => {
+      await expect(
+        controller.createSourceConnection(adminSession, 'acme-foo-abc', {
+          name: 'X',
+          shortName: '   ',
+          authentication: { kind: 'direct', credentials: {} },
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+
+    it('direct branch — rejects non-object credentials with 400', async () => {
+      await expect(
+        controller.createSourceConnection(adminSession, 'acme-foo-abc', {
+          name: 'X',
+          shortName: 'slack',
+          authentication: {
+            kind: 'direct',
+            credentials: 'not-an-object' as never,
+          },
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+  });
+
+  // ── Step 7: source-connection mutations (inline lookup-then-gate) ─────
+
+  describe('source-connection mutation endpoints', () => {
+    it('updateSourceConnection — delegates with trimmed values', async () => {
+      (airweaveService.updateSourceConnection as jest.Mock).mockResolvedValue(
+        { id: 'src-1', name: 'Renamed' } as never,
+      );
+
+      const result = await controller.updateSourceConnection(
+        adminSession,
+        '  src-uuid-1  ',
+        { name: '  Renamed  ' },
+      );
+
+      expect(airweaveService.updateSourceConnection).toHaveBeenCalledWith(
+        'src-uuid-1',
+        adminSession,
+        { name: 'Renamed' },
+      );
+      expect(result).toEqual({ data: { id: 'src-1', name: 'Renamed' } });
+    });
+
+    it('updateSourceConnection — rejects empty name with 400', async () => {
+      await expect(
+        controller.updateSourceConnection(adminSession, 'src-1', {
+          name: '   ',
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+
+    it('reauthSourceConnection — delegates and returns sessionToken envelope', async () => {
+      (airweaveService.reauthSourceConnection as jest.Mock).mockResolvedValue(
+        { sessionToken: 'connect-tok' } as never,
+      );
+
+      const result = await controller.reauthSourceConnection(
+        adminSession,
+        'src-1',
+      );
+
+      expect(airweaveService.reauthSourceConnection).toHaveBeenCalledWith(
+        'src-1',
+        adminSession,
+      );
+      expect(result).toEqual({ data: { sessionToken: 'connect-tok' } });
+    });
+
+    it('deleteSourceConnection — delegates and returns deleted envelope', async () => {
+      (airweaveService.deleteSourceConnection as jest.Mock).mockResolvedValue(
+        undefined as never,
+      );
+
+      const result = await controller.deleteSourceConnection(
+        adminSession,
+        'src-1',
+      );
+
+      expect(airweaveService.deleteSourceConnection).toHaveBeenCalledWith(
+        'src-1',
+        adminSession,
+      );
+      expect(result).toEqual({
+        data: { deleted: true, sourceConnectionId: 'src-1' },
+      });
     });
   });
 });

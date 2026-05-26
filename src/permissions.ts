@@ -14,6 +14,7 @@ export const statement = {
   chat: ['read', 'create', 'stream', 'delete'],
   dashboard: ['view'],
   project: ['create', 'read', 'update', 'delete', 'manage-sources'],
+  airweave: ['create', 'read', 'update', 'delete', 'manage-sources'],
 } as const;
 
 /**
@@ -51,6 +52,7 @@ export const adminRole = ac.newRole({
   chat: ['read', 'create', 'stream', 'delete'],
   dashboard: ['view'],
   project: ['create', 'read', 'update', 'delete', 'manage-sources'],
+  airweave: ['create', 'read', 'update', 'delete', 'manage-sources'],
 });
 
 // Manager role - can manage users/sessions within their organization
@@ -62,6 +64,10 @@ export const managerRole = ac.newRole({
   chat: ['read', 'create', 'stream', 'delete'],
   dashboard: ['view'],
   project: ['create', 'read', 'update', 'manage-sources'],
+  // Manager has manage-sources (day-to-day data integration) but not delete
+  // (collection disposal is an admin-only consequential action).
+  // Asymmetry is intentional — see ADR-011 "Consequences > Negative".
+  airweave: ['create', 'read', 'update', 'manage-sources'],
 });
 
 // Member role - basic org member
@@ -70,6 +76,7 @@ export const memberRole = ac.newRole({
   role: ['list', 'get'],
   chat: ['read', 'create', 'stream'],
   project: ['read'],
+  airweave: ['read'],
 });
 
 /**

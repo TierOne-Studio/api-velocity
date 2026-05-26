@@ -571,6 +571,108 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
     return result.length > 0;
   }
 
+  /**
+   * Add a collection's `readable_id` to the org's allowlist atomically.
+   *
+   * Uses `jsonb_set` with a DISTINCT subquery so the field is updated
+   * field-locally (no risk of stomping other `metadata` fields, unlike
+   * `updateOrg({ metadataJson })`) and idempotently (re-running with the
+   * same id produces no duplicate). NULL metadata is initialized to `{}`
+   * via `coalesce`. Per ADR-011 § Decision 2.
+   */
+  async addAirweaveCollectionToAllowlist(
+    organizationId: string,
+    collectionReadableId: string,
+  ): Promise<void> {
+    // NOTE: `organization.metadata` is a TEXT column (better-auth stores
+    // its serialized JSON as a string). Every jsonb operator below needs
+    // an explicit `metadata::jsonb` cast, and the jsonb_set result must
+    // be cast back to ::text on assignment — Postgres does NOT do these
+    // casts implicitly. Caught by e2e airweave smoke after unit specs
+    // (mocked DB) shipped without execution-level coverage.
+    await this.db.query(
+      `UPDATE organization
+         SET metadata = jsonb_set(
+           COALESCE(metadata::jsonb, '{}'::jsonb),
+           '{allowedAirweaveCollectionIds}',
+           (
+             SELECT to_jsonb(
+               ARRAY(
+                 SELECT DISTINCT value
+                 FROM jsonb_array_elements_text(
+                   COALESCE(metadata::jsonb->'allowedAirweaveCollectionIds', '[]'::jsonb) || to_jsonb($2::text)
+                 ) AS value
+               )
+             )
+           ),
+           true
+         )::text
+       WHERE id = $1`,
+      [organizationId, collectionReadableId],
+    );
+  }
+
+  /**
+   * Remove a collection's `readable_id` from the org's allowlist atomically.
+   * No-op if the id is not present (or if `metadata` / the allowlist field
+   * is NULL). Idempotent per ADR-011 § Decision 2.
+   */
+  async removeAirweaveCollectionFromAllowlist(
+    organizationId: string,
+    collectionReadableId: string,
+  ): Promise<void> {
+    // See `addAirweaveCollectionToAllowlist` for the ::jsonb / ::text
+    // casting rationale (TEXT column from better-auth).
+    await this.db.query(
+      `UPDATE organization
+         SET metadata = jsonb_set(
+           COALESCE(metadata::jsonb, '{}'::jsonb),
+           '{allowedAirweaveCollectionIds}',
+           (
+             SELECT to_jsonb(
+               ARRAY(
+                 SELECT value
+                 FROM jsonb_array_elements_text(
+                   COALESCE(metadata::jsonb->'allowedAirweaveCollectionIds', '[]'::jsonb)
+                 ) AS value
+                 WHERE value <> $2
+               )
+             )
+           ),
+           true
+         )::text
+       WHERE id = $1`,
+      [organizationId, collectionReadableId],
+    );
+  }
+
+  /**
+   * Membership check used by the adopt-on-409 recovery path (Step 4b) and
+   * by the airweave ownership guard. Returns `false` when the organization
+   * has NULL metadata or the allowlist field is absent.
+   */
+  async isAirweaveCollectionInAllowlist(
+    organizationId: string,
+    collectionReadableId: string,
+  ): Promise<boolean> {
+    // See `addAirweaveCollectionToAllowlist` for the ::jsonb casting
+    // rationale (TEXT column from better-auth). Read-only path —
+    // no ::text back-cast needed.
+    const row = await this.db.queryOne<{ present: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM jsonb_array_elements_text(
+           COALESCE(metadata::jsonb->'allowedAirweaveCollectionIds', '[]'::jsonb)
+         ) AS value
+         WHERE value = $2
+       ) AS present
+       FROM organization
+       WHERE id = $1`,
+      [organizationId, collectionReadableId],
+    );
+    return row?.present === true;
+  }
+
   async getRoles(organizationId: string | null): Promise<RoleRow[]> {
     if (organizationId) {
       return this.db.query<RoleRow>(
