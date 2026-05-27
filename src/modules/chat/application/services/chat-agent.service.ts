@@ -287,12 +287,36 @@ export function normalizeMarkdownTables(content: string): string {
       const next = split[i + 1];
       const prev = out[out.length - 1];
       const isHeader = next !== undefined && isTableSeparator(next);
+      // Insert a blank line before any genuine new-table header.
+      //
+      // `isTableSeparator` is a SYNTACTIC detector — it matches any line
+      // whose cells are all dash-only (`/^\s*:?-+:?\s*$/`). It cannot
+      // distinguish a real GFM separator row from a body row whose cells
+      // are coincidentally dash placeholders (`| - | - |`, `| -- | -- |`).
+      // That looseness means `isHeader` can be true at TWO different
+      // line positions inside a single valid table:
+      //   (1) the header line — its next line is the real separator;
+      //   (2) the separator line — when its next line is a body row
+      //       whose cells happen to be dash-only (e.g. null placeholders).
+      // Position (2) is a false positive we must NOT insert before, or
+      // we split the table at its own header/separator boundary.
+      //
+      // Two guards close the gap:
+      //   • `!isTableSeparator(line)` rules out position (2) — never
+      //     treat a separator-shaped line as a "new header".
+      //   • `!isTableSeparator(prev)` keeps a separator and its first
+      //     data row glued (no blank line inserted between them).
+      //
+      // The prev-is-a-table-line case (a prior table's data row sitting
+      // right above this header) MUST still get a blank line so the
+      // prior table closes before the new one opens — otherwise remark-
+      // gfm merges them into one corrupted table (see screenshot bug).
       if (
         isHeader &&
         prev !== undefined &&
         prev !== '' &&
-        !isTableLine(prev) &&
-        !isTableSeparator(prev)
+        !isTableSeparator(prev) &&
+        !isTableSeparator(line)
       ) {
         out.push('');
       }
