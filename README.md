@@ -9,6 +9,7 @@ Companion frontend: **[spa-velocity](../spa-velocity)** (sibling directory).
 ## Table of Contents
 
 - [Onboarding](#onboarding)
+- [AI Assistant Tooling (Ruler)](#ai-assistant-tooling-ruler)
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
 - [Modules](#modules)
@@ -48,6 +49,56 @@ This is a **NestJS REST API** that backs the **spa-velocity** React SPA. The two
 2. `src/auth.ts` — Better Auth wiring (plugins, hooks, trustedOrigins).
 3. `src/modules/<domain>/` — one module per domain; each follows the api → application → domain → infrastructure layering from ADR-009.
 4. `docs/decisions/` — load-bearing ADRs (see [ADRs](#adrs)).
+5. `.ruler/` — single source of truth for AI-coding-assistant guidance (see [AI Assistant Tooling](#ai-assistant-tooling-ruler)).
+
+---
+
+## AI Assistant Tooling (Ruler)
+
+This repo uses **[Ruler](https://github.com/intellectronica/ruler)** (`@intellectronica/ruler`) as the single source of truth for AI-coding-assistant guidance. The canonical files live in `.ruler/`; the per-assistant files in the repo root (`CLAUDE.md`, `.github/copilot-instructions.md`, `AGENTS.md`, `.codex/config.toml`) are **generated artifacts** — do not hand-edit them.
+
+### Why it matters
+
+Multiple AI assistants are used in this codebase (Claude Code, GitHub Copilot, Codex, Cursor, Windsurf). Ruler keeps their instructions, skills, and review-subagent definitions identical so behavior is reproducible regardless of which tool the contributor is using.
+
+### Layout
+
+```
+.ruler/
+├── instructions.md     # Master operating profile (priority order P0–P9, skill pointers, workflow chains)
+├── ruler.toml          # Which assistants to compile for, agent/skill toggles, MCP servers
+├── skills/             # Domain skill bundles (one folder per skill with SKILL.md + helpers)
+├── agents/             # Review subagents — architect-reviewer, code-reviewer, qa-validator,
+│                       #   security-reviewer, lessons-curator
+└── tests/              # Acceptance / simulation scripts that exercise the prompts
+```
+
+### Generated outputs
+
+`ruler.toml` declares the compile targets:
+
+| Assistant | Output file(s) |
+|---|---|
+| Claude Code | `CLAUDE.md` |
+| GitHub Copilot | `.github/copilot-instructions.md` |
+| OpenAI Codex CLI | `AGENTS.md` + `.codex/config.toml` |
+| Cursor | `AGENTS.md` |
+| Windsurf | `AGENTS.md` |
+
+### Regenerate
+
+```bash
+npx ruler apply              # rebuild all enabled assistants
+npx ruler apply --verbose    # show what changed
+```
+
+### Workflow
+
+1. Edit `.ruler/instructions.md`, a skill in `.ruler/skills/<name>/`, or an agent in `.ruler/agents/`.
+2. Run `npx ruler apply`.
+3. Commit BOTH the `.ruler/` source change AND the regenerated `CLAUDE.md` / `AGENTS.md` / `.github/copilot-instructions.md` / `.codex/config.toml`. They must stay in sync.
+
+If a PR only shows changes to `CLAUDE.md` (and not the matching `.ruler/` source), it's almost certainly a missed regen — re-run `npx ruler apply` after editing `.ruler/`.
 
 ---
 
