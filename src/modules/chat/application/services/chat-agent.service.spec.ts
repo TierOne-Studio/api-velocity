@@ -942,4 +942,189 @@ describe('normalizeMarkdownTables', () => {
     // No separator row anywhere → no normalization.
     expect(normalizeMarkdownTables(input)).toBe(input);
   });
+
+  // ---------------------------------------------------------------------
+  // Table-after-table normalization (Pass-2 guard correction).
+  //
+  // When the model emits two distinct markdown tables back-to-back with
+  // no blank line between them, remark-gfm merges them into a single
+  // table — the second table's separator row renders as a literal data
+  // row (`---`, `---`, …) and subsequent data rows shift one column
+  // left. Pass-2 must insert a blank line at the second table's header.
+  //
+  // The `isHeader` precondition (NEXT line is a separator) already
+  // proves the current line is a real new-table header — GFM separator
+  // rows are only valid right after a header, never inside a table body.
+  // So a blank line MUST be inserted regardless of whether the previous
+  // line is prose or another table's data row.
+  // ---------------------------------------------------------------------
+
+  it('inserts a blank line between two tables emitted back-to-back (no blank between them)', () => {
+    // Sequence: header-A → sep-A → row-A → header-B → sep-B → row-B
+    // (no empty line between tables). The blank line must be inserted
+    // before header-B so the second table is parsed independently.
+    const input = [
+      '| a | b |',
+      '|---|---|',
+      '| 1 | 2 |',
+      '| c | d |',
+      '|---|---|',
+      '| 3 | 4 |',
+    ].join('\n');
+    const expected = [
+      '| a | b |',
+      '|---|---|',
+      '| 1 | 2 |',
+      '',
+      '| c | d |',
+      '|---|---|',
+      '| 3 | 4 |',
+    ].join('\n');
+    expect(normalizeMarkdownTables(input)).toBe(expected);
+  });
+
+  it('is idempotent when two tables are already separated by a blank line', () => {
+    // Properly-spaced two-table input must pass through unchanged.
+    const input = [
+      '| a | b |',
+      '|---|---|',
+      '| 1 | 2 |',
+      '',
+      '| c | d |',
+      '|---|---|',
+      '| 3 | 4 |',
+    ].join('\n');
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  it('recognises a right-aligned separator in the second table and still inserts a blank line', () => {
+    // The bug screenshot featured a second table with `|---:|` alignment.
+    // The separator detector must accept it, and the blank-line guard
+    // must still fire so the right-aligned table is parsed independently.
+    const input = [
+      '| a | b |',
+      '|---|---|',
+      '| 1 | 2 |',
+      '| c | d |',
+      '|---|---:|',
+      '| 3 | 4 |',
+    ].join('\n');
+    const out = normalizeMarkdownTables(input);
+    expect(out).toContain('| 1 | 2 |\n\n| c | d |');
+    expect(out).toContain('|---|---:|');
+  });
+
+  it('inserts blank lines between three or more consecutive tables', () => {
+    // Generalises the table→table case: every new table header gets a
+    // blank line in front of it.
+    const input = [
+      '| a | b |',
+      '|---|---|',
+      '| 1 | 2 |',
+      '| c | d |',
+      '|---|---|',
+      '| 3 | 4 |',
+      '| e | f |',
+      '|---|---|',
+      '| 5 | 6 |',
+    ].join('\n');
+    const out = normalizeMarkdownTables(input);
+    // Two blank-line insertions expected (between table-1↔2 and 2↔3).
+    expect(out).toContain('| 1 | 2 |\n\n| c | d |');
+    expect(out).toContain('| 3 | 4 |\n\n| e | f |');
+  });
+
+  it('reproduces the production screenshot: prose + 4-col table + 3-col right-aligned table jammed together', () => {
+    // Mirrors the exact user-reported failure: a preamble line, then two
+    // stacked tables with no blank line between them. The bug rendered
+    // the second table's separator row as literal data and shifted its
+    // data rows one column left.
+    const input = [
+      'Here are the users who have chats, with their name, role, and number of chats:',
+      '| userId | name | role | numberOfChats |',
+      '|---|---|---|---|',
+      '| bQ93Di | Mariano Ravinale | superadmin | 64 |',
+      '| d3b1f6 | Mariano Ravinale | admin | 8 |',
+      '| name | role | numberOfChats |',
+      '|---|---|---:|',
+      '| Mariano Ravinale | superadmin | 64 |',
+      '| Mariano Ravinale | admin | 8 |',
+    ].join('\n');
+    const out = normalizeMarkdownTables(input);
+    // Preamble → first table: existing prose→table behavior still fires.
+    expect(out).toContain(
+      'number of chats:\n\n| userId | name | role | numberOfChats |',
+    );
+    // First table → second table: the new behavior under test.
+    expect(out).toContain(
+      '| d3b1f6 | Mariano Ravinale | admin | 8 |\n\n| name | role | numberOfChats |',
+    );
+    // Separator rows must stay glued to their own headers (no blank
+    // line inserted between header and separator).
+    expect(out).not.toMatch(/\| userId \| name \| role \| numberOfChats \|\n\n\|---\|---\|---\|---\|/);
+    expect(out).not.toMatch(/\| name \| role \| numberOfChats \|\n\n\|---\|---\|---:\|/);
+  });
+
+  it('does NOT insert a blank line between a separator row and its first data row', () => {
+    // Explicit regression guard for the load-bearing `!isTableSeparator(prev)`
+    // clause: a separator row is followed by the first body row. That
+    // pair must stay glued — inserting a blank here would split one
+    // table into two.
+    const input = [
+      'Intro.',
+      '',
+      '| a | b |',
+      '|---|---|',
+      '| 1 | 2 |',
+      '| 3 | 4 |',
+    ].join('\n');
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  // ---------------------------------------------------------------------
+  // Syntactic-vs-semantic separator: `isTableSeparator()` matches ANY
+  // dash-only line, including a body row whose cells happen to be
+  // dash placeholders (`| - | - |`). Without the `!isTableSeparator(line)`
+  // guard, the loop would mis-classify a real separator row as a "new
+  // table header" whenever the line after it is also dash-only, and
+  // insert a blank line between the header and its own separator —
+  // splitting a single valid table into two broken halves.
+  // ---------------------------------------------------------------------
+
+  it('keeps a single table intact when its only body row is dash-only ("| - | - |")', () => {
+    // The dash placeholder is a common null-rendering convention. The
+    // separator-shape body row must NOT be promoted to a fake new-table
+    // marker — the table must render whole.
+    const input = [
+      '| a | b |',
+      '|---|---|',
+      '| - | - |',
+      '| c | d |',
+    ].join('\n');
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  it('keeps a table intact when EVERY body row is dash-only', () => {
+    const input = [
+      '| col1 | col2 | col3 |',
+      '|---|---|---|',
+      '| - | - | - |',
+      '| -- | -- | -- |',
+      '| --- | --- | --- |',
+    ].join('\n');
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
+
+  it('keeps a table intact when the first body row uses the same dash count as the separator', () => {
+    // Adversarial case: a body row that looks character-for-character
+    // like a separator (`|---|---|`). Must NOT trigger a blank-line
+    // insertion between the real header and the real separator.
+    const input = [
+      '| a | b |',
+      '|---|---|',
+      '|---|---|',
+      '| c | d |',
+    ].join('\n');
+    expect(normalizeMarkdownTables(input)).toBe(input);
+  });
 });

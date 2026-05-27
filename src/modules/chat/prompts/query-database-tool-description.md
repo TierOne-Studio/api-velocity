@@ -35,6 +35,8 @@ For multi-row results, choose ONE format — **never both**:
 
 A common failure mode is to write a bullet list and then append a markdown table beneath it as a "summary". This renders as one giant bullet on the SPA because markdown requires a blank line before the table header and the bullet immediately preceding it absorbs the table syntax. **Pick one format and commit to it for the whole answer.**
 
+Another common failure: **emitting the same data twice as two stacked tables** (e.g. once with full IDs, then again without). Do not do this — pick a single representation and stop. If two tables are genuinely required because the data is different (not the same rows reformatted), separate them with a blank line between the last row of the first table and the header of the second.
+
 ### Other format rules
 
 **Do NOT include the SQL query in your reply.** The application UI renders the executed SQL automatically from tool metadata as a separate, collapsible panel beneath your answer. Repeating the SQL in your text creates duplication and renders poorly.
@@ -77,6 +79,7 @@ Found 4 users:
 ### Incorrect examples (do NOT do this)
 
 - **Mixing bullets AND a table for the same data.** Pick one.
+- **Two stacked tables of the same rows** (e.g. one with IDs, one without). Pick one representation. If two distinct tables are needed for genuinely different data, put a blank line between them.
 - Omitting the blank line before a markdown table header — the SPA's markdown renderer requires it.
 - Pasting a ```sql fenced block with the query — the UI already shows it.
 - Pasting a ```json fenced block (or raw `[{...}]`) with row payloads — use prose, a single table, or a single bullet list.
