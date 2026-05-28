@@ -56,4 +56,13 @@ export interface CreateCollectionBody {
    * of the generated `readable_id`.
    */
   slugHint?: string;
+  /**
+   * Optional owning organization. When present, the collection is created
+   * under this org instead of the session's active organization. The caller
+   * MUST be a member of the target org; the API re-validates membership
+   * before proceeding (404 if org doesn't exist, 403 if caller not a member).
+   * When absent, falls back to `getActiveOrganizationId(session)`. See
+   * ADR-011 amendment 5.
+   */
+  organizationId?: string;
 }

@@ -15,6 +15,9 @@ export const statement = {
   dashboard: ['view'],
   project: ['create', 'read', 'update', 'delete', 'manage-sources'],
   airweave: ['create', 'read', 'update', 'delete', 'manage-sources'],
+  // sql-connection:* per ADR-012. No manage-sources action — SQL connections
+  // do not have nested resources. Test endpoints map to :update grade.
+  'sql-connection': ['read', 'create', 'update', 'delete'],
 } as const;
 
 /**
@@ -53,6 +56,7 @@ export const adminRole = ac.newRole({
   dashboard: ['view'],
   project: ['create', 'read', 'update', 'delete', 'manage-sources'],
   airweave: ['create', 'read', 'update', 'delete', 'manage-sources'],
+  'sql-connection': ['read', 'create', 'update', 'delete'],
 });
 
 // Manager role - can manage users/sessions within their organization
@@ -68,6 +72,9 @@ export const managerRole = ac.newRole({
   // (collection disposal is an admin-only consequential action).
   // Asymmetry is intentional — see ADR-011 "Consequences > Negative".
   airweave: ['create', 'read', 'update', 'manage-sources'],
+  // SQL connections have no nested resources, so no manage-sources/delete
+  // asymmetry — manager gets the same full CRUD set as admin per ADR-012.
+  'sql-connection': ['read', 'create', 'update', 'delete'],
 });
 
 // Member role - basic org member
@@ -77,6 +84,7 @@ export const memberRole = ac.newRole({
   chat: ['read', 'create', 'stream'],
   project: ['read'],
   airweave: ['read'],
+  'sql-connection': ['read'],
 });
 
 /**

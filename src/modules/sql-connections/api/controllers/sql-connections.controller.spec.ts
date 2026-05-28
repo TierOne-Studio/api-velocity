@@ -41,13 +41,44 @@ describe('SqlConnectionsController', () => {
     expect(guards).toContain(PermissionsGuard);
   });
 
-  it('requires organization:update for credential tests', () => {
+  // ADR-012: sql-connection:* permission family. Test endpoints map to :update
+  // grade because they reveal connection metadata (defensible-but-debatable;
+  // see ADR-012 Consequences > Negative).
+  it.each([
+    ['list', 'sql-connection:read'],
+    ['create', 'sql-connection:create'],
+    ['update', 'sql-connection:update'],
+    ['remove', 'sql-connection:delete'],
+    ['testCredentials', 'sql-connection:update'],
+    ['test', 'sql-connection:update'],
+  ] as const)('requires %s on the %s endpoint', (method, expected) => {
+    const handler = (controller as unknown as Record<string, object>)[method];
     const permissions = Reflect.getMetadata(
       PERMISSIONS_KEY,
-      controller.testCredentials as object,
+      handler,
     ) as string[];
 
-    expect(permissions).toContain('organization:update');
+    expect(permissions).toContain(expected);
+  });
+
+  // Regression pin: the swap from organization:* to sql-connection:* must be
+  // complete on every endpoint. If any decorator is left as organization:*,
+  // this test fails.
+  it('no endpoint still requires organization:read or organization:update', () => {
+    for (const method of [
+      'list',
+      'create',
+      'update',
+      'remove',
+      'testCredentials',
+      'test',
+    ] as const) {
+      const handler = (controller as unknown as Record<string, object>)[method];
+      const permissions =
+        (Reflect.getMetadata(PERMISSIONS_KEY, handler) as string[]) ?? [];
+      expect(permissions).not.toContain('organization:read');
+      expect(permissions).not.toContain('organization:update');
+    }
   });
 
   it('forwards ad hoc credential tests with the caller scope', async () => {

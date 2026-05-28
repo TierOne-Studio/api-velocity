@@ -49,6 +49,8 @@ describe('AirweaveController', () => {
     authzService = {
       applyAirweaveAllowlist: jest.fn(),
       assertOwnership: jest.fn(),
+      // ADR-011 amendment 5: body-level organizationId membership re-validation.
+      verifyCallerMembership: jest.fn(),
     } as unknown as jest.Mocked<AirweaveAuthorizationService>;
 
     controller = new AirweaveController(airweaveService, authzService);
@@ -380,6 +382,168 @@ describe('AirweaveController', () => {
         controller.createCollection(noOrgSession, { name: 'X' }),
       ).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
       expect(airweaveService.createCollection).not.toHaveBeenCalled();
+    });
+
+    // ── ADR-011 amendment 5: body-level organizationId ─────────────────────
+
+    it('passes body.organizationId straight through when it matches the active org (regression baseline)', async () => {
+      authzService.verifyCallerMembership.mockResolvedValue(undefined);
+      (airweaveService.createCollection as jest.Mock).mockResolvedValue({
+        id: 'uuid-x',
+      } as never);
+
+      await controller.createCollection(adminSession, {
+        name: 'Foo',
+        organizationId: 'org-1',
+      });
+
+      expect(authzService.verifyCallerMembership).toHaveBeenCalledWith(
+        'user-admin',
+        'org-1',
+      );
+      expect(airweaveService.createCollection).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: 'org-1' }),
+      );
+    });
+
+    it('uses body.organizationId over active org when caller is a member of the cross-org', async () => {
+      authzService.verifyCallerMembership.mockResolvedValue(undefined);
+      (airweaveService.createCollection as jest.Mock).mockResolvedValue({
+        id: 'uuid-x',
+      } as never);
+
+      await controller.createCollection(adminSession, {
+        name: 'Foo',
+        organizationId: 'org-2', // different from active (org-1)
+      });
+
+      expect(authzService.verifyCallerMembership).toHaveBeenCalledWith(
+        'user-admin',
+        'org-2',
+      );
+      expect(airweaveService.createCollection).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: 'org-2' }),
+      );
+    });
+
+    it('returns 403 when caller is not a member of body.organizationId', async () => {
+      const { ForbiddenException } = await import('@nestjs/common');
+      authzService.verifyCallerMembership.mockRejectedValue(
+        new ForbiddenException('not a member'),
+      );
+
+      await expect(
+        controller.createCollection(adminSession, {
+          name: 'Foo',
+          organizationId: 'org-not-mine',
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
+      expect(airweaveService.createCollection).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when body.organizationId does not exist', async () => {
+      const { NotFoundException } = await import('@nestjs/common');
+      authzService.verifyCallerMembership.mockRejectedValue(
+        new NotFoundException('org not found'),
+      );
+
+      await expect(
+        controller.createCollection(adminSession, {
+          name: 'Foo',
+          organizationId: 'org-ghost',
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.NOT_FOUND });
+      expect(airweaveService.createCollection).not.toHaveBeenCalled();
+    });
+
+    it('body.organizationId wins even when caller has no active org', async () => {
+      const noOrgSession = {
+        user: { id: 'user-orphan', role: 'admin' },
+        session: { activeOrganizationId: null },
+      } as never;
+      authzService.verifyCallerMembership.mockResolvedValue(undefined);
+      (airweaveService.createCollection as jest.Mock).mockResolvedValue({
+        id: 'uuid-x',
+      } as never);
+
+      await controller.createCollection(noOrgSession, {
+        name: 'Foo',
+        organizationId: 'org-by-body',
+      });
+
+      expect(authzService.verifyCallerMembership).toHaveBeenCalledWith(
+        'user-orphan',
+        'org-by-body',
+      );
+      expect(airweaveService.createCollection).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: 'org-by-body' }),
+      );
+    });
+
+    it('rejects empty/whitespace body.organizationId with 400', async () => {
+      await expect(
+        controller.createCollection(adminSession, {
+          name: 'Foo',
+          organizationId: '   ',
+        }),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+      expect(authzService.verifyCallerMembership).not.toHaveBeenCalled();
+      expect(airweaveService.createCollection).not.toHaveBeenCalled();
+    });
+
+    // QA gap fix — body.organizationId === null must NOT crash with a 500
+    // (calling .trim() on null). It must reject with 400 like other
+    // malformed inputs. See post-implementation qa-validator review.
+    it('rejects null body.organizationId with 400 + actionable message (must not 500 with TypeError)', async () => {
+      await expect(
+        controller.createCollection(adminSession, {
+          name: 'Foo',
+          organizationId: null as unknown as string,
+        }),
+      ).rejects.toMatchObject({
+        status: HttpStatus.BAD_REQUEST,
+        // The message must name the field so the SPA caller can debug; a
+        // generic "bad request" would let a future refactor swap the guard
+        // for a less explicit one without the test catching it.
+        message: 'organizationId must be a string',
+      });
+      expect(authzService.verifyCallerMembership).not.toHaveBeenCalled();
+      expect(airweaveService.createCollection).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['number', 42],
+      ['array', ['org-1']],
+      ['object', { id: 'org-1' }],
+      ['boolean', true],
+    ] as const)(
+      'rejects non-string body.organizationId (%s) with 400 + actionable message',
+      async (_label, badValue) => {
+        await expect(
+          controller.createCollection(adminSession, {
+            name: 'Foo',
+            organizationId: badValue as unknown as string,
+          }),
+        ).rejects.toMatchObject({
+          status: HttpStatus.BAD_REQUEST,
+          message: 'organizationId must be a string',
+        });
+        expect(authzService.verifyCallerMembership).not.toHaveBeenCalled();
+        expect(airweaveService.createCollection).not.toHaveBeenCalled();
+      },
+    );
+
+    it('skips membership re-validation when body.organizationId is omitted (active-org fallback)', async () => {
+      (airweaveService.createCollection as jest.Mock).mockResolvedValue({
+        id: 'uuid-x',
+      } as never);
+
+      await controller.createCollection(adminSession, { name: 'Foo' });
+
+      expect(authzService.verifyCallerMembership).not.toHaveBeenCalled();
+      expect(airweaveService.createCollection).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: 'org-1' }),
+      );
     });
   });
 

@@ -38,6 +38,12 @@ const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
   { resource: 'airweave', action: 'update' },
   { resource: 'airweave', action: 'delete' },
   { resource: 'airweave', action: 'manage-sources' },
+  // sql-connection:* per ADR-012 — admin inherits the full CRUD set from
+  // organization:update (test endpoints map to :update grade per ADR-012 Decision 2).
+  { resource: 'sql-connection', action: 'read' },
+  { resource: 'sql-connection', action: 'create' },
+  { resource: 'sql-connection', action: 'update' },
+  { resource: 'sql-connection', action: 'delete' },
 ] as const;
 
 const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
@@ -64,6 +70,13 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
   { resource: 'airweave', action: 'read' },
   { resource: 'airweave', action: 'update' },
   { resource: 'airweave', action: 'manage-sources' },
+  // sql-connection:* per ADR-012 — manager inherits the full CRUD set
+  // from organization:update (matches admin). SQL connections do not have
+  // the airweave-style delete asymmetry because they have no nested resources.
+  { resource: 'sql-connection', action: 'read' },
+  { resource: 'sql-connection', action: 'create' },
+  { resource: 'sql-connection', action: 'update' },
+  { resource: 'sql-connection', action: 'delete' },
 ] as const;
 
 const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
@@ -73,6 +86,8 @@ const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
   { resource: 'chat', action: 'stream' },
   { resource: 'project', action: 'read' },
   { resource: 'airweave', action: 'read' },
+  // sql-connection:* per ADR-012 — member inherits read only from organization:read.
+  { resource: 'sql-connection', action: 'read' },
 ] as const;
 
 /**
@@ -164,6 +179,10 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_020_add_airweave_permissions',
         up: () => this.addAirweavePermissions(),
+      },
+      {
+        name: 'rbac_021_add_sql_connection_permissions',
+        up: () => this.addSqlConnectionPermissions(),
       },
     ];
 
@@ -1618,6 +1637,181 @@ export class RbacMigrationService implements OnModuleInit {
 
     console.log(
       '✅ airweave permissions added and assigned to default roles (superadmin/admin/manager/member)',
+    );
+  }
+
+  /**
+   * Add sql-connection:* permissions per ADR-012.
+   *
+   * Decouples SQL connection management from the coarse `organization:update`
+   * grant by introducing a dedicated permission family with four actions
+   * (read/create/update/delete). The two /test endpoints map to :update grade
+   * (non-destructive but reveals connection metadata — see ADR-012 Decision 2).
+   *
+   * Inheritance migration (ADR-012 Decision 3) ensures no role loses
+   * capability at deploy time:
+   *  - Default roles (admin/manager/member) re-synced from updated
+   *    ORGANIZATION_*_DEFAULT_PERMISSIONS constants. Admin + manager inherit
+   *    full CRUD (both hold organization:update); member inherits read only
+   *    (holds organization:read only).
+   *  - Custom roles receive additive grants via two INSERT ... ON CONFLICT
+   *    DO NOTHING passes keyed off existing organization:update / :read.
+   *    This step IS required even though the constants re-sync covers default
+   *    roles — see ADR-012 Alt C: a constants-only update silently strips
+   *    custom-role grants on the next migration's `syncRolePermissions`
+   *    DELETE-allowlist pass. Do NOT remove this step as "redundant."
+   *
+   * Recovery semantics (matches the addAirweavePermissions precedent):
+   *  - NOT wrapped in db.transaction. The internal `syncRolePermissions`
+   *    helper does its own DELETE-then-INSERT against `this.db` (the top-
+   *    level connection), and wrapping the outer body in `db.transaction`
+   *    would create a false-atomicity claim — the wrap would only protect
+   *    the 4 inner INSERTs that use the captured `query`, not the helper's
+   *    DELETE/INSERT pairs. Honesty over fake safety.
+   *  - On crash mid-loop, `recordMigration` never runs → `hasMigrationRun`
+   *    stays false → re-run is clean. All catalog INSERTs and the additive
+   *    custom-role passes use `ON CONFLICT DO NOTHING`. `syncRolePermissions`
+   *    re-converges to the constants snapshot. A window exists where a role
+   *    has fewer permissions during the helper's DELETE-then-INSERT pair;
+   *    this is the same window all 8 existing migrations of this shape have.
+   *    Eliminating it requires threading `query` through `syncRolePermissions`,
+   *    tracked as a follow-up across all such migrations.
+   *  - Idempotent on intentional re-run as well (e.g., after manually
+   *    clearing the migration tracker): no duplicates, no row deltas.
+   */
+  async addSqlConnectionPermissions(): Promise<void> {
+    const sqlConnectionPermissions = [
+      ['sql-connection', 'read', 'View SQL connections'],
+      ['sql-connection', 'create', 'Create SQL connections'],
+      [
+        'sql-connection',
+        'update',
+        'Update SQL connections, including running connectivity tests',
+      ],
+      ['sql-connection', 'delete', 'Delete SQL connections'],
+    ] as const;
+
+    // 1. Register the 4 permissions in the catalog.
+    for (const [resource, action, description] of sqlConnectionPermissions) {
+      await this.db.query(
+        `INSERT INTO permissions (resource, action, description)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (resource, action) DO NOTHING`,
+        [resource, action, description],
+      );
+    }
+
+    // 2. Grant all sql-connection permissions to the global superadmin role
+    //    (redundant per PermissionsGuard bypass, but matches the established
+    //    repo pattern — see ADR-011/addAirweavePermissions precedent).
+    const superadminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
+    );
+    if (superadminRole) {
+      await this.db.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT $1, p.id
+         FROM permissions p
+         WHERE p.resource = 'sql-connection'
+         ON CONFLICT DO NOTHING`,
+        [superadminRole.id],
+      );
+    }
+
+    // 3. Re-sync global admin/manager/member roles from updated constants.
+    const globalRoles = await this.db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM roles
+       WHERE organization_id IS NULL
+         AND name IN ('admin', 'manager', 'member')`,
+    );
+    for (const role of globalRoles) {
+      if (role.name === 'admin') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      } else if (role.name === 'manager') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      } else if (role.name === 'member') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    // 4. Re-sync org-scoped default roles across every organization.
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
+    for (const organization of organizations) {
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [organization.id],
+      );
+      if (adminRole) {
+        await this.syncRolePermissions(
+          adminRole.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(
+          managerRole.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const memberRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'member'`,
+        [organization.id],
+      );
+      if (memberRole) {
+        await this.syncRolePermissions(
+          memberRole.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    // 5. Additive grant for CUSTOM roles inheriting from organization:update
+    //    and organization:read. REQUIRED per ADR-012 Alt C — a constants-only
+    //    update silently strips custom-role grants on the next migration's
+    //    syncRolePermissions DELETE-allowlist pass. Default roles are no-ops
+    //    here via ON CONFLICT (already covered by syncRolePermissions above).
+    await this.db.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT DISTINCT rp.role_id, p_new.id
+       FROM role_permissions rp
+       INNER JOIN permissions p_old ON p_old.id = rp.permission_id
+         AND p_old.resource = 'organization' AND p_old.action = 'update'
+       CROSS JOIN permissions p_new
+       WHERE p_new.resource = 'sql-connection'
+         AND p_new.action IN ('create', 'update', 'delete')
+       ON CONFLICT DO NOTHING`,
+    );
+    await this.db.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT DISTINCT rp.role_id, p_new.id
+       FROM role_permissions rp
+       INNER JOIN permissions p_old ON p_old.id = rp.permission_id
+         AND p_old.resource = 'organization' AND p_old.action = 'read'
+       CROSS JOIN permissions p_new
+       WHERE p_new.resource = 'sql-connection'
+         AND p_new.action = 'read'
+       ON CONFLICT DO NOTHING`,
+    );
+
+    console.log(
+      '✅ sql-connection permissions added and assigned to default roles (superadmin/admin/manager/member); custom roles inherit from organization:read|update',
     );
   }
 }

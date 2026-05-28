@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
 // Deep imports avoid the admin barrel, which transitively pulls
 // `AdminService` and its ESM-only `better-auth/crypto` dependency that
@@ -97,6 +101,42 @@ export class AirweaveAuthorizationService {
       throw new ForbiddenException(
         'Collection is not owned by your active organization. ' +
           'Legacy collections must be claimed by a superadmin before they can be managed from Velocity.',
+      );
+    }
+  }
+
+  /**
+   * Re-validate that `userId` is a member of `organizationId`. Used by
+   * `AirweaveController.createCollection` when the caller supplies a body
+   * `organizationId` (ADR-011 amendment 5).
+   *
+   * Throws `NotFoundException` if the org doesn't exist (404), and
+   * `ForbiddenException` if the org exists but the caller is not a member
+   * (403). Distinct status codes are intentional — the SPA disambiguates
+   * "did I type the wrong org id" vs "I'm not allowed in that org."
+   *
+   * Superadmin is NOT exempted from this check. Membership is a
+   * data-isolation primitive, not a permission grant — even superadmin
+   * cannot CREATE collections in an org they're not a member of.
+   */
+  async verifyCallerMembership(
+    userId: string,
+    organizationId: string,
+  ): Promise<void> {
+    const organization =
+      await this.adminOrganizationsService.findById(organizationId);
+    if (!organization) {
+      throw new NotFoundException(
+        `Organization ${organizationId} not found`,
+      );
+    }
+    const isMember = await this.adminOrganizationsService.isUserMemberOf(
+      userId,
+      organizationId,
+    );
+    if (!isMember) {
+      throw new ForbiddenException(
+        `Caller is not a member of organization ${organizationId}`,
       );
     }
   }

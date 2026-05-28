@@ -30,7 +30,7 @@ export class SqlConnectionsController {
   constructor(private readonly service: SqlConnectionsService) {}
 
   @Get()
-  @RequirePermissions('organization:read')
+  @RequirePermissions('sql-connection:read')
   async list(
     @Session() session: UserSession,
     @Query('organizationId') organizationId?: string,
@@ -41,7 +41,7 @@ export class SqlConnectionsController {
   }
 
   @Post()
-  @RequirePermissions('organization:update')
+  @RequirePermissions('sql-connection:create')
   async create(
     @Session() session: UserSession,
     @Body() body: CreateSqlConnectionInput & { organizationId?: string },
@@ -54,7 +54,7 @@ export class SqlConnectionsController {
   }
 
   @Post('test')
-  @RequirePermissions('organization:update')
+  @RequirePermissions('sql-connection:update')
   async testCredentials(
     @Session() session: UserSession,
     @Body() body: TestSqlConnectionInput,
@@ -67,7 +67,7 @@ export class SqlConnectionsController {
   }
 
   @Patch(':id')
-  @RequirePermissions('organization:update')
+  @RequirePermissions('sql-connection:update')
   async update(
     @Session() session: UserSession,
     @Param('id') id: string,
@@ -81,7 +81,7 @@ export class SqlConnectionsController {
   }
 
   @Delete(':id')
-  @RequirePermissions('organization:update')
+  @RequirePermissions('sql-connection:delete')
   async remove(
     @Session() session: UserSession,
     @Param('id') id: string,
@@ -92,7 +92,7 @@ export class SqlConnectionsController {
   }
 
   @Post(':id/test')
-  @RequirePermissions('organization:update')
+  @RequirePermissions('sql-connection:update')
   async test(
     @Session() session: UserSession,
     @Param('id') id: string,
