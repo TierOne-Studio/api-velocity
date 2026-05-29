@@ -80,7 +80,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_017 already run
         .mockResolvedValueOnce(true) // rbac_018 already run
         .mockResolvedValueOnce(true) // rbac_019 already run
-        .mockResolvedValueOnce(true); // rbac_020 already run
+        .mockResolvedValueOnce(true) // rbac_020 already run
+        .mockResolvedValueOnce(true); // rbac_021 already run
 
       const consoleSpy = jest
         .spyOn(console, 'log')
@@ -115,7 +116,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false) // rbac_017 NOT run
         .mockResolvedValueOnce(true) // rbac_018 already run
         .mockResolvedValueOnce(true) // rbac_019 already run
-        .mockResolvedValueOnce(true); // rbac_020 already run
+        .mockResolvedValueOnce(true) // rbac_020 already run
+        .mockResolvedValueOnce(true); // rbac_021 already run
 
       // rbac_013 calls seedDefaultOrganization → UPSERT returns new org id.
       // Use mockImplementation so it isn't consumed by earlier migrations that also call queryOne.
@@ -448,6 +450,12 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce({ id: 'perm-airweave-read' })
         .mockResolvedValueOnce({ id: 'perm-airweave-update' })
         .mockResolvedValueOnce({ id: 'perm-airweave-manage-sources' })
+        // rbac_021 — manager gains the full sql-connection CRUD set per ADR-012
+        // (no delete-asymmetry because SQL connections have no nested resources).
+        .mockResolvedValueOnce({ id: 'perm-sql-connection-read' })
+        .mockResolvedValueOnce({ id: 'perm-sql-connection-create' })
+        .mockResolvedValueOnce({ id: 'perm-sql-connection-update' })
+        .mockResolvedValueOnce({ id: 'perm-sql-connection-delete' })
         .mockResolvedValueOnce({ id: 'member-role-1' })
         .mockResolvedValueOnce({ id: 'perm-member-org-read' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-read' })
@@ -455,7 +463,9 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce({ id: 'perm-member-chat-stream' })
         .mockResolvedValueOnce({ id: 'perm-member-project-read' })
         // rbac_020 — member gains airweave:read only.
-        .mockResolvedValueOnce({ id: 'perm-member-airweave-read' });
+        .mockResolvedValueOnce({ id: 'perm-member-airweave-read' })
+        // rbac_021 — member gains sql-connection:read only per ADR-012.
+        .mockResolvedValueOnce({ id: 'perm-member-sql-connection-read' });
 
       await service.normalizeOrganizationDefaultRolePermissions();
 
@@ -506,6 +516,15 @@ describe('RbacMigrationService', () => {
           'update',
           'airweave',
           'manage-sources',
+          // rbac_021 — manager sql-connection full CRUD per ADR-012.
+          'sql-connection',
+          'read',
+          'sql-connection',
+          'create',
+          'sql-connection',
+          'update',
+          'sql-connection',
+          'delete',
         ],
       );
       expect(dbService.query).toHaveBeenCalledWith(
@@ -524,6 +543,9 @@ describe('RbacMigrationService', () => {
           'read',
           // rbac_020 — member airweave (read only).
           'airweave',
+          'read',
+          // rbac_021 — member sql-connection (read only) per ADR-012.
+          'sql-connection',
           'read',
         ],
       );
@@ -1071,7 +1093,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_017 already run
         .mockResolvedValueOnce(true) // rbac_018 already run
         .mockResolvedValueOnce(true) // rbac_019 already run
-        .mockResolvedValueOnce(true); // rbac_020 already run
+        .mockResolvedValueOnce(true) // rbac_020 already run
+        .mockResolvedValueOnce(true); // rbac_021 already run
 
       // Needed by backfillRolePermissions and assignAllPermissionsToAdmin
       dbService.queryOne.mockResolvedValue(null);
@@ -1498,7 +1521,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_017
         .mockResolvedValueOnce(false) // rbac_018 NOT run
         .mockResolvedValueOnce(true) // rbac_019 already run
-        .mockResolvedValueOnce(true); // rbac_020 already run
+        .mockResolvedValueOnce(true) // rbac_020 already run
+        .mockResolvedValueOnce(true); // rbac_021 already run
 
       dbService.query.mockImplementation(async (sql: string) => {
         if (sql.includes('SELECT id FROM organization')) return [];
@@ -1635,6 +1659,253 @@ describe('RbacMigrationService', () => {
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('airweave permissions added'),
       );
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('addSqlConnectionPermissions (rbac_021)', () => {
+    // ADR-012: SQL connection permission family.
+    //
+    // Per the addAirweavePermissions precedent (rbac_020), the migration is
+    // NOT wrapped in db.transaction — the internal syncRolePermissions helper
+    // already does its own DELETE-then-INSERT against this.db, and a wrapper
+    // would create a false-atomicity claim. The migration converges on
+    // re-run via hasMigrationRun + ON CONFLICT DO NOTHING semantics. See the
+    // function-level docstring for the full recovery-semantics rationale.
+
+    function setupSqlConnectionMigrationMocks() {
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes("IN ('admin', 'manager', 'member')"))
+          return [
+            { id: 'g-admin', name: 'admin' },
+            { id: 'g-manager', name: 'manager' },
+            { id: 'g-member', name: 'member' },
+          ];
+        if (sql.includes('SELECT id FROM organization'))
+          return [{ id: 'org-1' }];
+        return [];
+      });
+
+      dbService.queryOne.mockImplementation(
+        async (sql: string, params?: unknown[]) => {
+          if (sql.includes("name = 'superadmin'"))
+            return { id: 'superadmin-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'admin'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-admin-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'manager'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-manager-id' };
+          if (
+            sql.includes('FROM roles') &&
+            sql.includes("name = 'member'") &&
+            params?.[0] === 'org-1'
+          )
+            return { id: 'org-member-id' };
+          return null;
+        },
+      );
+    }
+
+    it('does NOT wrap in db.transaction (false-atomicity avoidance per addAirweavePermissions precedent)', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      setupSqlConnectionMigrationMocks();
+      await service.addSqlConnectionPermissions();
+
+      expect(dbService.transaction).not.toHaveBeenCalled();
+      consoleSpy.mockRestore();
+    });
+
+    it('inserts the 4 sql-connection permissions into the catalog', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      setupSqlConnectionMigrationMocks();
+      await service.addSqlConnectionPermissions();
+
+      for (const action of ['read', 'create', 'update', 'delete']) {
+        expect(dbService.query).toHaveBeenCalledWith(
+          expect.stringContaining('INSERT INTO permissions'),
+          expect.arrayContaining(['sql-connection', action]),
+        );
+      }
+      consoleSpy.mockRestore();
+    });
+
+    it('grants all sql-connection permissions to superadmin (matches repo pattern)', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      setupSqlConnectionMigrationMocks();
+      await service.addSqlConnectionPermissions();
+
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining("p.resource = 'sql-connection'"),
+        ['superadmin-id'],
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('syncs global + org-scoped admin/manager/member roles from updated constants', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      setupSqlConnectionMigrationMocks();
+      await service.addSqlConnectionPermissions();
+
+      // Org-scoped role enumeration (the syncs themselves go through
+      // syncRolePermissions which does its own DB queries — covered by the
+      // existing syncRolePermissions test coverage).
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining("name = 'admin'"),
+        ['org-1'],
+      );
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining("name = 'manager'"),
+        ['org-1'],
+      );
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining("name = 'member'"),
+        ['org-1'],
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('additively grants sql-connection:create|update|delete to roles holding organization:update (custom-role inheritance per ADR-012 Alt C)', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      setupSqlConnectionMigrationMocks();
+      await service.addSqlConnectionPermissions();
+
+      const inheritUpdateCall = dbService.query.mock.calls.find(
+        (call: unknown[]) => {
+          const sql = call[0];
+          return (
+            typeof sql === 'string' &&
+            sql.includes("p_old.resource = 'organization'") &&
+            sql.includes("p_old.action = 'update'") &&
+            sql.includes("p_new.resource = 'sql-connection'") &&
+            sql.includes("p_new.action IN ('create', 'update', 'delete')")
+          );
+        },
+      );
+      expect(inheritUpdateCall).toBeDefined();
+      expect(inheritUpdateCall?.[0]).toContain('ON CONFLICT DO NOTHING');
+      consoleSpy.mockRestore();
+    });
+
+    it('additively grants sql-connection:read to roles holding organization:read (custom-role inheritance per ADR-012 Alt C)', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      setupSqlConnectionMigrationMocks();
+      await service.addSqlConnectionPermissions();
+
+      const inheritReadCall = dbService.query.mock.calls.find(
+        (call: unknown[]) => {
+          const sql = call[0];
+          return (
+            typeof sql === 'string' &&
+            sql.includes("p_old.resource = 'organization'") &&
+            sql.includes("p_old.action = 'read'") &&
+            sql.includes("p_new.resource = 'sql-connection'") &&
+            sql.includes("p_new.action = 'read'")
+          );
+        },
+      );
+      expect(inheritReadCall).toBeDefined();
+      expect(inheritReadCall?.[0]).toContain('ON CONFLICT DO NOTHING');
+      consoleSpy.mockRestore();
+    });
+
+    it('runs cleanly when no global default roles AND no organizations exist (empty-environment path)', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes("IN ('admin', 'manager', 'member')")) return [];
+        if (sql.includes('SELECT id FROM organization')) return [];
+        return [];
+      });
+      dbService.queryOne.mockResolvedValue(null);
+
+      await service.addSqlConnectionPermissions();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('sql-connection permissions added'),
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('is idempotent on intentional re-run (call twice → no duplicate writes, same SQL shape)', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      setupSqlConnectionMigrationMocks();
+      await service.addSqlConnectionPermissions();
+      const queryCallsAfterFirst = dbService.query.mock.calls.length;
+      const queryOneCallsAfterFirst = dbService.queryOne.mock.calls.length;
+
+      await service.addSqlConnectionPermissions();
+      const queryCallsAfterSecond = dbService.query.mock.calls.length;
+      const queryOneCallsAfterSecond = dbService.queryOne.mock.calls.length;
+
+      // Second invocation issues the SAME pattern of calls as the first.
+      // The actual DB-level idempotency is provided by ON CONFLICT DO NOTHING
+      // on every INSERT (catalog, superadmin grant, additive custom-role
+      // passes) and by syncRolePermissions converging to the constants
+      // snapshot. Real-DB row-count idempotency is covered by the
+      // integration spec — this assertion proves the migration is safe to
+      // re-invoke without re-checking the migration tracker.
+      expect(queryCallsAfterSecond - queryCallsAfterFirst).toBe(
+        queryCallsAfterFirst,
+      );
+      expect(queryOneCallsAfterSecond - queryOneCallsAfterFirst).toBe(
+        queryOneCallsAfterFirst,
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('is registered as rbac_021 in the migrations array', async () => {
+      // Verify the migration is in the tracked migrations list with the
+      // expected name. Indirect check via runTrackedMigrations dispatch.
+      dbService.hasMigrationRun.mockImplementation(async (name: string) => {
+        // Only let rbac_021 run; skip all others.
+        return name !== 'rbac_021_add_sql_connection_permissions';
+      });
+
+      // Stub the migration method to detect dispatch without re-executing.
+      const sqlConnSpy = jest
+        .spyOn(service, 'addSqlConnectionPermissions')
+        .mockResolvedValue();
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      await service.runTrackedMigrations();
+
+      expect(sqlConnSpy).toHaveBeenCalledTimes(1);
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_021_add_sql_connection_permissions',
+      );
+      sqlConnSpy.mockRestore();
       consoleSpy.mockRestore();
     });
   });

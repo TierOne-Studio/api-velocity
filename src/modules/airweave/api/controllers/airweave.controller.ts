@@ -163,7 +163,33 @@ export class AirweaveController {
       ? this.requireValidSlugHint(body.slugHint)
       : undefined;
 
-    const organizationId = getActiveOrganizationId(session);
+    // ADR-011 amendment 5: body `organizationId` takes precedence over the
+    // session's active org. When present, the caller's membership in the
+    // target org MUST be re-validated (the session-state seam that made
+    // `getActiveOrganizationId` transitively safe is bypassed).
+    //
+    // A non-string body.organizationId (null, number, object) is rejected
+    // up-front with 400; the JS-null case would otherwise reach
+    // `.trim()` on null and throw a 500 TypeError. Undefined/missing falls
+    // through to the active-org fallback (existing behavior preserved).
+    let organizationId: string | undefined;
+    const bodyOrgId = body?.organizationId;
+    if (bodyOrgId !== undefined) {
+      if (typeof bodyOrgId !== 'string') {
+        throw new HttpException(
+          'organizationId must be a string',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      organizationId = this.requireTrimmedString(bodyOrgId, 'organizationId');
+      await this.authzService.verifyCallerMembership(
+        session.user.id,
+        organizationId,
+      );
+    } else {
+      organizationId = getActiveOrganizationId(session);
+    }
+
     if (!organizationId) {
       // Mutating Airweave requires a concrete owning organization. Even
       // superadmin must operate within an active org for create — there

@@ -1,6 +1,6 @@
 # ADR-011: Airweave collection ownership via `organization.metadata` allowlist
 
-**Status:** Accepted (Decision 3 + Decision 4 amended 2026-05-23 after security review; OAuth-transport client contract amended 2026-05-25)
+**Status:** Accepted (Decision 3 + Decision 4 amended 2026-05-23 after security review; OAuth-transport client contract amended 2026-05-25; body-level `organizationId` on collection create amended 2026-05-27)
 **Date:** 2026-05-23
 **Deciders:** Engineering (api-velocity)
 
@@ -72,6 +72,20 @@
 > - `useAirweaveConnectModal` wrapper hook — unchanged in shape; `getSessionToken` semantics changed from "read a stashed pre-create token" to "fetch a fresh token from /connect/session".
 >
 > **Live-validated end-to-end:** the `airweave-live.spec.ts` e2e (real Airweave + real backend + real Postgres) clicks the new "Connect a source" button, asserts the SDK iframe mounts at `connect.airweave.ai` with the proper `airweave-connect-root` portal div on `document.body`. The catalog UI inside the iframe is then the user's to drive.
+
+> **Amendment 5 (2026-05-27) — body-level `organizationId` on collection create + caller-membership re-validation.** Promoting the Airweave collections page from `Admin → Airweave` to `Main → Collections` exposes a UX gap for multi-organization users: today `POST /api/airweave/collections` resolves the owning org exclusively via `getActiveOrganizationId(session)` and throws `ForbiddenException` if no active org is set. Multi-org users who want to create a collection in a non-active org are forced to switch active org first via the OrganizationSwitcher — a clumsy detour that also disrupts other in-flight work scoped to the previously-active org.
+>
+> **Code change:** `CreateCollectionDto` (or the inline body shape on `airweave.controller.ts:createCollection`) gains an optional `organizationId?: string` field. When present, the controller MUST verify the caller is a member of that organization before proceeding. The membership check uses the existing `MemberService` / `organization.member` accessor (exact accessor pinned during implementation). On non-membership, the controller throws `ForbiddenException` with an actionable message naming the rejected org id. When absent, behavior is unchanged: fallback to `getActiveOrganizationId(session)` and throw if absent.
+>
+> **Why this is a new authorization surface, not a refinement of an existing one.** Pre-Amendment-5, the only way to specify the owning org was the session's active-org state. That state is itself the product of a membership check (you can't activate an org you aren't a member of, see the better-auth session flow), so `getActiveOrganizationId` was transitively safe. Post-Amendment-5, the body field bypasses the session-state seam, so the membership check must be done explicitly in the controller — there is no implicit transitive guarantee. Failing to do this would allow a caller in org A to create a collection (with their own readable_id, owned by their session) attributed to org B, polluting B's allowlist with a row B's admins did not authorize. This is a cross-org spoofing vector that did not exist before, and is sealed in the same change that introduces it.
+>
+> **Why the body field, not a path param.** A path-style route like `POST /api/organizations/:orgId/airweave/collections` would force the SPA to encode the target org in the URL, fragmenting the existing `/api/airweave/*` namespace and demanding a route-mirror in the SPA. The body field keeps the URL stable; the SPA only changes the request body shape.
+>
+> **Backward compat:** clients that omit `organizationId` keep working — the active-org fallback is preserved verbatim. The new field is additive.
+>
+> **RBAC interaction:** the controller still requires `airweave:create` permission as before. The new membership check is an *additional* gate, not a replacement — a caller must hold the permission AND be a member of the target org. Superadmin bypasses the permission check (per `PermissionsGuard`) but the membership check still runs and a non-member superadmin would be rejected — which is the correct semantics (superadmin permissions are global, but org-membership is a data-isolation primitive that even superadmin respects when *creating* collections; reading across orgs is a separate, allowed concern handled by the allowlist filter).
+>
+> **Test coverage:** `airweave.controller.spec.ts` (and/or the relevant integration spec) gains: (a) body `organizationId` matches active org → 201 baseline; (b) body absent → active-org fallback preserved; (c) body specifies a different org the caller IS a member of → 201; (d) body specifies an org the caller is NOT a member of → 403; (e) body specifies a non-existent org id → 404; (f) body present and no active org → body wins. Each case asserts the eventual allowlist row is created under the correct owning org id, not the session's active org id.
 
 ## Context
 

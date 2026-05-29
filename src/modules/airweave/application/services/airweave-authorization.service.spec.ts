@@ -54,6 +54,7 @@ describe('AirweaveAuthorizationService', () => {
     orgService = {
       findById: jest.fn(),
       isAirweaveCollectionInAllowlist: jest.fn(),
+      isUserMemberOf: jest.fn(),
     } as unknown as jest.Mocked<AdminOrganizationsService>;
     service = new AirweaveAuthorizationService(orgService);
   });
@@ -184,6 +185,54 @@ describe('AirweaveAuthorizationService', () => {
         /not owned by your active organization/i,
       );
       await expect(failure).rejects.toThrow(/superadmin/i);
+    });
+  });
+
+  describe('verifyCallerMembership (ADR-011 amendment 5)', () => {
+    it('resolves silently when the caller is a member of the target org', async () => {
+      orgService.findById.mockResolvedValue({ id: 'org-1' } as never);
+      orgService.isUserMemberOf.mockResolvedValue(true);
+
+      await expect(
+        service.verifyCallerMembership('user-x', 'org-1'),
+      ).resolves.toBeUndefined();
+
+      expect(orgService.findById).toHaveBeenCalledWith('org-1');
+      expect(orgService.isUserMemberOf).toHaveBeenCalledWith(
+        'user-x',
+        'org-1',
+      );
+    });
+
+    it('throws NotFoundException when the target org does not exist (404)', async () => {
+      orgService.findById.mockResolvedValue(null as never);
+
+      const failure = service.verifyCallerMembership('user-x', 'org-ghost');
+      const { NotFoundException } = await import('@nestjs/common');
+      await expect(failure).rejects.toThrow(NotFoundException);
+      await expect(failure).rejects.toThrow(/org-ghost/);
+      expect(orgService.isUserMemberOf).not.toHaveBeenCalled();
+    });
+
+    it('throws ForbiddenException when the org exists but the caller is not a member (403)', async () => {
+      orgService.findById.mockResolvedValue({ id: 'org-1' } as never);
+      orgService.isUserMemberOf.mockResolvedValue(false);
+
+      const failure = service.verifyCallerMembership('user-x', 'org-1');
+      await expect(failure).rejects.toThrow(ForbiddenException);
+      await expect(failure).rejects.toThrow(/not a member/i);
+    });
+
+    it('does NOT bypass for superadmin — membership is a data-isolation primitive', async () => {
+      // The service operates on (userId, orgId) — no session, no platform-role.
+      // This documents that callers (controllers) cannot pre-bypass the check
+      // for superadmin by skipping the call: if they call it, it enforces.
+      orgService.findById.mockResolvedValue({ id: 'org-1' } as never);
+      orgService.isUserMemberOf.mockResolvedValue(false);
+
+      await expect(
+        service.verifyCallerMembership('superadmin-user', 'org-1'),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });

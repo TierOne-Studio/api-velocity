@@ -229,6 +229,26 @@ export class AdminOrganizationsService {
   }
 
   /**
+   * Pure membership check (no permission requirement). Returns true iff
+   * a row exists in the `member` table for (userId, organizationId).
+   *
+   * Used by ADR-011 amendment 5 — the body-level `organizationId` on
+   * collection create must be re-validated against the caller's membership
+   * even when they hold `airweave:create`. Superadmin is not exempted from
+   * this check (membership is a data-isolation primitive, not a permission).
+   */
+  async isUserMemberOf(
+    userId: string,
+    organizationId: string,
+  ): Promise<boolean> {
+    const member = await this.orgRepo.findMemberByUserId(
+      userId,
+      organizationId,
+    );
+    return member !== null;
+  }
+
+  /**
    * Get a single organization by ID
    */
   async findById(id: string): Promise<OrganizationWithMemberCount | null> {

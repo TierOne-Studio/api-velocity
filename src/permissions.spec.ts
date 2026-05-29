@@ -116,6 +116,41 @@ describe('permissions module (source verification)', () => {
       expect(memberBlock).toContain("project: ['read']");
       expect(memberBlock).not.toContain('manage-sources');
     });
+
+    // ADR-012: sql-connection permission family
+    it('statement should declare sql-connection with full CRUD actions', () => {
+      expect(source).toContain(
+        "'sql-connection': ['read', 'create', 'update', 'delete']",
+      );
+    });
+
+    it('adminRole should grant full sql-connection CRUD', () => {
+      const adminBlock = source
+        .split('export const adminRole = ac.newRole({')[1]
+        ?.split('});')[0];
+      expect(adminBlock).toBeDefined();
+      expect(adminBlock).toContain(
+        "'sql-connection': ['read', 'create', 'update', 'delete']",
+      );
+    });
+
+    it('managerRole should grant full sql-connection CRUD (no delete asymmetry)', () => {
+      const managerBlock = source
+        .split('managerRole = ac.newRole({')[1]
+        ?.split('});')[0];
+      expect(managerBlock).toBeDefined();
+      expect(managerBlock).toContain(
+        "'sql-connection': ['read', 'create', 'update', 'delete']",
+      );
+    });
+
+    it('memberRole should grant read-only sql-connection access', () => {
+      const memberBlock = source
+        .split('memberRole = ac.newRole({')[1]
+        ?.split('});')[0];
+      expect(memberBlock).toBeDefined();
+      expect(memberBlock).toContain("'sql-connection': ['read']");
+    });
   });
 
   describe('roleMetadata', () => {
