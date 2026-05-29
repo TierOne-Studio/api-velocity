@@ -141,7 +141,13 @@ Additionally, for any change touching **auth, sessions, secrets, encryption, pay
 
 - `security-reviewer` — runs POST-implementation. OWASP + project RBAC contract. Verdict: **APPROVE / CHANGES REQUESTED / BLOCK**.
 
+For any **user-facing/API feature OR a bug fix that alters observable API / RBAC / multi-step behavior** (pure logic/service fixes are exempt — a unit regression test under `qa-validator` suffices):
+
+- `acceptance-verifier` — runs POST-implementation, **after `qa-validator` returns green** (never instead). Executes the live suite, maps each stated acceptance criterion to an EXECUTED assertion, and adversarially checks non-vacuity (would the green test fail if the feature were reverted?) + surface-fidelity (does it test the surface the spec named?). Verdict: **ACCEPTED / GAPS / BLOCK**. Its BLOCK is **binding on "done"** — see P8 Definition of Done.
+
 MUST address every HIGH/CRITICAL issue before declaring done. A BLOCK from any reviewer = work is NOT done.
+
+**Per-PR, not per-session.** These gates fire **per pull request**. A session that produces N PRs runs the gates N times — shipping a second PR on the back of a first PR's review is NOT permitted; each PR clears the gates on its own merits.
 
 ---
 
@@ -228,6 +234,15 @@ The response for any code change MUST include these items, in order:
 
 Quality criteria per item: see `design-review` skill (Output contract — quality criteria section).
 
+### P8.0 Definition of "done" (verification artifacts must be EXECUTED)
+
+A change is not "done" — MUST NOT declare it finished, ask the user to test, or open a PR — until:
+
+- **Every verification artifact has been executed**, not merely written. A unit/integration/e2e spec that exists but was not run counts as **zero** coverage. A test that asserts only on a serialized shape (e.g. `expect(sql).toContain(...)`) without executing the path is **vacuous** — it does not count. (This generalizes `tdd-workflow` Step 5 rubric item 2 from the unit level to all layers.)
+- **For a user-facing/API feature:** the main agent MUST have authored AND run (a) unit/integration tests AND (b) e2e/acceptance coverage at the appropriate layer — API e2e (supertest) or integration vs **real Postgres** for data/RBAC/migration-bound criteria — and `acceptance-verifier` MUST have returned non-`BLOCK`. The user's manual testing is then optional, not required.
+- **For a bug fix:** a unit/integration regression test (authored + run) always; e2e only when the fix changes an observable API/RBAC/multi-step behavior (then `acceptance-verifier` fires).
+- A feature with **no stated acceptance criteria** is itself incomplete — write the criteria (in the plan's verification section) before claiming done; "nothing to verify against" is a BLOCK for a user-facing/API feature.
+
 ### P8.1 Confidence rubric (the 0.9 gate)
 
 The `Confidence:` line in item 9 is NOT a vibe — it's the sum of an objective rubric. Compute it as:
@@ -310,11 +325,11 @@ Common task types and the skill chains they invoke. The Skill Pointers table is 
 
 | Task type | Chain (left → right; subagents in **bold**) |
 |---|---|
-| **New feature** (familiar code) | `plan-mode` (with failure-mode anticipation) → `failure-mode-analysis` → `tdd-workflow` → `repo-conventions` → `design-review` → **architect-reviewer** (pre-impl) → **code-reviewer** + **qa-validator** (post-impl) |
+| **New feature** (familiar code) | `plan-mode` (with failure-mode anticipation) → `failure-mode-analysis` → `tdd-workflow` → `repo-conventions` → `design-review` → **architect-reviewer** (pre-impl) → **code-reviewer** + **qa-validator** (post-impl) → author + run e2e/acceptance tests → **acceptance-verifier** (binding; see P8.0) |
 | **New feature** (unfamiliar code) | `rlm-explore` (slice the relevant module first) → then the standard New feature chain above |
 | **Bug fix** (clear repro) | `bug-investigation` → `failure-mode-analysis` → `tdd-workflow` → `repo-conventions` → `design-review` → **code-reviewer** |
 | **Bug fix** (dense stack trace / unfamiliar codebase) | `rlm-explore` (LOCATE the relevant slices from the trace; EXTRACT only those) → `bug-investigation` → `failure-mode-analysis` → `tdd-workflow` → `repo-conventions` → `design-review` → **code-reviewer** |
-| **Auth / RBAC / payments / migration** (high-risk per P3.3) | `plan-mode` (with P3.3 explicit restate) → **architect-reviewer** (early) → `tdd-workflow` → `repo-conventions` (RBAC section) → `database-transactions` (if multi-statement) → `design-review` → **security-reviewer** + **code-reviewer** + **qa-validator** |
+| **Auth / RBAC / payments / migration** (high-risk per P3.3) | `plan-mode` (with P3.3 explicit restate) → **architect-reviewer** (early) → `tdd-workflow` → `repo-conventions` (RBAC section) → `database-transactions` (if multi-statement) → `design-review` → **security-reviewer** + **code-reviewer** + **qa-validator** → author + run integration/e2e (real Postgres for data/RBAC criteria) → **acceptance-verifier** (binding; see P8.0) |
 | **Refactor (no behavior change)** | `code-simplifier` → `cyclomatic-complexity` → `repo-conventions` → `design-review` → **code-reviewer** |
 | **Performance work** | `rlm-explore` (LOCATE the hot path; don't read whole modules) → `js-performance-patterns` → `failure-mode-analysis` → `tdd-workflow` → `repo-conventions` → `design-review` → **code-reviewer** + **qa-validator** |
 | **Async / external-integration code** | `async-error-handling` → `failure-mode-analysis` (network/partial categories) → `tdd-workflow` → `repo-conventions` → `design-review` → **code-reviewer** |
