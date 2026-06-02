@@ -37,12 +37,62 @@ describe('VectorDbMigrationService', () => {
 
   it('is idempotent: second call with all-run flag skips everything', async () => {
     await service.runTrackedMigrations();
-    expect(db.recordMigration).toHaveBeenCalledTimes(1);
+    expect(db.recordMigration).toHaveBeenCalledTimes(2);
 
     db.hasMigrationRun.mockResolvedValue(true);
     db.recordMigration.mockClear();
     await service.runTrackedMigrations();
     expect(db.recordMigration).not.toHaveBeenCalled();
+  });
+
+  it('records vector_db_002_schema_improvements on a fresh database', async () => {
+    await service.runTrackedMigrations();
+
+    expect(db.recordMigration).toHaveBeenCalledWith(
+      'vector_db_002_schema_improvements',
+    );
+  });
+
+  it('skips 002 when it has already run', async () => {
+    db.hasMigrationRun.mockImplementation(
+      async (name) => name === 'vector_db_002_schema_improvements',
+    );
+    await service.runTrackedMigrations();
+
+    expect(db.recordMigration).not.toHaveBeenCalledWith(
+      'vector_db_002_schema_improvements',
+    );
+  });
+
+  it('addSchemaImprovements adds vector_store_ref and drops qdrant_collection', async () => {
+    await service.addSchemaImprovements();
+
+    const calls = (db.query as jest.Mock).mock.calls.map(
+      (args) => (args as unknown[])[0] as string,
+    );
+    expect(calls.some((sql) => /vector_store_ref/.test(sql))).toBe(true);
+    expect(calls.some((sql) => /DROP COLUMN.*qdrant_collection/i.test(sql))).toBe(true);
+  });
+
+  it('addSchemaImprovements adds deleted_at and version columns', async () => {
+    await service.addSchemaImprovements();
+
+    const calls = (db.query as jest.Mock).mock.calls.map(
+      (args) => (args as unknown[])[0] as string,
+    );
+    expect(calls.some((sql) => /deleted_at/.test(sql))).toBe(true);
+    expect(calls.some((sql) => /version/.test(sql))).toBe(true);
+  });
+
+  it('addSchemaImprovements converts FK to ON DELETE RESTRICT', async () => {
+    await service.addSchemaImprovements();
+
+    const calls = (db.query as jest.Mock).mock.calls.map(
+      (args) => (args as unknown[])[0] as string,
+    );
+    expect(
+      calls.some((sql) => /ON DELETE RESTRICT/i.test(sql)),
+    ).toBe(true);
   });
 
   it('createTable emits CREATE TABLE with status CHECK constraint', async () => {

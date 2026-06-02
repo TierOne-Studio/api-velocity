@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -79,14 +80,15 @@ export class VectorDbController {
   }
 
   @Delete(':id')
+  @HttpCode(204)
   @RequirePermissions('vector-db:delete')
   async remove(
     @Session() session: UserSession,
     @Param('id') id: string,
     @Query('organizationId') organizationId?: string,
-  ) {
+  ): Promise<void> {
     const scope = this.buildScope(session, organizationId);
-    return this.service.delete(scope, id);
+    await this.service.delete(scope, id);
   }
 
   private buildScope(session: UserSession, organizationId?: string) {

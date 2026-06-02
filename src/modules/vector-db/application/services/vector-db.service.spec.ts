@@ -37,6 +37,7 @@ function buildRepositoryMock(): jest.Mocked<IVectorDbRepository> {
     findByOrganizationAndName: jest.fn(),
     delete: jest.fn(),
     countProjectReferences: jest.fn<() => Promise<number>>().mockResolvedValue(0),
+    assertOrganizationExists: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
   } as unknown as jest.Mocked<IVectorDbRepository>;
 }
 
@@ -46,10 +47,15 @@ function buildRow(overrides: Partial<VectorDbRow> = {}): VectorDbRow {
     organization_id: 'org-1',
     name: 'My KB',
     description: null,
-    qdrant_collection: 'kb_abc123',
+    vector_store_kind: 'qdrant',
+    vector_store_ref: 'vdb_abc123',
     status: 'empty',
     status_error: null,
     document_count: 0,
+    deleted_at: null,
+    version: 0,
+    processing_started_at: null,
+    last_ingested_at: null,
     created_at: now,
     updated_at: now,
     ...overrides,
@@ -99,7 +105,7 @@ describe('VectorDbService.create', () => {
     const service = new VectorDbService(repo);
     repo.findByOrganizationAndName.mockResolvedValue(null);
     repo.create.mockImplementation(async (row) =>
-      buildRow({ id: row.id, name: row.name, qdrant_collection: row.qdrantCollection }),
+      buildRow({ id: row.id, name: row.name, vector_store_ref: row.vectorStoreRef }),
     );
 
     const result = await service.create(adminScope, { name: 'Docs' });
@@ -109,9 +115,10 @@ describe('VectorDbService.create', () => {
         organizationId: 'org-1',
         name: 'Docs',
         description: null,
+        vectorStoreKind: 'qdrant',
       }),
     );
-    expect(result.qdrantCollection).toMatch(/^kb_[a-f0-9]{32}$/);
+    expect(result.vectorStoreRef).toMatch(/^vdb_[a-f0-9]{32}$/);
     expect(result.status).toBe('empty');
   });
 
@@ -158,6 +165,18 @@ describe('VectorDbService.create', () => {
         { name: 'x' },
       ),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('throws NotFoundException when superadmin passes a non-existent org', async () => {
+    const repo = buildRepositoryMock();
+    repo.assertOrganizationExists = jest.fn<() => Promise<void>>().mockRejectedValue(
+      new NotFoundException('Organization not found'),
+    );
+    const service = new VectorDbService(repo);
+
+    await expect(
+      service.create(superadminScope, { name: 'Docs' }),
+    ).rejects.toThrow(NotFoundException);
   });
 });
 
@@ -206,15 +225,14 @@ describe('VectorDbService.update', () => {
 });
 
 describe('VectorDbService.delete', () => {
-  it('deletes an existing knowledge base', async () => {
+  it('soft-deletes an existing vector database (returns void)', async () => {
     const repo = buildRepositoryMock();
     const service = new VectorDbService(repo);
     repo.findByIdInOrg.mockResolvedValue(buildRow());
     repo.countProjectReferences.mockResolvedValue(0);
     repo.delete.mockResolvedValue(true);
 
-    const result = await service.delete(adminScope, 'kb-1');
-    expect(result).toEqual({ deleted: true });
+    await expect(service.delete(adminScope, 'kb-1')).resolves.toBeUndefined();
   });
 
   it('throws NotFoundException when KB not found', async () => {

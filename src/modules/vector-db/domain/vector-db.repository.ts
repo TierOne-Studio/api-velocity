@@ -9,7 +9,8 @@ export type CreateVectorDbRow = {
   organizationId: string;
   name: string;
   description: string | null;
-  qdrantCollection: string;
+  vectorStoreKind: string;
+  vectorStoreRef: string;
 };
 
 export type UpdateVectorDbRow = {
@@ -18,12 +19,13 @@ export type UpdateVectorDbRow = {
 };
 
 export interface IVectorDbRepository {
+  assertOrganizationExists(orgId: string): Promise<void>;
   create(row: CreateVectorDbRow): Promise<VectorDbRow>;
   update(id: string, row: UpdateVectorDbRow): Promise<VectorDbRow>;
   updateStatus(
     id: string,
     status: VectorDbStatus,
-    statusError: string | null,
+    statusError: { message: string } | null,
   ): Promise<void>;
   incrementDocumentCount(id: string, delta: number): Promise<void>;
   findById(id: string): Promise<VectorDbRow | null>;
@@ -41,5 +43,5 @@ export interface IVectorDbRepository {
     name: string,
   ): Promise<VectorDbRow | null>;
   delete(id: string, organizationId: string): Promise<boolean>;
-  countProjectReferences(knowledgeBaseId: string): Promise<number>;
+  countProjectReferences(vectorDbId: string): Promise<number>;
 }

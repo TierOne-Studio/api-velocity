@@ -79,11 +79,15 @@ describe('VectorDbController', () => {
     expect(result).toEqual({ data: kb });
   });
 
-  it('remove returns the service result directly', async () => {
-    service.delete.mockResolvedValue({ deleted: true });
+  it('remove calls service.delete and returns void (204)', async () => {
+    service.delete.mockResolvedValue(undefined);
 
     const result = await controller.remove(session, 'kb-1');
-    expect(result).toEqual({ deleted: true });
+    expect(result).toBeUndefined();
+    expect(service.delete).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1' }),
+      'kb-1',
+    );
   });
 
   it('create rejects non-object body', async () => {
