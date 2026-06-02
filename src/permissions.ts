@@ -20,7 +20,7 @@ export const statement = {
   'sql-connection': ['read', 'create', 'update', 'delete'],
   // vectordb:upload gates the file-upload endpoint (Slice 3).
   // delete is admin-only (mirrors airweave asymmetry — consequential action).
-  'vectordb': ['read', 'create', 'update', 'delete', 'upload'],
+  'vector-db': ['read', 'create', 'update', 'delete', 'upload'],
 } as const;
 
 /**
@@ -60,7 +60,7 @@ export const adminRole = ac.newRole({
   project: ['create', 'read', 'update', 'delete', 'manage-sources'],
   airweave: ['create', 'read', 'update', 'delete', 'manage-sources'],
   'sql-connection': ['read', 'create', 'update', 'delete'],
-  'vectordb': ['read', 'create', 'update', 'delete', 'upload'],
+  'vector-db': ['read', 'create', 'update', 'delete', 'upload'],
 });
 
 // Manager role - can manage users/sessions within their organization
@@ -79,8 +79,8 @@ export const managerRole = ac.newRole({
   // SQL connections have no nested resources, so no manage-sources/delete
   // asymmetry — manager gets the same full CRUD set as admin per ADR-012.
   'sql-connection': ['read', 'create', 'update', 'delete'],
-  // Manager cannot delete vectordbs (consequential action — mirrors airweave).
-  'vectordb': ['read', 'create', 'update', 'upload'],
+  // Manager cannot delete vector-dbs (consequential action — mirrors airweave).
+  'vector-db': ['read', 'create', 'update', 'upload'],
 });
 
 // Member role - basic org member
@@ -91,7 +91,7 @@ export const memberRole = ac.newRole({
   project: ['read'],
   airweave: ['read'],
   'sql-connection': ['read'],
-  'vectordb': ['read'],
+  'vector-db': ['read'],
 });
 
 /**

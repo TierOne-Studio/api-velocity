@@ -13,7 +13,7 @@ import { SharedModule } from './shared/shared.module';
 import { AdminModule, RbacModule } from './modules/admin';
 import { AirweaveModule } from './modules/airweave/airweave.module';
 import { SqlConnectionsModule } from './modules/sql-connections/sql-connections.module';
-import { VectordbModule } from './modules/vectordb/vectordb.module';
+import { VectorDbModule } from './modules/vector-db/vector-db.module';
 import { ProjectsModule } from './modules/projects';
 import { ChatModule } from './modules/chat';
 
@@ -30,9 +30,9 @@ import { ChatModule } from './modules/chat';
     // SqlConnectionsModule must be imported before ProjectsModule: the
     // database source provider injects SqlConnectionsService.
     SqlConnectionsModule,
-    // VectordbModule before ProjectsModule: chat provider (Slice 6)
+    // VectorDbModule before ProjectsModule: chat provider (Slice 6)
     // will inject KnowledgeBaseService from the registry.
-    VectordbModule,
+    VectorDbModule,
     // ProjectsModule MUST be imported before ChatModule — ChatMigrationService
     // cross-injects ProjectsMigrationService to force the Projects tables to
     // exist before conversation.project_id is backfilled.
