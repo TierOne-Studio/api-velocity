@@ -44,6 +44,10 @@ const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
   { resource: 'sql-connection', action: 'create' },
   { resource: 'sql-connection', action: 'update' },
   { resource: 'sql-connection', action: 'delete' },
+  { resource: 'vector-db', action: 'read' },
+  { resource: 'vector-db', action: 'create' },
+  { resource: 'vector-db', action: 'update' },
+  { resource: 'vector-db', action: 'delete' },
 ] as const;
 
 const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
@@ -77,6 +81,10 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
   { resource: 'sql-connection', action: 'create' },
   { resource: 'sql-connection', action: 'update' },
   { resource: 'sql-connection', action: 'delete' },
+  { resource: 'vector-db', action: 'read' },
+  { resource: 'vector-db', action: 'create' },
+  { resource: 'vector-db', action: 'update' },
+  { resource: 'vector-db', action: 'delete' },
 ] as const;
 
 const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
@@ -88,6 +96,7 @@ const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
   { resource: 'airweave', action: 'read' },
   // sql-connection:* per ADR-012 — member inherits read only from organization:read.
   { resource: 'sql-connection', action: 'read' },
+  { resource: 'vector-db', action: 'read' },
 ] as const;
 
 /**
@@ -183,6 +192,10 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_021_add_sql_connection_permissions',
         up: () => this.addSqlConnectionPermissions(),
+      },
+      {
+        name: 'rbac_022_add_vector_db_permissions',
+        up: () => this.addVectorDbPermissions(),
       },
     ];
 
@@ -1812,6 +1825,132 @@ export class RbacMigrationService implements OnModuleInit {
 
     console.log(
       '✅ sql-connection permissions added and assigned to default roles (superadmin/admin/manager/member); custom roles inherit from organization:read|update',
+    );
+  }
+
+  async addVectorDbPermissions(): Promise<void> {
+    const vectorDbPermissions = [
+      ['vector-db', 'read', 'View vector databases (knowledge bases)'],
+      ['vector-db', 'create', 'Create vector databases'],
+      ['vector-db', 'update', 'Update vector databases'],
+      ['vector-db', 'delete', 'Delete vector databases'],
+    ] as const;
+
+    for (const [resource, action, description] of vectorDbPermissions) {
+      await this.db.query(
+        `INSERT INTO permissions (resource, action, description)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (resource, action) DO NOTHING`,
+        [resource, action, description],
+      );
+    }
+
+    // Grant all vector-db permissions to the global superadmin role.
+    const superadminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
+    );
+    if (superadminRole) {
+      await this.db.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT $1, p.id
+         FROM permissions p
+         WHERE p.resource = 'vector-db'
+         ON CONFLICT DO NOTHING`,
+        [superadminRole.id],
+      );
+    }
+
+    // Re-sync global admin/manager/member roles from updated constants.
+    const globalRoles = await this.db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM roles
+       WHERE organization_id IS NULL
+         AND name IN ('admin', 'manager', 'member')`,
+    );
+    for (const role of globalRoles) {
+      if (role.name === 'admin') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      } else if (role.name === 'manager') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      } else if (role.name === 'member') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    // Re-sync org-scoped default roles across every organization.
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
+    for (const organization of organizations) {
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [organization.id],
+      );
+      if (adminRole) {
+        await this.syncRolePermissions(
+          adminRole.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(
+          managerRole.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const memberRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'member'`,
+        [organization.id],
+      );
+      if (memberRole) {
+        await this.syncRolePermissions(
+          memberRole.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    // Additive grant for custom roles: inherit from organization:update (CUD)
+    // and organization:read (read-only), matching the sql-connection precedent.
+    await this.db.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT DISTINCT rp.role_id, p_new.id
+       FROM role_permissions rp
+       INNER JOIN permissions p_old ON p_old.id = rp.permission_id
+         AND p_old.resource = 'organization' AND p_old.action = 'update'
+       CROSS JOIN permissions p_new
+       WHERE p_new.resource = 'vector-db'
+         AND p_new.action IN ('create', 'update', 'delete')
+       ON CONFLICT DO NOTHING`,
+    );
+    await this.db.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT DISTINCT rp.role_id, p_new.id
+       FROM role_permissions rp
+       INNER JOIN permissions p_old ON p_old.id = rp.permission_id
+         AND p_old.resource = 'organization' AND p_old.action = 'read'
+       CROSS JOIN permissions p_new
+       WHERE p_new.resource = 'vector-db'
+         AND p_new.action = 'read'
+       ON CONFLICT DO NOTHING`,
+    );
+
+    console.log(
+      '✅ vector-db permissions added and assigned to default roles (superadmin/admin/manager/member); custom roles inherit from organization:read|update',
     );
   }
 }

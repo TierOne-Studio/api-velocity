@@ -45,11 +45,11 @@ describe('VectorDbController', () => {
   });
 
   it.each([
-    ['list', 'vectordb:read'],
-    ['getById', 'vectordb:read'],
-    ['create', 'vectordb:create'],
-    ['update', 'vectordb:update'],
-    ['remove', 'vectordb:delete'],
+    ['list', 'vector-db:read'],
+    ['getById', 'vector-db:read'],
+    ['create', 'vector-db:create'],
+    ['update', 'vector-db:update'],
+    ['remove', 'vector-db:delete'],
   ] as const)('%s requires %s permission', (method, expected) => {
     const handler = (controller as unknown as Record<string, object>)[method];
     const permissions = Reflect.getMetadata(

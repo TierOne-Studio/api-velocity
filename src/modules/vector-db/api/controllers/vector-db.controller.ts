@@ -29,7 +29,7 @@ export class VectorDbController {
   constructor(private readonly service: VectorDbService) {}
 
   @Get()
-  @RequirePermissions('vectordb:read')
+  @RequirePermissions('vector-db:read')
   async list(
     @Session() session: UserSession,
     @Query('organizationId') organizationId?: string,
@@ -40,7 +40,7 @@ export class VectorDbController {
   }
 
   @Get(':id')
-  @RequirePermissions('vectordb:read')
+  @RequirePermissions('vector-db:read')
   async getById(
     @Session() session: UserSession,
     @Param('id') id: string,
@@ -52,7 +52,7 @@ export class VectorDbController {
   }
 
   @Post()
-  @RequirePermissions('vectordb:create')
+  @RequirePermissions('vector-db:create')
   async create(
     @Session() session: UserSession,
     @Body() body: CreateKnowledgeBaseInput & { organizationId?: string },
@@ -65,7 +65,7 @@ export class VectorDbController {
   }
 
   @Patch(':id')
-  @RequirePermissions('vectordb:update')
+  @RequirePermissions('vector-db:update')
   async update(
     @Session() session: UserSession,
     @Param('id') id: string,
@@ -79,7 +79,7 @@ export class VectorDbController {
   }
 
   @Delete(':id')
-  @RequirePermissions('vectordb:delete')
+  @RequirePermissions('vector-db:delete')
   async remove(
     @Session() session: UserSession,
     @Param('id') id: string,

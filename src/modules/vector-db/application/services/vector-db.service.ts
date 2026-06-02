@@ -112,10 +112,7 @@ export class VectorDbService {
     return toPublic(updated);
   }
 
-  async delete(
-    scope: CallerScope,
-    id: string,
-  ): Promise<{ deleted: boolean }> {
+  async delete(scope: CallerScope, id: string): Promise<{ deleted: boolean }> {
     const orgId = this.requireOrg(scope);
 
     const existing = await this.repository.findByIdInOrg(id, orgId);
