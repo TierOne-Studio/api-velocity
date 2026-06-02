@@ -18,6 +18,9 @@ export const statement = {
   // sql-connection:* per ADR-012. No manage-sources action — SQL connections
   // do not have nested resources. Test endpoints map to :update grade.
   'sql-connection': ['read', 'create', 'update', 'delete'],
+  // knowledge-base:upload gates the file-upload endpoint (Slice 3).
+  // delete is admin-only (mirrors airweave asymmetry — consequential action).
+  'knowledge-base': ['read', 'create', 'update', 'delete', 'upload'],
 } as const;
 
 /**
@@ -57,6 +60,7 @@ export const adminRole = ac.newRole({
   project: ['create', 'read', 'update', 'delete', 'manage-sources'],
   airweave: ['create', 'read', 'update', 'delete', 'manage-sources'],
   'sql-connection': ['read', 'create', 'update', 'delete'],
+  'knowledge-base': ['read', 'create', 'update', 'delete', 'upload'],
 });
 
 // Manager role - can manage users/sessions within their organization
@@ -75,6 +79,8 @@ export const managerRole = ac.newRole({
   // SQL connections have no nested resources, so no manage-sources/delete
   // asymmetry — manager gets the same full CRUD set as admin per ADR-012.
   'sql-connection': ['read', 'create', 'update', 'delete'],
+  // Manager cannot delete KBs (consequential action — mirrors airweave).
+  'knowledge-base': ['read', 'create', 'update', 'upload'],
 });
 
 // Member role - basic org member
@@ -85,6 +91,7 @@ export const memberRole = ac.newRole({
   project: ['read'],
   airweave: ['read'],
   'sql-connection': ['read'],
+  'knowledge-base': ['read'],
 });
 
 /**
