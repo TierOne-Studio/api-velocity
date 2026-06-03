@@ -19,6 +19,10 @@ export class VectorDbMigrationService implements OnModuleInit {
         name: 'vector_db_002_schema_improvements',
         up: () => this.addSchemaImprovements(),
       },
+      {
+        name: 'vector_db_003_create_ingestion_job',
+        up: () => this.createIngestionJobTable(),
+      },
     ];
 
     let pending = 0;
@@ -137,7 +141,38 @@ export class VectorDbMigrationService implements OnModuleInit {
     `);
   }
 
+  async createIngestionJobTable(): Promise<void> {
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS vector_db_ingestion_job (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        vector_db_id UUID NOT NULL REFERENCES org_vector_db(id) ON DELETE CASCADE,
+        s3_key TEXT NOT NULL,
+        original_filename TEXT NOT NULL,
+        file_size_bytes BIGINT NOT NULL,
+        content_type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK (status IN ('pending','processing','done','failed')),
+        attempts INT NOT NULL DEFAULT 0,
+        locked_until TIMESTAMPTZ NULL,
+        last_error TEXT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await this.db.query(
+      `CREATE INDEX IF NOT EXISTS idx_vdb_job_claim
+         ON vector_db_ingestion_job(status, locked_until)`,
+    );
+    await this.db.query(
+      `CREATE INDEX IF NOT EXISTS idx_vdb_job_vector_db
+         ON vector_db_ingestion_job(vector_db_id)`,
+    );
+  }
+
   async down(): Promise<void> {
+    await this.db.query(`DROP INDEX IF EXISTS idx_vdb_job_vector_db`);
+    await this.db.query(`DROP INDEX IF EXISTS idx_vdb_job_claim`);
+    await this.db.query(`DROP TABLE IF EXISTS vector_db_ingestion_job`);
     await this.db.query(`DROP INDEX IF EXISTS idx_org_vector_db_org_status`);
     await this.db.query(`DROP INDEX IF EXISTS idx_org_vector_db_name`);
     await this.db.query(`DROP TABLE IF EXISTS org_vector_db`);

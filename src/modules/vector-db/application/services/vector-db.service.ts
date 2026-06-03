@@ -10,14 +10,24 @@ import {
 } from '@nestjs/common';
 import type {
   CreateKnowledgeBaseInput,
+  IngestionJob,
   VectorDb,
   VectorDbRow,
   UpdateKnowledgeBaseInput,
 } from '../../api/dto/vector-db.dto';
 import {
   VECTOR_DB_REPOSITORY,
+  type IngestionJobRow,
   type IVectorDbRepository,
 } from '../../domain/vector-db.repository';
+import {
+  VECTOR_DB_FILE_UPLOADER,
+  type IVectorDbFileUploader,
+} from '../../domain/vector-db-file-uploader.port';
+import {
+  VECTOR_DB_ALLOWED_MIME_TYPES,
+  VECTOR_DB_MAX_UPLOAD_SIZE,
+} from '../../vector-db.constants';
 import type { PlatformRole } from '../../../admin/utils/admin.utils';
 
 type CallerScope = {
@@ -34,6 +44,8 @@ export class VectorDbService {
   constructor(
     @Inject(VECTOR_DB_REPOSITORY)
     private readonly repository: IVectorDbRepository,
+    @Inject(VECTOR_DB_FILE_UPLOADER)
+    private readonly fileUploader: IVectorDbFileUploader,
   ) {}
 
   async list(scope: CallerScope): Promise<VectorDb[]> {
@@ -130,6 +142,90 @@ export class VectorDbService {
     if (!deleted) throw new NotFoundException('Vector database not found');
   }
 
+  async uploadFile(
+    scope: CallerScope,
+    id: string,
+    file: Express.Multer.File,
+  ): Promise<IngestionJob> {
+    if (!file) {
+      throw new BadRequestException('file is required');
+    }
+    if (!VECTOR_DB_ALLOWED_MIME_TYPES.has(file.mimetype)) {
+      throw new BadRequestException(
+        `File type '${file.mimetype}' is not allowed. Accepted types: pdf, txt, md, csv, json, docx`,
+      );
+    }
+    if (file.size > VECTOR_DB_MAX_UPLOAD_SIZE) {
+      throw new BadRequestException('File exceeds the maximum size of 50 MB');
+    }
+
+    const orgId = await this.requireOrg(scope);
+    const existing = await this.repository.findByIdInOrg(id, orgId);
+    if (!existing) throw new NotFoundException('Vector database not found');
+
+    const s3Key = `vector-dbs/${orgId}/${id}/${randomUUID()}`;
+
+    // Log s3Key before the put so operators can correlate an orphan on DB failure.
+    this.logger.log('Uploading file to S3', { s3Key, vectorDbId: id, organizationId: orgId });
+
+    await this.fileUploader.put(s3Key, file.buffer, file.mimetype, file.originalname);
+
+    // If this throws, the S3 object at s3Key is orphaned. The log line above
+    // gives operators the key for manual cleanup until the Slice 4 janitor ships.
+    const jobRow = await this.repository.createIngestionJob({
+      vectorDbId: id,
+      s3Key,
+      originalFilename: file.originalname,
+      fileSizeBytes: file.size,
+      contentType: file.mimetype,
+    });
+    await this.repository.incrementDocumentCount(id, 1);
+
+    this.logger.log('File upload queued', {
+      jobId: jobRow.id,
+      vectorDbId: id,
+      organizationId: orgId,
+      s3Key,
+    });
+
+    return toPublicJob(jobRow);
+  }
+
+  async listFiles(scope: CallerScope, id: string): Promise<IngestionJob[]> {
+    const orgId = await this.requireOrg(scope);
+    const existing = await this.repository.findByIdInOrg(id, orgId);
+    if (!existing) throw new NotFoundException('Vector database not found');
+    const rows = await this.repository.listJobsForVectorDb(id);
+    return rows.map(toPublicJob);
+  }
+
+  async deleteFile(
+    scope: CallerScope,
+    id: string,
+    jobId: string,
+  ): Promise<void> {
+    const orgId = await this.requireOrg(scope);
+    const existing = await this.repository.findByIdInOrg(id, orgId);
+    if (!existing) throw new NotFoundException('Vector database not found');
+
+    const job = await this.repository.findIngestionJobById(jobId, id);
+    if (!job) throw new NotFoundException('File not found');
+
+    await this.repository.deleteIngestionJob(jobId, id);
+    await this.repository.decrementDocumentCount(id, 1);
+
+    try {
+      await this.fileUploader.delete(job.s3_key);
+    } catch (err) {
+      this.logger.warn('Failed to delete S3 object — orphaned blob', {
+        jobId,
+        vectorDbId: id,
+        s3Key: job.s3_key,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   async findByIdForAttach(
     organizationId: string,
     id: string,
@@ -186,6 +282,20 @@ export class VectorDbService {
       throw new BadRequestException('name must be 255 characters or fewer');
     }
   }
+}
+
+function toPublicJob(row: IngestionJobRow): IngestionJob {
+  return {
+    id: row.id,
+    vectorDbId: row.vector_db_id,
+    s3Key: row.s3_key,
+    originalFilename: row.original_filename,
+    fileSizeBytes: row.file_size_bytes,
+    contentType: row.content_type,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 function toPublic(row: VectorDbRow): VectorDb {

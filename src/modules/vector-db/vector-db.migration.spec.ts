@@ -37,7 +37,7 @@ describe('VectorDbMigrationService', () => {
 
   it('is idempotent: second call with all-run flag skips everything', async () => {
     await service.runTrackedMigrations();
-    expect(db.recordMigration).toHaveBeenCalledTimes(2);
+    expect(db.recordMigration).toHaveBeenCalledTimes(3);
 
     db.hasMigrationRun.mockResolvedValue(true);
     db.recordMigration.mockClear();
@@ -117,5 +117,50 @@ describe('VectorDbMigrationService', () => {
       (args) => (args as unknown[])[0] as string,
     );
     expect(calls.some((sql) => /idx_org_vector_db_name/.test(sql))).toBe(true);
+  });
+
+  it('runs migration 003 on a fresh database', async () => {
+    await service.runTrackedMigrations();
+
+    expect(db.recordMigration).toHaveBeenCalledWith(
+      'vector_db_003_create_ingestion_job',
+    );
+  });
+
+  it('skips 003 when it has already run', async () => {
+    db.hasMigrationRun.mockImplementation(
+      async (name) => name === 'vector_db_003_create_ingestion_job',
+    );
+    await service.runTrackedMigrations();
+
+    expect(db.recordMigration).not.toHaveBeenCalledWith(
+      'vector_db_003_create_ingestion_job',
+    );
+  });
+
+  it('createIngestionJobTable creates table with status CHECK constraint', async () => {
+    await service.createIngestionJobTable();
+
+    const calls = (db.query as jest.Mock).mock.calls.map(
+      (args) => (args as unknown[])[0] as string,
+    );
+    expect(
+      calls.some((sql) => /CREATE TABLE IF NOT EXISTS vector_db_ingestion_job/i.test(sql)),
+    ).toBe(true);
+    expect(
+      calls.some((sql) =>
+        /status IN \('pending','processing','done','failed'\)/.test(sql),
+      ),
+    ).toBe(true);
+  });
+
+  it('createIngestionJobTable creates both claim and vector_db indexes', async () => {
+    await service.createIngestionJobTable();
+
+    const calls = (db.query as jest.Mock).mock.calls.map(
+      (args) => (args as unknown[])[0] as string,
+    );
+    expect(calls.some((sql) => /idx_vdb_job_claim/.test(sql))).toBe(true);
+    expect(calls.some((sql) => /idx_vdb_job_vector_db/.test(sql))).toBe(true);
   });
 });

@@ -1,5 +1,20 @@
-import type { VectorDbStatus } from '../../domain/vector-db.repository';
-export type { VectorDbStatus };
+import type {
+  VectorDbStatus,
+  IngestionJobStatus,
+} from '../../domain/vector-db.repository';
+export type { VectorDbStatus, IngestionJobStatus };
+
+export type IngestionJob = {
+  id: string;
+  vectorDbId: string;
+  s3Key: string;
+  originalFilename: string;
+  fileSizeBytes: string;
+  contentType: string;
+  status: IngestionJobStatus;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type VectorDb = {
   id: string;

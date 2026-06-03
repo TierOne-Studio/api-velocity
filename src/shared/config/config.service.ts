@@ -69,6 +69,18 @@ export class ConfigService {
     return process.env.FE_URL || 'http://localhost:5173';
   }
 
+  getS3Bucket(): string {
+    const bucket = process.env.S3_BUCKET?.trim();
+    if (!bucket) {
+      throw new Error('S3_BUCKET environment variable is required');
+    }
+    return bucket;
+  }
+
+  getS3Region(): string {
+    return process.env.S3_REGION?.trim() || 'us-east-1';
+  }
+
   getAirweaveApiKey(): string | null {
     return process.env.AIRWEAVE_API_KEY?.trim() || null;
   }
@@ -277,6 +289,7 @@ export class ConfigService {
       'AUTH_SECRET',
       'DATABASE_URL',
       'PROJECT_SOURCE_SECRET_KEY',
+      'S3_BUCKET',
     ];
     const missing = required.filter((key) => !process.env[key]);
 

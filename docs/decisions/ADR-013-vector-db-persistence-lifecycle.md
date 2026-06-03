@@ -121,16 +121,32 @@ Invalid transitions (e.g., `empty → ready`, `ready → empty` without purge) w
 - **Alt B — NoopVectorStoreAdapter in Slice 1.** Correct direction, premature timing. The port and adapter will ship alongside Slice 4's Qdrant code, when there is a real adapter to implement against.
 - **Alt C — `ON DELETE CASCADE` + a TODO comment.** Already in Slice 1. Rejected because it silently orphans Qdrant/S3 resources the moment any org is deleted — a billing and data-leak risk even before Slice 4 ships.
 
+### Decision 11 — S3 as blob store for uploaded files (Slice 3)
+
+**Status:** Accepted
+
+Uploaded files are stored in AWS S3 before the ingestion worker processes them. The choice and design:
+
+- **Why S3 (not GCS, local disk, or presigned URL delegated to the worker):** S3 is the de-facto standard for object storage; `@aws-sdk/client-s3` is the official SDK with no heavyweight runtime dependencies; credentials come from the SDK default credential chain (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) so no custom credential wiring is needed. Local disk is not viable in a multi-instance deployment. GCS would work equally well but S3 was chosen for cost/ecosystem familiarity.
+
+- **S3 key scheme:** `vector-dbs/{orgId}/{vectorDbId}/{randomUUID()}`. No filename in the key (avoids spaces, special characters, and encoding issues). Original filename is stored in `vector_db_ingestion_job.original_filename`. The UUID suffix guarantees collision-free multi-upload to the same VectorDb.
+
+- **Orphan on partial failure:** If the S3 put succeeds but the DB `createIngestionJob` insert fails, the S3 object is orphaned. The S3 key is logged before the put (at `info` level) so operators can correlate and clean up manually. A Slice 4 janitor will sweep these automatically. This is the same async-cleanup philosophy as Decision 3 (soft-delete).
+
+- **Port + concrete adapter:** `IVectorDbFileUploader` (`domain/vector-db-file-uploader.port.ts`) defines the `put` / `delete` interface. `VectorDbFileUploaderService` (`infrastructure/s3/`) is the only adapter today. Per YAGNI, no second adapter is planned; the port exists to satisfy ADR-009 (application layer must not import infrastructure directly) rather than to anticipate a swap.
+
+- **Config:** `S3_BUCKET` (required, validated at startup via `validateEnvironment()`), `S3_REGION` (optional, defaults `us-east-1`).
+
 ## Consequences
 
 - **Positive:** Schema is stable enough to survive Slices 2–4 without data migrations. Org deletes are safe (RESTRICT). The service never returns 500 on a bad org reference. DELETE is RESTfully shaped. `updated_at` is a reliable user-mutation signal.
-- **Negative:** Soft-delete means rows are never truly purged until a janitor job exists (Slice 4 follow-up). `ON DELETE RESTRICT` requires explicit cleanup before an org can be deleted — ops must handle this.
+- **Negative:** Soft-delete means rows are never truly purged until a janitor job exists (Slice 4 follow-up). `ON DELETE RESTRICT` requires explicit cleanup before an org can be deleted — ops must handle this. S3 orphans accumulate on partial-failure until the janitor ships.
 - **Follow-ups:**
   - Slice 4: implement `VectorStoreProvider` port + `QdrantVectorStoreAdapter`.
   - Slice 4: extract `VectorDbAuthorizationService`.
   - Slice 4: enforce status transition guards in `updateStatus`.
   - Slice 4: invert `countProjectReferences` → `ProjectsService.countDataSourceReferences`.
-  - Slice 4: implement soft-delete janitor (Qdrant drop + S3 purge).
+  - Slice 4: implement soft-delete janitor (Qdrant drop + S3 purge + orphan sweep).
   - Future: add `created_by_user_id` / `updated_by_user_id` audit columns when a compliance requirement appears.
 
 ## References

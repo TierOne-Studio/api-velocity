@@ -38,7 +38,43 @@ function buildRepositoryMock(): jest.Mocked<IVectorDbRepository> {
     delete: jest.fn(),
     countProjectReferences: jest.fn<() => Promise<number>>().mockResolvedValue(0),
     assertOrganizationExists: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    createIngestionJob: jest.fn(),
+    listJobsForVectorDb: jest.fn<() => Promise<never[]>>().mockResolvedValue([]),
+    findIngestionJobById: jest.fn(),
+    deleteIngestionJob: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
+    decrementDocumentCount: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
   } as unknown as jest.Mocked<IVectorDbRepository>;
+}
+
+function buildUploaderMock() {
+  return {
+    put: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+  };
+}
+
+function makeService(
+  repo: jest.Mocked<IVectorDbRepository>,
+  uploader = buildUploaderMock(),
+) {
+  return new VectorDbService(repo, uploader as never);
+}
+
+function buildJobRow() {
+  return {
+    id: 'job-1',
+    vector_db_id: 'kb-1',
+    s3_key: 'vector-dbs/org-1/kb-1/uuid',
+    original_filename: 'doc.txt',
+    file_size_bytes: '5',
+    content_type: 'text/plain',
+    status: 'pending' as const,
+    attempts: 0,
+    locked_until: null,
+    last_error: null,
+    created_at: now,
+    updated_at: now,
+  };
 }
 
 function buildRow(overrides: Partial<VectorDbRow> = {}): VectorDbRow {
@@ -65,7 +101,7 @@ function buildRow(overrides: Partial<VectorDbRow> = {}): VectorDbRow {
 describe('VectorDbService.list', () => {
   it('returns org-scoped knowledge bases', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
     const row = buildRow();
     repo.listForOrganization.mockResolvedValue([row]);
 
@@ -81,7 +117,7 @@ describe('VectorDbService.list', () => {
 describe('VectorDbService.getById', () => {
   it('returns a single knowledge base', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
     repo.findByIdInOrg.mockResolvedValue(buildRow());
 
     const result = await service.getById(adminScope, 'kb-1');
@@ -90,7 +126,7 @@ describe('VectorDbService.getById', () => {
 
   it('throws NotFoundException when not found', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
     repo.findByIdInOrg.mockResolvedValue(null);
 
     await expect(service.getById(adminScope, 'missing')).rejects.toThrow(
@@ -102,7 +138,7 @@ describe('VectorDbService.getById', () => {
 describe('VectorDbService.create', () => {
   it('creates a knowledge base and returns the public shape', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
     repo.findByOrganizationAndName.mockResolvedValue(null);
     repo.create.mockImplementation(async (row) =>
       buildRow({ id: row.id, name: row.name, vector_store_ref: row.vectorStoreRef }),
@@ -124,7 +160,7 @@ describe('VectorDbService.create', () => {
 
   it('throws BadRequestException when name is blank', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
 
     await expect(service.create(adminScope, { name: '   ' })).rejects.toThrow(
       BadRequestException,
@@ -133,7 +169,7 @@ describe('VectorDbService.create', () => {
 
   it('throws ConflictException on duplicate name', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
     repo.findByOrganizationAndName.mockResolvedValue(buildRow());
 
     await expect(service.create(adminScope, { name: 'My KB' })).rejects.toThrow(
@@ -143,7 +179,7 @@ describe('VectorDbService.create', () => {
 
   it('uses superadmin organizationId when provided', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
     repo.findByOrganizationAndName.mockResolvedValue(null);
     repo.create.mockImplementation(async (row) =>
       buildRow({ organization_id: row.organizationId }),
@@ -157,7 +193,7 @@ describe('VectorDbService.create', () => {
 
   it('throws BadRequestException when superadmin has no org', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
 
     await expect(
       service.create(
@@ -172,7 +208,7 @@ describe('VectorDbService.create', () => {
     repo.assertOrganizationExists = jest.fn<() => Promise<void>>().mockRejectedValue(
       new NotFoundException('Organization not found'),
     );
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
 
     await expect(
       service.create(superadminScope, { name: 'Docs' }),
@@ -183,7 +219,7 @@ describe('VectorDbService.create', () => {
 describe('VectorDbService.update', () => {
   it('renames a knowledge base', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
     repo.findByIdInOrg.mockResolvedValue(buildRow());
     repo.findByOrganizationAndName.mockResolvedValue(null);
     repo.update.mockResolvedValue(buildRow({ name: 'Renamed' }));
@@ -194,7 +230,7 @@ describe('VectorDbService.update', () => {
 
   it('throws NotFoundException when KB not found', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
     repo.findByIdInOrg.mockResolvedValue(null);
 
     await expect(
@@ -204,7 +240,7 @@ describe('VectorDbService.update', () => {
 
   it('throws ConflictException on duplicate name collision', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
     repo.findByIdInOrg.mockResolvedValue(buildRow({ id: 'kb-1' }));
     repo.findByOrganizationAndName.mockResolvedValue(buildRow({ id: 'kb-2' }));
 
@@ -215,7 +251,7 @@ describe('VectorDbService.update', () => {
 
   it('throws BadRequestException when new name is blank', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
     repo.findByIdInOrg.mockResolvedValue(buildRow());
 
     await expect(
@@ -227,7 +263,7 @@ describe('VectorDbService.update', () => {
 describe('VectorDbService.delete', () => {
   it('soft-deletes an existing vector database (returns void)', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
     repo.findByIdInOrg.mockResolvedValue(buildRow());
     repo.countProjectReferences.mockResolvedValue(0);
     repo.delete.mockResolvedValue(true);
@@ -237,7 +273,7 @@ describe('VectorDbService.delete', () => {
 
   it('throws NotFoundException when KB not found', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
     repo.findByIdInOrg.mockResolvedValue(null);
 
     await expect(service.delete(adminScope, 'missing')).rejects.toThrow(
@@ -247,7 +283,7 @@ describe('VectorDbService.delete', () => {
 
   it('throws ConflictException when project references exist', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
     repo.findByIdInOrg.mockResolvedValue(buildRow());
     repo.countProjectReferences.mockResolvedValue(2);
 
@@ -260,7 +296,7 @@ describe('VectorDbService.delete', () => {
 describe('VectorDbService.requireOrg (non-superadmin)', () => {
   it('throws ForbiddenException when no active organization', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
 
     await expect(
       service.list({
@@ -273,7 +309,7 @@ describe('VectorDbService.requireOrg (non-superadmin)', () => {
 
   it('throws ForbiddenException when organizationId mismatches active org', async () => {
     const repo = buildRepositoryMock();
-    const service = new VectorDbService(repo);
+    const service = makeService(repo);
 
     await expect(
       service.list({
@@ -283,5 +319,102 @@ describe('VectorDbService.requireOrg (non-superadmin)', () => {
         organizationId: 'org-other',
       }),
     ).rejects.toThrow(ForbiddenException);
+  });
+});
+
+describe('VectorDbService.uploadFile', () => {
+  const scope = adminScope;
+  const file = {
+    buffer: Buffer.from('hello'),
+    originalname: 'doc.txt',
+    mimetype: 'text/plain',
+    size: 5,
+  } as unknown as Express.Multer.File;
+
+  it('puts to S3 and creates an ingestion job row', async () => {
+    const repo = buildRepositoryMock();
+    const uploader = buildUploaderMock();
+    const service = makeService(repo, uploader);
+
+    repo.findByIdInOrg.mockResolvedValue(buildRow());
+    repo.createIngestionJob.mockResolvedValue(buildJobRow());
+
+    const result = await service.uploadFile(scope, 'kb-1', file);
+
+    expect(uploader.put).toHaveBeenCalledTimes(1);
+    expect(repo.createIngestionJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        vectorDbId: 'kb-1',
+        originalFilename: 'doc.txt',
+        contentType: 'text/plain',
+        fileSizeBytes: 5,
+      }),
+    );
+    expect(result.status).toBe('pending');
+    expect(result.vectorDbId).toBe('kb-1');
+  });
+
+  it('throws BadRequestException when no file is provided', async () => {
+    const service = makeService(buildRepositoryMock());
+    await expect(
+      service.uploadFile(scope, 'kb-1', undefined as unknown as Express.Multer.File),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('throws BadRequestException for disallowed MIME type', async () => {
+    const service = makeService(buildRepositoryMock());
+    const badFile = { ...file, mimetype: 'application/x-executable' } as Express.Multer.File;
+    await expect(service.uploadFile(scope, 'kb-1', badFile)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('allows file exactly at the 50 MB limit', async () => {
+    const repo = buildRepositoryMock();
+    const uploader = buildUploaderMock();
+    const service = makeService(repo, uploader);
+    repo.findByIdInOrg.mockResolvedValue(buildRow());
+    repo.createIngestionJob.mockResolvedValue(buildJobRow());
+
+    const atLimit = { ...file, size: 50 * 1024 * 1024 } as Express.Multer.File;
+    await expect(service.uploadFile(scope, 'kb-1', atLimit)).resolves.toBeDefined();
+  });
+
+  it('throws BadRequestException when file exceeds 50 MB', async () => {
+    const service = makeService(buildRepositoryMock());
+    const over = { ...file, size: 50 * 1024 * 1024 + 1 } as Express.Multer.File;
+    await expect(service.uploadFile(scope, 'kb-1', over)).rejects.toThrow(BadRequestException);
+  });
+
+  it('throws NotFoundException when vectorDb is not in org', async () => {
+    const repo = buildRepositoryMock();
+    repo.findByIdInOrg.mockResolvedValue(null);
+    const service = makeService(repo);
+    await expect(service.uploadFile(scope, 'missing-id', file)).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('propagates S3 put failure and does not create an ingestion job', async () => {
+    const repo = buildRepositoryMock();
+    const uploader = buildUploaderMock();
+    const service = makeService(repo, uploader);
+    repo.findByIdInOrg.mockResolvedValue(buildRow());
+    uploader.put.mockRejectedValue(new Error('S3 unavailable'));
+
+    await expect(service.uploadFile(scope, 'kb-1', file)).rejects.toThrow('S3 unavailable');
+    expect(repo.createIngestionJob).not.toHaveBeenCalled();
+  });
+
+  it('propagates DB failure after S3 put without swallowing the error', async () => {
+    const repo = buildRepositoryMock();
+    const uploader = buildUploaderMock();
+    const service = makeService(repo, uploader);
+    repo.findByIdInOrg.mockResolvedValue(buildRow());
+    repo.createIngestionJob.mockRejectedValue(new Error('DB down'));
+
+    await expect(service.uploadFile(scope, 'kb-1', file)).rejects.toThrow('DB down');
+    expect(uploader.put).toHaveBeenCalledTimes(1);
+    expect(repo.createIngestionJob).toHaveBeenCalledTimes(1);
   });
 });

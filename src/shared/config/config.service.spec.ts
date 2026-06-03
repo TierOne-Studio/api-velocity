@@ -700,6 +700,10 @@ describe('ConfigService', () => {
       const validProjectSourceSecretKey =
         'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=';
 
+    beforeEach(() => {
+      process.env.S3_BUCKET = 'test-bucket';
+    });
+
     it('should not throw when all required env vars are present', () => {
       process.env.AUTH_SECRET = 'secret';
       process.env.DATABASE_URL = 'postgresql://localhost/db';
@@ -737,6 +741,17 @@ describe('ConfigService', () => {
           'Missing required environment variables: PROJECT_SOURCE_SECRET_KEY',
         );
       });
+
+    it('should throw when S3_BUCKET is missing', () => {
+      process.env.AUTH_SECRET = 'secret';
+      process.env.DATABASE_URL = 'postgresql://localhost/db';
+      process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+      delete process.env.S3_BUCKET;
+      const configService = new ConfigService();
+      expect(() => configService.validateEnvironment()).toThrow(
+        'Missing required environment variables: S3_BUCKET',
+      );
+    });
 
     it('should list all missing vars when multiple are absent', () => {
       delete process.env.AUTH_SECRET;
@@ -854,6 +869,40 @@ describe('ConfigService', () => {
       const configService = new ConfigService();
 
       expect(configService.shouldEnforceResendTestRecipients()).toBe(false);
+    });
+  });
+
+  describe('getS3Bucket', () => {
+    it('returns the bucket name when S3_BUCKET is set', () => {
+      process.env.S3_BUCKET = 'my-velocity-bucket';
+      const config = new ConfigService();
+      expect(config.getS3Bucket()).toBe('my-velocity-bucket');
+    });
+
+    it('throws when S3_BUCKET is not set', () => {
+      delete process.env.S3_BUCKET;
+      const config = new ConfigService();
+      expect(() => config.getS3Bucket()).toThrow('S3_BUCKET');
+    });
+
+    it('throws when S3_BUCKET is whitespace-only', () => {
+      process.env.S3_BUCKET = '   ';
+      const config = new ConfigService();
+      expect(() => config.getS3Bucket()).toThrow('S3_BUCKET');
+    });
+  });
+
+  describe('getS3Region', () => {
+    it('returns the region when S3_REGION is set', () => {
+      process.env.S3_REGION = 'eu-west-1';
+      const config = new ConfigService();
+      expect(config.getS3Region()).toBe('eu-west-1');
+    });
+
+    it('defaults to us-east-1 when S3_REGION is not set', () => {
+      delete process.env.S3_REGION;
+      const config = new ConfigService();
+      expect(config.getS3Region()).toBe('us-east-1');
     });
   });
 });

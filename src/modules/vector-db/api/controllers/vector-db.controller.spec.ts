@@ -29,6 +29,9 @@ describe('VectorDbController', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      uploadFile: jest.fn(),
+      listFiles: jest.fn(),
+      deleteFile: jest.fn(),
       findByIdForAttach: jest.fn(),
       findManyByIdsForOrg: jest.fn(),
     } as unknown as jest.Mocked<VectorDbService>;
@@ -100,5 +103,33 @@ describe('VectorDbController', () => {
     await expect(
       controller.update(session, 'kb-1', null as never),
     ).rejects.toThrow('body must be an object');
+  });
+
+  it('upload requires vector-db:upload permission', () => {
+    const handler = (controller as unknown as Record<string, object>)['upload'];
+    const permissions = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      handler,
+    ) as string[];
+    expect(permissions).toContain('vector-db:upload');
+  });
+
+  it('upload delegates to service and returns 201 shape', async () => {
+    const job = {
+      id: 'job-1', vectorDbId: 'kb-1', s3Key: 'k', originalFilename: 'f',
+      fileSizeBytes: '5', contentType: 'text/plain', status: 'pending' as const,
+      createdAt: '', updatedAt: '',
+    };
+    service.uploadFile.mockResolvedValue(job as never);
+
+    const file = { originalname: 'doc.txt', mimetype: 'text/plain', size: 5 } as Express.Multer.File;
+    const result = await controller.upload(session, 'kb-1', file);
+
+    expect(service.uploadFile).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1' }),
+      'kb-1',
+      file,
+    );
+    expect(result).toEqual({ data: job });
   });
 });

@@ -3,6 +3,8 @@ import { DatabaseService } from '../../../../../shared/infrastructure/database/d
 import type { VectorDbRow } from '../../../api/dto/vector-db.dto';
 import type {
   CreateVectorDbRow,
+  CreateIngestionJobRow,
+  IngestionJobRow,
   IVectorDbRepository,
   VectorDbStatus,
   UpdateVectorDbRow,
@@ -164,6 +166,73 @@ export class VectorDbDatabaseRepository
       [id, organizationId],
     );
     return Boolean(result);
+  }
+
+  async createIngestionJob(row: CreateIngestionJobRow): Promise<IngestionJobRow> {
+    const inserted = await this.db.queryOne<IngestionJobRow>(
+      `INSERT INTO vector_db_ingestion_job (
+         vector_db_id, s3_key, original_filename, file_size_bytes, content_type
+       )
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING
+         id, vector_db_id, s3_key, original_filename,
+         file_size_bytes, content_type, status, attempts,
+         locked_until, last_error, created_at, updated_at`,
+      [
+        row.vectorDbId,
+        row.s3Key,
+        row.originalFilename,
+        row.fileSizeBytes,
+        row.contentType,
+      ],
+    );
+    if (!inserted) throw new Error('Failed to create ingestion job');
+    return inserted;
+  }
+
+  async listJobsForVectorDb(vectorDbId: string): Promise<IngestionJobRow[]> {
+    return this.db.query<IngestionJobRow>(
+      `SELECT id, vector_db_id, s3_key, original_filename,
+              file_size_bytes, content_type, status, attempts,
+              locked_until, last_error, created_at, updated_at
+         FROM vector_db_ingestion_job
+        WHERE vector_db_id = $1
+        ORDER BY created_at DESC`,
+      [vectorDbId],
+    );
+  }
+
+  async findIngestionJobById(
+    jobId: string,
+    vectorDbId: string,
+  ): Promise<IngestionJobRow | null> {
+    return this.db.queryOne<IngestionJobRow>(
+      `SELECT id, vector_db_id, s3_key, original_filename,
+              file_size_bytes, content_type, status, attempts,
+              locked_until, last_error, created_at, updated_at
+         FROM vector_db_ingestion_job
+        WHERE id = $1 AND vector_db_id = $2`,
+      [jobId, vectorDbId],
+    );
+  }
+
+  async deleteIngestionJob(jobId: string, vectorDbId: string): Promise<boolean> {
+    const result = await this.db.queryOne<{ id: string }>(
+      `DELETE FROM vector_db_ingestion_job
+        WHERE id = $1 AND vector_db_id = $2
+        RETURNING id`,
+      [jobId, vectorDbId],
+    );
+    return Boolean(result);
+  }
+
+  async decrementDocumentCount(id: string, delta: number): Promise<void> {
+    await this.db.query(
+      `UPDATE org_vector_db
+         SET document_count = GREATEST(document_count - $1, 0)
+         WHERE id = $2 AND deleted_at IS NULL`,
+      [delta, id],
+    );
   }
 
   async countProjectReferences(vectorDbId: string): Promise<number> {

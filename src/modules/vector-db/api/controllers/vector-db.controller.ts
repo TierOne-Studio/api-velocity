@@ -9,8 +9,11 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Session } from '@thallesp/nestjs-better-auth';
 import type { UserSession } from '@thallesp/nestjs-better-auth';
 import { PermissionsGuard, RequirePermissions } from '../../../../shared';
@@ -19,6 +22,7 @@ import {
   getPlatformRole,
 } from '../../../admin/utils/admin.utils';
 import { VectorDbService } from '../../application/services/vector-db.service';
+import { VECTOR_DB_MAX_UPLOAD_SIZE } from '../../vector-db.constants';
 import type {
   CreateKnowledgeBaseInput,
   UpdateKnowledgeBaseInput,
@@ -77,6 +81,48 @@ export class VectorDbController {
     const scope = this.buildScope(session, organizationId);
     const data = await this.service.update(scope, id, input);
     return { data };
+  }
+
+  @Post(':id/upload')
+  @HttpCode(201)
+  @RequirePermissions('vector-db:upload')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: VECTOR_DB_MAX_UPLOAD_SIZE } }),
+  )
+  async upload(
+    @Session() session: UserSession,
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Query('organizationId') organizationId?: string,
+  ) {
+    const scope = this.buildScope(session, organizationId);
+    const data = await this.service.uploadFile(scope, id, file);
+    return { data };
+  }
+
+  @Get(':id/files')
+  @RequirePermissions('vector-db:read')
+  async listFiles(
+    @Session() session: UserSession,
+    @Param('id') id: string,
+    @Query('organizationId') organizationId?: string,
+  ) {
+    const scope = this.buildScope(session, organizationId);
+    const data = await this.service.listFiles(scope, id);
+    return { data };
+  }
+
+  @Delete(':id/files/:jobId')
+  @HttpCode(204)
+  @RequirePermissions('vector-db:upload')
+  async deleteFile(
+    @Session() session: UserSession,
+    @Param('id') id: string,
+    @Param('jobId') jobId: string,
+    @Query('organizationId') organizationId?: string,
+  ): Promise<void> {
+    const scope = this.buildScope(session, organizationId);
+    await this.service.deleteFile(scope, id, jobId);
   }
 
   @Delete(':id')
