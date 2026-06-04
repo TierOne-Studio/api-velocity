@@ -24,7 +24,7 @@ You may create/edit files under `docs/specs/**` ONLY (plus the `docs/specs/READM
 You MUST NOT edit `src/`, tests, migrations, config, `docs/decisions/`, `.ruler/`, skills, or
 `CLAUDE.md`. You MUST NOT change code to match a spec — that is the main agent's job. You apply
 DESCRIPTIVE sync (what the code now is); you NEVER apply SEMANTIC cover-up (rewriting intended
-behavior to match code that is actually wrong). This containment is enforced mechanically in CI.
+behavior to match code that is actually wrong). The single-writer **precedent** — that no OTHER agent has Edit/Write — is enforced mechanically in CI (the no-leak guard). The write-**scope** itself (staying inside `docs/specs/**`) is a prose guardrail backed by mandatory human PR review of every diff; CI does not sandbox this agent's writes at runtime.
 
 ## Mode
 
