@@ -19,6 +19,12 @@ restate rationale. `plan-mode` is ephemeral execution sequencing, persisted *int
 | # | Title | Status | Updated | Feature paths |
 |---|---|---|---|---|
 | [SPEC-000](SPEC-000-specification-first-workflow.md) | Specification-first workflow | Draft | 2026-06-04 | .ruler, docs/specs, scripts |
+| [SPEC-001](SPEC-001-auth-identity.md) | Auth & identity contract (better-auth, approval, permissions) | Implemented | 2026-06-04 | src/auth.ts, guards, admin |
+| [SPEC-002](SPEC-002-admin-rbac.md) | Admin & RBAC contract (users, sessions, orgs, roles, impersonation) | Implemented | 2026-06-04 | src/modules/admin |
+| [SPEC-003](SPEC-003-sql-connections.md) | SQL Connections contract (encryption, SSRF, permission family) | Implemented | 2026-06-04 | src/modules/sql-connections |
+| [SPEC-004](SPEC-004-airweave.md) | Airweave contract (collections, sources, ownership, OAuth session) | Implemented | 2026-06-04 | src/modules/airweave |
+| [SPEC-005](SPEC-005-chat.md) | Chat contract (conversations, SSE agent, read-only data plane) | Implemented | 2026-06-04 | src/modules/chat |
+| [SPEC-006](SPEC-006-projects.md) | Projects contract (CRUD, data-source attachment, org scoping) | Implemented | 2026-06-04 | src/modules/projects |
 
 ## Status lifecycle
 
