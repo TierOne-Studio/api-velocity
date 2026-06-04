@@ -148,12 +148,18 @@ SS_TOOLS=$(tools_for_agent .claude/agents/spec-steward.md)
 assert_true "T15: spec-steward has 'Edit'"     "echo '$SS_TOOLS' | grep -wq Edit"
 assert_true "T15: spec-steward has 'Write'"    "echo '$SS_TOOLS' | grep -wq Write"
 assert_true "T15: spec-steward emits NEEDS-INPUT/SYNCED/UPDATED/BLOCK" "grep -q 'NEEDS-INPUT.*SYNCED.*UPDATED.*BLOCK' .claude/agents/spec-steward.md"
-# No-leak guard: NO OTHER subagent may have gained Edit/Write.
-for a in architect-reviewer qa-validator security-reviewer; do
-  AT=$(tools_for_agent ".claude/agents/$a.md")
+# No-leak guard: NO OTHER subagent may have gained Edit/Write. Derived from disk so it
+# self-maintains — covers code-reviewer, lessons-curator, acceptance-verifier, and any future agent.
+for af in .claude/agents/*.md; do
+  a=$(basename "$af" .md)
+  [ "$a" = "spec-steward" ] && continue
+  AT=$(tools_for_agent "$af")
   assert_true "T15: $a NO 'Edit'"  "! echo '$AT' | grep -wq Edit"
   assert_true "T15: $a NO 'Write'" "! echo '$AT' | grep -wq Write"
 done
+# Spec-gate + spec-lint bash suites must EXECUTE green here (not merely exist).
+assert_true "T15: spec-gate bash suite passes"  "bash scripts/__tests__/spec-gate.test.sh"
+assert_true "T15: spec-lints bash suite passes" "bash scripts/__tests__/spec-lints.test.sh"
 
 echo
 echo "=== T16: settings.json validity ==="

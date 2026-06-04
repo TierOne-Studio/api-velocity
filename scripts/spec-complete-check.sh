@@ -39,7 +39,8 @@ for f in "${files[@]}"; do
   done
 
   for s in "${REQ_SECTIONS[@]}"; do
-    grep -qF "$s" "$f" || errs+=("missing section: $s")
+    # Anchor at line start so a prose/inline mention of "## 10." doesn't satisfy the header check.
+    grep -qE "^$(printf '%s' "$s" | sed 's/[.]/\\./g')" "$f" || errs+=("missing section: $s")
   done
 
   if [[ ${#errs[@]} -gt 0 ]]; then

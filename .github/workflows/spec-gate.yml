@@ -26,6 +26,11 @@ jobs:
           $(git log "$BASE...HEAD" --format=%B)"
           SPEC_GATE_BASE="$BASE" SPEC_GATE_MSG="$MSG" bash scripts/spec-gate.sh
 
+      - name: Spec tooling self-test (gate + lints vs fixtures)
+        run: |
+          bash scripts/__tests__/spec-gate.test.sh
+          bash scripts/__tests__/spec-lints.test.sh
+
       - name: Spec completeness lint
         run: bash scripts/spec-complete-check.sh
 

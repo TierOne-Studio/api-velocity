@@ -152,7 +152,7 @@ For any **user-facing/API feature OR a bug fix that alters observable API / RBAC
 
 For any **behavioral change** (regardless of file count):
 
-- `spec-steward` — PRE: authors/updates the governing SPEC (clarification gate; architect review for P4-triggering plans); POST: reconciles the SPEC with the shipped diff and applies the sync edits. Write-capable, scoped to `docs/specs/**`. Verdict: **NEEDS-INPUT / SYNCED / UPDATED / BLOCK**; BLOCK binding on "done".
+- `spec-steward` — PRE: authors/updates the governing SPEC (clarification gate; architect review for P4-triggering plans); POST: reconciles the SPEC with the shipped diff and applies the sync edits. Write-capable, scoped to the specs docs only. Verdict: **NEEDS-INPUT / SYNCED / UPDATED / BLOCK**; BLOCK binding on "done".
 
 MUST address every HIGH/CRITICAL issue before declaring done. A BLOCK from any reviewer = work is NOT done.
 
