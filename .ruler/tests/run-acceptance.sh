@@ -60,25 +60,35 @@ for f in CLAUDE.md \
          .claude/agents/code-reviewer.md \
          .claude/agents/architect-reviewer.md \
          .claude/agents/qa-validator.md \
-         .claude/agents/security-reviewer.md; do
+         .claude/agents/security-reviewer.md \
+         .claude/skills/spec-workflow/SKILL.md \
+         .claude/agents/spec-steward.md \
+         docs/specs/README.md \
+         docs/specs/_template.md \
+         docs/specs/SPEC-000-specification-first-workflow.md \
+         docs/decisions/ADR-013-spec-first-documentation-workflow.md \
+         scripts/spec-gate.sh \
+         scripts/spec-complete-check.sh \
+         scripts/spec-links-check.sh \
+         .github/workflows/spec-gate.yml; do
   assert_true "T1: file $f exists" "test -f '$f'"
 done
 assert_true "T1: .claude/hooks/ is removed" "! test -d .claude/hooks"
 assert_true "T1: .claude/.state/ is removed" "! test -d .claude/.state"
 
 echo
-echo "=== T13: CLAUDE.md size <= 3350 words (priority-structured mode — index + P0..P9 + MUST/SHOULD/MAY + inline rubric + P3.5 skill-vs-repo conflict resolution) ==="
+echo "=== T13: CLAUDE.md size <= 3850 words (P0..P9 + inline rubric + P3.5 + P3.0 spec-first; raised from 3350: master was already 3704 pre-existing, + spec-first P3.0/rows) ==="
 WORDS=$(wc -w < CLAUDE.md | tr -d '[:space:]')
-if [ "$WORDS" -le 3350 ]; then
-  echo "PASS: T13 (CLAUDE.md is $WORDS words; gate is 3350 to accommodate inline confidence rubric, high-risk restate, and P3.5 conflict-resolution rule)"; PASS=$((PASS+1))
+if [ "$WORDS" -le 3850 ]; then
+  echo "PASS: T13 (CLAUDE.md is $WORDS words; gate 3850)"; PASS=$((PASS+1))
 else
-  echo "FAIL: T13 (CLAUDE.md is $WORDS words, expected <= 3350)"
+  echo "FAIL: T13 (CLAUDE.md is $WORDS words, expected <= 3850)"
   FAIL=$((FAIL+1)); FAILED_TESTS="$FAILED_TESTS T13"
 fi
 
 echo
 echo "=== T14: Skill descriptions well-formed (12 owned skills) ==="
-OWNED_SKILLS="tdd-workflow design-review plan-mode rlm-explore bug-investigation db-write-protocol git-workflow meta-skill-hygiene failure-mode-analysis repo-conventions decision-rules pushback-templates"
+OWNED_SKILLS="tdd-workflow design-review plan-mode rlm-explore bug-investigation db-write-protocol git-workflow meta-skill-hygiene failure-mode-analysis repo-conventions decision-rules pushback-templates spec-workflow"
 for s in $OWNED_SKILLS; do
   sk=".claude/skills/$s/SKILL.md"
   has_yaml=$(head -1 "$sk")
@@ -132,6 +142,18 @@ assert_true "T15: lessons-curator NO 'Bash'"   "! echo '$LC_TOOLS' | grep -wq Ba
 assert_true "T15: code-reviewer has 'Bash'"    "echo '$CR_TOOLS' | grep -q Bash"
 assert_true "T15: code-reviewer NO 'Edit'"     "! echo '$CR_TOOLS' | grep -wq Edit"
 assert_true "T15: code-reviewer NO 'Write'"    "! echo '$CR_TOOLS' | grep -wq Write"
+
+# spec-steward is the ONLY write-capable subagent (first precedent), scoped to docs/specs/**.
+SS_TOOLS=$(tools_for_agent .claude/agents/spec-steward.md)
+assert_true "T15: spec-steward has 'Edit'"     "echo '$SS_TOOLS' | grep -wq Edit"
+assert_true "T15: spec-steward has 'Write'"    "echo '$SS_TOOLS' | grep -wq Write"
+assert_true "T15: spec-steward emits NEEDS-INPUT/SYNCED/UPDATED/BLOCK" "grep -q 'NEEDS-INPUT.*SYNCED.*UPDATED.*BLOCK' .claude/agents/spec-steward.md"
+# No-leak guard: NO OTHER subagent may have gained Edit/Write.
+for a in architect-reviewer qa-validator security-reviewer; do
+  AT=$(tools_for_agent ".claude/agents/$a.md")
+  assert_true "T15: $a NO 'Edit'"  "! echo '$AT' | grep -wq Edit"
+  assert_true "T15: $a NO 'Write'" "! echo '$AT' | grep -wq Write"
+done
 
 echo
 echo "=== T16: settings.json validity ==="
@@ -334,6 +356,8 @@ assert_true "T42: tdd-workflow refs CLAUDE.md P8.1 for confidence" "grep -q 'CLA
 echo
 echo "=== T43: P3.4 mandatory-skill-invocation matrix forces fire-even-if-not-triggered ==="
 assert_true "T43: P3.4 section header present"                "grep -q 'P3.4 Mandatory skill invocation' CLAUDE.md"
+assert_true "T43: P3.0 specification-first present"           "grep -q 'P3.0 Specification-first' CLAUDE.md"
+assert_true "T43: P3.4 names spec-workflow MUST-fire"        "grep -q '| \`spec-workflow\` |' CLAUDE.md"
 assert_true "T43: tdd-workflow named MUST-fire"               "grep -q '| \`tdd-workflow\` |' CLAUDE.md"
 assert_true "T43: failure-mode-analysis named MUST-fire"      "grep -q '| \`failure-mode-analysis\` |' CLAUDE.md"
 assert_true "T43: repo-conventions named MUST-fire"           "grep -q '| \`repo-conventions\` |' CLAUDE.md"

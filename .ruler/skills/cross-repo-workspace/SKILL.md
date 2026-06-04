@@ -140,6 +140,10 @@ If the gates ever diverge between repos:
 - Verify before doing destructive work in the other repo from this session.
 - Consider re-running the destructive command from a session whose primary cwd is the target repo.
 
+### Rule 8 — Per-repo SPECs, split by layer
+
+Feature/behavioral documentation follows the `spec-workflow` skill and lives **per-repo, split by layer**: api-velocity owns `contract` SPECs (entities/endpoints/DTOs/RBAC/migrations), spa-velocity owns `ui` SPECs (screens/forms/UX), each under its own `docs/specs/`. A cross-cutting change has **one SPEC per layer**, cross-linked via the `counterpart_spec` frontmatter (qualified per Rule 2, e.g. `spa-velocity#SPEC-002`), bound by a Rule 3 coordination doc. Each repo's `spec-gate` enforces its own side, so a single-repo change still moves that repo's SPEC. Never document one layer's behavior in the other repo's SPEC. For a cross-repo change, `architect-reviewer` reviews **both** SPECs + the coordination doc together (no single-side review).
+
 ## Output contract addition
 
 When this skill fires, the response's `Skills consulted:` line MUST include `cross-repo-workspace`. When Rule 1 caused a lens-switch (file in the non-primary repo), the response MUST also state:
@@ -171,6 +175,10 @@ If the diff modifies non-primary-repo files but the response lacks this line, th
 ### ENFORCE-4: Bare ADR-NNN in cross-repo context (any subagent reviewing cross-repo artifacts)
 
 Per Rule 2, cross-repo artifacts (coordination docs, cross-repo PR descriptions, responses that compare both sides) MUST qualify every ADR reference with the repo name (`api-velocity ADR-XXX` or `spa-velocity ADR-XXX`). Any subagent reviewing a cross-repo artifact MUST grep the artifact for bare `ADR-[0-9]+` references not preceded by a repo qualifier. Each bare reference in a cross-repo context is a **MED finding** — Rule 2 violation, recoverable by adding the qualifier.
+
+### ENFORCE-5: Spec cross-link integrity (cross-repo behavioral changes)
+
+Per Rule 8, when a SPEC's `feature_paths` expose a contract consumed cross-repo, its `counterpart_spec` MUST resolve to an existing SPEC in the other repo. The `spec-steward` MUST set/repair the link (DRIFT) or BLOCK when the counterpart is missing for a contract the change clearly depends on. A cross-repo behavioral change whose two SPECs do not reference each other is a **HIGH finding** — the bilateral link is the evidence the two sides were designed together. (The `spec-links-check` lint mechanizes the format/resolution half.)
 
 ## Anti-patterns
 
