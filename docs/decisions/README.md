@@ -47,6 +47,7 @@ This keeps skill files focused on *how* and the ADR file as the canonical *why*.
 | [010](./ADR-010-supersede-app-db-host-guard.md) | Supersede the host+port app-DB guard; rely on the read-only contract | Accepted | 2026-05-19 |
 | [011](./ADR-011-airweave-ownership-via-org-metadata.md) | Airweave collection ownership via `organization.metadata` allowlist | Accepted | 2026-05-23 |
 | [012](./ADR-012-sql-connection-permission-family.md) | SQL connection permission family and backwards-compatible grant inheritance | Accepted | 2026-05-27 |
+| [013](./ADR-013-spec-first-documentation-workflow.md) | Specification-first documentation workflow (contract layer) | Accepted | 2026-06-04 |
 
 ## Adding a new ADR
 

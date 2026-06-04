@@ -75,6 +75,10 @@ For ANY change that adds, modifies, or removes executable code or its observable
 - **TDD applies.** MUST write a failing test first. See `tdd-workflow`.
 - **Design review applies.** MUST invoke `design-review` before declaring complete, even if its description didn't auto-fire. Response MUST contain a `Design review:` marker plus a `Confidence:` line.
 
+### P3.0 Specification-first (before P3.1)
+
+Before any **behavioral** code change (feature, fix, refactor-that-changes-behavior, follow-up), create/update a Markdown SPEC and resolve material ambiguities **with the user** BEFORE code; reconcile after. Follow `spec-workflow`; `spec-steward` writes it. Exempt only via `tdd-workflow` waivers; P3.2 applies.
+
 ### P3.1 Skipping is valid only for non-code changes
 
 Allowed skips: docs, content, JQL, SQL reads, slide decks, plain explanations, config without behavior impact.
@@ -110,6 +114,7 @@ Skills load on description match — that's a heuristic, not a guarantee. For ex
 | `async-error-handling` | Any change adding/modifying async code (`await`, `Promise.*`, external I/O) |
 | `database-transactions` | Any multi-statement DB write (across rows or tables) |
 | `cross-repo-workspace` | Session has access to both api-velocity and spa-velocity (primary cwd is one, the other is in Additional working directories) |
+| `spec-workflow` | Any behavioral change — SPEC created/updated before code (per P3.0) |
 
 If a listed skill genuinely doesn't apply (e.g., `plan-mode` for a single-line typo), state which one and why in the response. Do NOT silently skip.
 
@@ -144,6 +149,10 @@ Additionally, for any change touching **auth, sessions, secrets, encryption, pay
 For any **user-facing/API feature OR a bug fix that alters observable API / RBAC / multi-step behavior** (pure logic/service fixes are exempt — a unit regression test under `qa-validator` suffices):
 
 - `acceptance-verifier` — runs POST-implementation, **after `qa-validator` returns green** (never instead). Executes the live suite, maps each stated acceptance criterion to an EXECUTED assertion, and adversarially checks non-vacuity (would the green test fail if the feature were reverted?) + surface-fidelity (does it test the surface the spec named?). Verdict: **ACCEPTED / GAPS / BLOCK**. Its BLOCK is **binding on "done"** — see P8 Definition of Done.
+
+For any **behavioral change** (regardless of file count):
+
+- `spec-steward` — PRE: authors/updates the governing SPEC (clarification gate; architect review for P4-triggering plans); POST: reconciles the SPEC with the shipped diff and applies the sync edits. Write-capable, scoped to the specs docs only. Verdict: **NEEDS-INPUT / SYNCED / UPDATED / BLOCK**; BLOCK binding on "done".
 
 MUST address every HIGH/CRITICAL issue before declaring done. A BLOCK from any reviewer = work is NOT done.
 
@@ -242,6 +251,7 @@ A change is not "done" — MUST NOT declare it finished, ask the user to test, o
 - **For a user-facing/API feature:** the main agent MUST have authored AND run (a) unit/integration tests AND (b) e2e/acceptance coverage at the appropriate layer — API e2e (supertest) or integration vs **real Postgres** for data/RBAC/migration-bound criteria — and `acceptance-verifier` MUST have returned non-`BLOCK`. The user's manual testing is then optional, not required.
 - **For a bug fix:** a unit/integration regression test (authored + run) always; e2e only when the fix changes an observable API/RBAC/multi-step behavior (then `acceptance-verifier` fires).
 - A feature with **no stated acceptance criteria** is itself incomplete — write the criteria (in the plan's verification section) before claiming done; "nothing to verify against" is a BLOCK for a user-facing/API feature.
+- **Behavioral change:** its SPEC was created/updated, passed the readiness rubric, and `spec-steward` returned non-`BLOCK` (per P3.0).
 
 ### P8.1 Confidence rubric (the 0.9 gate)
 
