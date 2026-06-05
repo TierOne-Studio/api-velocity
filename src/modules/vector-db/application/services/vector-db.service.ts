@@ -28,6 +28,7 @@ import {
   VECTOR_DB_ALLOWED_MIME_TYPES,
   VECTOR_DB_MAX_UPLOAD_SIZE,
 } from '../../vector-db.constants';
+import { VectorDbIngestionService } from './vector-db-ingestion.service';
 import type { PlatformRole } from '../../../admin/utils/admin.utils';
 
 type CallerScope = {
@@ -46,6 +47,7 @@ export class VectorDbService {
     private readonly repository: IVectorDbRepository,
     @Inject(VECTOR_DB_FILE_UPLOADER)
     private readonly fileUploader: IVectorDbFileUploader,
+    private readonly ingestion: VectorDbIngestionService,
   ) {}
 
   async list(scope: CallerScope): Promise<VectorDb[]> {
@@ -180,6 +182,10 @@ export class VectorDbService {
       contentType: file.mimetype,
     });
     await this.repository.incrementDocumentCount(id, 1);
+
+    // Best-effort enqueue; if it is lost, the ingestion startup reconcile sweep
+    // re-enqueues the pending job row (ADR-014 §4 — the row is the SoT).
+    await this.ingestion.enqueue(jobRow.id, id);
 
     this.logger.log('File upload queued', {
       jobId: jobRow.id,

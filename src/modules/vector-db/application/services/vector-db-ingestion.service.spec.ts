@@ -1,0 +1,265 @@
+import { jest } from '@jest/globals';
+import {
+  VectorDbIngestionService,
+  MAX_INGESTION_ATTEMPTS,
+  type IngestionJobPayload,
+} from './vector-db-ingestion.service';
+import { deterministicPointId } from '../../domain/point-id';
+import { chunkText } from '../../infrastructure/textsplitter/chunker';
+
+const PAYLOAD: IngestionJobPayload = { jobId: 'job-1', vectorDbId: 'kb-1' };
+const S3_KEY = 'vector-dbs/org-1/kb-1/abc';
+const REF = 'vdb_abc';
+
+function jobRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'job-1',
+    vector_db_id: 'kb-1',
+    s3_key: S3_KEY,
+    original_filename: 'doc.txt',
+    file_size_bytes: '11',
+    content_type: 'text/plain',
+    status: 'pending',
+    attempts: 0,
+    locked_until: null,
+    last_error: null,
+    created_at: 'now',
+    updated_at: 'now',
+    ...overrides,
+  };
+}
+
+function vdbRow(overrides: Record<string, unknown> = {}) {
+  return { id: 'kb-1', vector_store_ref: REF, status: 'empty', ...overrides };
+}
+
+function buildMocks() {
+  const repository = {
+    findIngestionJobById: jest.fn<(...a: unknown[]) => Promise<unknown>>(),
+    findById: jest.fn<(...a: unknown[]) => Promise<unknown>>(),
+    setJobStatus: jest
+      .fn<(...a: unknown[]) => Promise<void>>()
+      .mockResolvedValue(undefined),
+    updateStatus: jest
+      .fn<(...a: unknown[]) => Promise<void>>()
+      .mockResolvedValue(undefined),
+    incrementJobAttempts: jest
+      .fn<(...a: unknown[]) => Promise<void>>()
+      .mockResolvedValue(undefined),
+    setVectorDbReadyIfIdle: jest
+      .fn<(...a: unknown[]) => Promise<void>>()
+      .mockResolvedValue(undefined),
+  };
+  const vectorStore = {
+    ensureCollection: jest
+      .fn<(...a: unknown[]) => Promise<void>>()
+      .mockResolvedValue(undefined),
+    upsert: jest.fn<(...a: unknown[]) => Promise<void>>().mockResolvedValue(undefined),
+  };
+  const embedder = {
+    embed: jest.fn<(...a: unknown[]) => Promise<number[][]>>(),
+    dimensions: jest.fn(() => 1536),
+  };
+  const files = {
+    get: jest.fn<
+      (...a: unknown[]) => Promise<{ body: Buffer; contentType: string }>
+    >(),
+  };
+  // Delegate to the real splitter so chunk-count expectations are realistic.
+  const chunker = {
+    chunk: jest.fn((text: string) => chunkText(text)),
+  };
+  const queue = {
+    start: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    stop: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    ensureQueue: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    work: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    send: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+  };
+  const service = new VectorDbIngestionService(
+    queue as never,
+    repository as never,
+    vectorStore as never,
+    embedder as never,
+    files as never,
+    chunker as never,
+  );
+  return { service, repository, vectorStore, embedder, files, chunker, queue };
+}
+
+describe('VectorDbIngestionService.ingest', () => {
+  it('embeds and upserts chunks with deterministic ids, then marks the job done', async () => {
+    const m = buildMocks();
+    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
+    m.repository.findById.mockResolvedValue(vdbRow());
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('a short document'),
+      contentType: 'text/plain',
+    });
+    m.embedder.embed.mockResolvedValue([[0.1, 0.2]]);
+
+    await m.service.ingest(PAYLOAD);
+
+    expect(m.vectorStore.ensureCollection).toHaveBeenCalledWith(REF, 1536);
+    expect(m.vectorStore.upsert).toHaveBeenCalledWith(REF, [
+      expect.objectContaining({ id: deterministicPointId('kb-1', S3_KEY, 0) }),
+    ]);
+    expect(m.repository.setJobStatus).toHaveBeenCalledWith('job-1', 'done', null);
+    expect(m.repository.setVectorDbReadyIfIdle).toHaveBeenCalledWith('kb-1');
+  });
+
+  it('marks the KB processing before reading the file', async () => {
+    const m = buildMocks();
+    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
+    m.repository.findById.mockResolvedValue(vdbRow());
+    m.files.get.mockResolvedValue({ body: Buffer.from('hi'), contentType: 'text/plain' });
+    m.embedder.embed.mockResolvedValue([[0.1]]);
+
+    await m.service.ingest(PAYLOAD);
+
+    expect(m.repository.updateStatus).toHaveBeenCalledWith('kb-1', 'processing', null);
+  });
+
+  it('handles an empty file as a valid ingest: no embed/upsert, job done', async () => {
+    const m = buildMocks();
+    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
+    m.repository.findById.mockResolvedValue(vdbRow());
+    m.files.get.mockResolvedValue({ body: Buffer.from('   '), contentType: 'text/plain' });
+
+    await m.service.ingest(PAYLOAD);
+
+    expect(m.embedder.embed).not.toHaveBeenCalled();
+    expect(m.vectorStore.upsert).not.toHaveBeenCalled();
+    expect(m.repository.setJobStatus).toHaveBeenCalledWith('job-1', 'done', null);
+    expect(m.repository.setVectorDbReadyIfIdle).toHaveBeenCalledWith('kb-1');
+  });
+
+  it('is idempotent: an already-done job is skipped without re-processing', async () => {
+    const m = buildMocks();
+    m.repository.findIngestionJobById.mockResolvedValue(jobRow({ status: 'done' }));
+
+    await m.service.ingest(PAYLOAD);
+
+    expect(m.repository.findById).not.toHaveBeenCalled();
+    expect(m.vectorStore.upsert).not.toHaveBeenCalled();
+    expect(m.repository.setJobStatus).not.toHaveBeenCalled();
+  });
+
+  it('skips silently when the job row no longer exists', async () => {
+    const m = buildMocks();
+    m.repository.findIngestionJobById.mockResolvedValue(null);
+
+    await m.service.ingest(PAYLOAD);
+
+    expect(m.repository.setJobStatus).not.toHaveBeenCalled();
+    expect(m.vectorStore.upsert).not.toHaveBeenCalled();
+  });
+
+  it('fails the job when its vector db no longer exists', async () => {
+    const m = buildMocks();
+    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
+    m.repository.findById.mockResolvedValue(null);
+
+    await m.service.ingest(PAYLOAD);
+
+    expect(m.repository.setJobStatus).toHaveBeenCalledWith(
+      'job-1',
+      'failed',
+      'vector db not found',
+    );
+    expect(m.vectorStore.upsert).not.toHaveBeenCalled();
+  });
+
+  it('re-upserting the same job produces the same point ids (idempotent retry)', async () => {
+    const m = buildMocks();
+    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
+    m.repository.findById.mockResolvedValue(vdbRow());
+    m.files.get.mockResolvedValue({ body: Buffer.from('hello world'), contentType: 'text/plain' });
+    m.embedder.embed.mockResolvedValue([[0.1]]);
+
+    await m.service.ingest(PAYLOAD);
+    await m.service.ingest(PAYLOAD);
+
+    const firstIds = (m.vectorStore.upsert.mock.calls[0][1] as { id: string }[]).map((p) => p.id);
+    const secondIds = (m.vectorStore.upsert.mock.calls[1][1] as { id: string }[]).map((p) => p.id);
+    expect(secondIds).toEqual(firstIds);
+  });
+
+  describe('failure handling', () => {
+    it('on a non-terminal failure: increments attempts, resets to pending, and rethrows', async () => {
+      const m = buildMocks();
+      m.repository.findIngestionJobById.mockResolvedValue(jobRow({ attempts: 0 }));
+      m.repository.findById.mockResolvedValue(vdbRow());
+      m.files.get.mockResolvedValue({ body: Buffer.from('hi'), contentType: 'text/plain' });
+      m.embedder.embed.mockRejectedValue(new Error('openai 429'));
+
+      await expect(m.service.ingest(PAYLOAD)).rejects.toThrow('openai 429');
+
+      expect(m.repository.incrementJobAttempts).toHaveBeenCalledWith('job-1');
+      expect(m.repository.setJobStatus).toHaveBeenCalledWith('job-1', 'pending', 'openai 429');
+      expect(m.repository.updateStatus).not.toHaveBeenCalledWith(
+        'kb-1',
+        'error',
+        expect.anything(),
+      );
+    });
+
+    it('on the final attempt: marks the job failed + KB error, and does NOT rethrow', async () => {
+      const m = buildMocks();
+      m.repository.findIngestionJobById.mockResolvedValue(
+        jobRow({ attempts: MAX_INGESTION_ATTEMPTS - 1 }),
+      );
+      m.repository.findById.mockResolvedValue(vdbRow());
+      m.files.get.mockResolvedValue({ body: Buffer.from('hi'), contentType: 'text/plain' });
+      m.embedder.embed.mockRejectedValue(new Error('openai down'));
+
+      await expect(m.service.ingest(PAYLOAD)).resolves.toBeUndefined();
+
+      expect(m.repository.setJobStatus).toHaveBeenCalledWith('job-1', 'failed', 'openai down');
+      expect(m.repository.updateStatus).toHaveBeenCalledWith('kb-1', 'error', {
+        message: 'openai down',
+      });
+    });
+  });
+});
+
+describe('VectorDbIngestionService lifecycle', () => {
+  it('gracefully stops the queue on module destroy', async () => {
+    const m = buildMocks();
+    await m.service.onModuleDestroy();
+    expect(m.queue.stop).toHaveBeenCalledWith(true);
+  });
+
+  it('enqueues with a retry budget coupled to MAX_INGESTION_ATTEMPTS', async () => {
+    const m = buildMocks();
+    await m.service.enqueue('job-1', 'kb-1');
+    expect(m.queue.send).toHaveBeenCalledWith(
+      'vector-db-ingestion',
+      { jobId: 'job-1', vectorDbId: 'kb-1' },
+      { retryLimit: MAX_INGESTION_ATTEMPTS, retryBackoff: true },
+    );
+  });
+});
+
+describe('VectorDbIngestionService.reconcile', () => {
+  it('re-enqueues every reclaimable job', async () => {
+    const m = buildMocks();
+    const repo = m.repository as unknown as {
+      findReclaimableJobs: jest.Mock;
+    };
+    repo.findReclaimableJobs = jest
+      .fn<(...a: unknown[]) => Promise<unknown[]>>()
+      .mockResolvedValue([
+        { id: 'j1', vector_db_id: 'kb-1' },
+        { id: 'j2', vector_db_id: 'kb-2' },
+      ]);
+    const enqueue = jest
+      .spyOn(m.service, 'enqueue')
+      .mockResolvedValue(undefined);
+
+    await m.service.reconcile();
+
+    expect(enqueue).toHaveBeenCalledWith('j1', 'kb-1');
+    expect(enqueue).toHaveBeenCalledWith('j2', 'kb-2');
+  });
+});

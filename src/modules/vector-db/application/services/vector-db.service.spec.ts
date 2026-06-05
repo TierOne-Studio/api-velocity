@@ -50,14 +50,22 @@ function buildUploaderMock() {
   return {
     put: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    get: jest.fn(),
+  };
+}
+
+function buildIngestionMock() {
+  return {
+    enqueue: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
   };
 }
 
 function makeService(
   repo: jest.Mocked<IVectorDbRepository>,
   uploader = buildUploaderMock(),
+  ingestion = buildIngestionMock(),
 ) {
-  return new VectorDbService(repo, uploader as never);
+  return new VectorDbService(repo, uploader as never, ingestion as never);
 }
 
 function buildJobRow() {
@@ -352,6 +360,18 @@ describe('VectorDbService.uploadFile', () => {
     );
     expect(result.status).toBe('pending');
     expect(result.vectorDbId).toBe('kb-1');
+  });
+
+  it('enqueues the ingestion job after creating the job row', async () => {
+    const repo = buildRepositoryMock();
+    const ingestion = buildIngestionMock();
+    const service = makeService(repo, buildUploaderMock(), ingestion);
+    repo.findByIdInOrg.mockResolvedValue(buildRow());
+    repo.createIngestionJob.mockResolvedValue(buildJobRow());
+
+    await service.uploadFile(scope, 'kb-1', file);
+
+    expect(ingestion.enqueue).toHaveBeenCalledWith('job-1', 'kb-1');
   });
 
   it('throws BadRequestException when no file is provided', async () => {

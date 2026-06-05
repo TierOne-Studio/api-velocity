@@ -81,6 +81,34 @@ export class ConfigService {
     return process.env.S3_REGION?.trim() || 'us-east-1';
   }
 
+  getQdrantUrl(): string {
+    const url = process.env.QDRANT_URL?.trim();
+    if (!url) {
+      throw new Error('QDRANT_URL environment variable is required');
+    }
+    return url;
+  }
+
+  getQdrantApiKey(): string {
+    const key = process.env.QDRANT_API_KEY?.trim();
+    if (!key) {
+      throw new Error('QDRANT_API_KEY environment variable is required');
+    }
+    return key;
+  }
+
+  getEmbeddingModel(): string {
+    return process.env.EMBEDDING_MODEL?.trim() || 'text-embedding-3-small';
+  }
+
+  getEmbeddingBatchSize(): number {
+    return this.boundedInt('EMBEDDING_BATCH_SIZE', 96, { min: 1, max: 2048 });
+  }
+
+  getEmbeddingConcurrency(): number {
+    return this.boundedInt('EMBEDDING_CONCURRENCY', 3, { min: 1, max: 20 });
+  }
+
   getAirweaveApiKey(): string | null {
     return process.env.AIRWEAVE_API_KEY?.trim() || null;
   }
@@ -290,6 +318,8 @@ export class ConfigService {
       'DATABASE_URL',
       'PROJECT_SOURCE_SECRET_KEY',
       'S3_BUCKET',
+      'QDRANT_URL',
+      'QDRANT_API_KEY',
     ];
     const missing = required.filter((key) => !process.env[key]);
 

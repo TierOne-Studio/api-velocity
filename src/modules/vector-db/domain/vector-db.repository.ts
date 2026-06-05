@@ -74,4 +74,26 @@ export interface IVectorDbRepository {
   findIngestionJobById(jobId: string, vectorDbId: string): Promise<IngestionJobRow | null>;
   deleteIngestionJob(jobId: string, vectorDbId: string): Promise<boolean>;
   decrementDocumentCount(id: string, delta: number): Promise<void>;
+
+  // Slice 4 — ingestion pipeline (ADR-014).
+  /** Set the ingestion job's status + last_error (the UI source of truth). */
+  setJobStatus(
+    jobId: string,
+    status: IngestionJobStatus,
+    lastError: string | null,
+  ): Promise<void>;
+  /** Increment the job's attempt counter (drives the MAX_ATTEMPTS decision). */
+  incrementJobAttempts(jobId: string): Promise<void>;
+  /**
+   * Promote the KB to `ready` only when no other active (pending/processing)
+   * job remains for it — concurrency-safe under multi-file ingest (ADR-014 §7).
+   * No-op otherwise.
+   */
+  setVectorDbReadyIfIdle(vectorDbId: string): Promise<void>;
+  /**
+   * Jobs the startup reconcile sweep should re-enqueue: every `pending` job
+   * (lost-enqueue recovery) and every `processing` job whose `updated_at`
+   * predates `stuckBefore` (crash recovery) — ADR-014 §4.
+   */
+  findReclaimableJobs(stuckBefore: Date): Promise<IngestionJobRow[]>;
 }

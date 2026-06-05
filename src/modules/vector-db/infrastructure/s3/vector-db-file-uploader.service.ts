@@ -3,8 +3,10 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { ConfigService } from '../../../../shared/config/config.service';
+import type { VectorDbFileObject } from '../../domain/vector-db-file-uploader.port';
 
 @Injectable()
 export class VectorDbFileUploaderService {
@@ -42,5 +44,22 @@ export class VectorDbFileUploaderService {
         Key: s3Key,
       }),
     );
+  }
+
+  async get(s3Key: string): Promise<VectorDbFileObject> {
+    const response = await this.client.send(
+      new GetObjectCommand({
+        Bucket: this.config.getS3Bucket(),
+        Key: s3Key,
+      }),
+    );
+    if (!response.Body) {
+      throw new Error(`S3 object ${s3Key} has no body`);
+    }
+    const bytes = await response.Body.transformToByteArray();
+    return {
+      body: Buffer.from(bytes),
+      contentType: response.ContentType ?? 'application/octet-stream',
+    };
   }
 }

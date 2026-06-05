@@ -1,14 +1,37 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DatabaseService } from '../../../../../shared/infrastructure/database/database.module';
 import type { VectorDbRow } from '../../../api/dto/vector-db.dto';
 import type {
   CreateVectorDbRow,
   CreateIngestionJobRow,
   IngestionJobRow,
+  IngestionJobStatus,
   IVectorDbRepository,
   VectorDbStatus,
   UpdateVectorDbRow,
 } from '../../../domain/vector-db.repository';
+
+// Source states from which each target status is reachable — the inverse of the
+// ADR-013 Decision 10 transition table, with the same state included so an
+// idempotent re-write (the reconcile sweep may re-run an in-flight job) is a
+// legal no-op. Used as an atomic guard in the UPDATE's WHERE clause so the
+// transition check and the write commit together (no read-then-write race).
+const STATUS_REACHABLE_FROM: Record<VectorDbStatus, VectorDbStatus[]> = {
+  empty: ['empty', 'ready'],
+  processing: ['processing', 'empty', 'ready', 'error'],
+  ready: ['ready', 'processing'],
+  error: ['error', 'processing'],
+};
+
+const INGESTION_JOB_COLUMNS = `
+  id, vector_db_id, s3_key, original_filename,
+  file_size_bytes, content_type, status, attempts,
+  locked_until, last_error, created_at, updated_at
+`;
 
 const SELECT_COLUMNS = `
   id, organization_id, name, description,
@@ -87,11 +110,42 @@ export class VectorDbDatabaseRepository
     status: VectorDbStatus,
     statusError: { message: string } | null,
   ): Promise<void> {
+    // Atomic guarded transition: the WHERE clause enforces the legal source
+    // states so the check and the write commit together (no read-then-write
+    // race under concurrent workers). processing_started_at is stamped on
+    // entry to processing — feeds the stuck-job reconcile sweep (ADR-014 §4).
+    const updated = await this.db.queryOne<{ id: string }>(
+      `UPDATE org_vector_db
+         SET status = $1,
+             status_error = $2,
+             processing_started_at = CASE WHEN $1 = 'processing'
+               THEN now() ELSE processing_started_at END
+         WHERE id = $3 AND deleted_at IS NULL AND status = ANY($4)
+         RETURNING id`,
+      [status, statusError, id, STATUS_REACHABLE_FROM[status]],
+    );
+    if (updated) return;
+
+    // No row changed: distinguish "not found" from "illegal transition".
+    const current = await this.findById(id);
+    if (!current) throw new NotFoundException('Vector database not found');
+    throw new ConflictException(
+      `Illegal vector-db status transition: ${current.status} -> ${status}`,
+    );
+  }
+
+  async setVectorDbReadyIfIdle(vectorDbId: string): Promise<void> {
+    // Concurrency-safe ready: only from processing, and only when no sibling
+    // job is still active (ADR-014 §7). No-op otherwise (no throw).
     await this.db.query(
       `UPDATE org_vector_db
-         SET status = $1, status_error = $2
-         WHERE id = $3 AND deleted_at IS NULL`,
-      [status, statusError, id],
+         SET status = 'ready', last_ingested_at = now()
+         WHERE id = $1 AND deleted_at IS NULL AND status = 'processing'
+           AND NOT EXISTS (
+             SELECT 1 FROM vector_db_ingestion_job
+              WHERE vector_db_id = $1 AND status IN ('pending', 'processing')
+           )`,
+      [vectorDbId],
     );
   }
 
@@ -104,6 +158,10 @@ export class VectorDbDatabaseRepository
     );
   }
 
+  // NOT org-scoped by design: callers MUST pass a vectorDbId already authorized
+  // for the org (e.g. via findByIdInOrg on a request path, or the org-bound job
+  // row in the background worker). Do NOT call this directly from an HTTP path
+  // with a user-supplied id — use findByIdInOrg for org-scoped access.
   async findById(id: string): Promise<VectorDbRow | null> {
     return this.db.queryOne<VectorDbRow>(
       `SELECT ${SELECT_COLUMNS} FROM org_vector_db
@@ -224,6 +282,38 @@ export class VectorDbDatabaseRepository
       [jobId, vectorDbId],
     );
     return Boolean(result);
+  }
+
+  async setJobStatus(
+    jobId: string,
+    status: IngestionJobStatus,
+    lastError: string | null,
+  ): Promise<void> {
+    await this.db.query(
+      `UPDATE vector_db_ingestion_job
+         SET status = $1, last_error = $2, updated_at = now()
+         WHERE id = $3`,
+      [status, lastError, jobId],
+    );
+  }
+
+  async incrementJobAttempts(jobId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE vector_db_ingestion_job
+         SET attempts = attempts + 1, updated_at = now()
+         WHERE id = $1`,
+      [jobId],
+    );
+  }
+
+  async findReclaimableJobs(stuckBefore: Date): Promise<IngestionJobRow[]> {
+    return this.db.query<IngestionJobRow>(
+      `SELECT ${INGESTION_JOB_COLUMNS}
+         FROM vector_db_ingestion_job
+        WHERE status = 'pending'
+           OR (status = 'processing' AND updated_at < $1)`,
+      [stuckBefore],
+    );
   }
 
   async decrementDocumentCount(id: string, delta: number): Promise<void> {

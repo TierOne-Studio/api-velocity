@@ -702,6 +702,8 @@ describe('ConfigService', () => {
 
     beforeEach(() => {
       process.env.S3_BUCKET = 'test-bucket';
+      process.env.QDRANT_URL = 'https://qdrant.example.com';
+      process.env.QDRANT_API_KEY = 'qdrant-key';
     });
 
     it('should not throw when all required env vars are present', () => {
@@ -710,6 +712,28 @@ describe('ConfigService', () => {
         process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).not.toThrow();
+    });
+
+    it('should throw when QDRANT_URL is missing', () => {
+      process.env.AUTH_SECRET = 'secret';
+      process.env.DATABASE_URL = 'postgresql://localhost/db';
+      process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+      delete process.env.QDRANT_URL;
+      const configService = new ConfigService();
+      expect(() => configService.validateEnvironment()).toThrow(
+        'Missing required environment variables: QDRANT_URL',
+      );
+    });
+
+    it('should throw when QDRANT_API_KEY is missing', () => {
+      process.env.AUTH_SECRET = 'secret';
+      process.env.DATABASE_URL = 'postgresql://localhost/db';
+      process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+      delete process.env.QDRANT_API_KEY;
+      const configService = new ConfigService();
+      expect(() => configService.validateEnvironment()).toThrow(
+        'Missing required environment variables: QDRANT_API_KEY',
+      );
     });
 
     it('should throw when AUTH_SECRET is missing', () => {
@@ -903,6 +927,94 @@ describe('ConfigService', () => {
       delete process.env.S3_REGION;
       const config = new ConfigService();
       expect(config.getS3Region()).toBe('us-east-1');
+    });
+  });
+
+  describe('getQdrantUrl', () => {
+    it('returns the URL when QDRANT_URL is set', () => {
+      process.env.QDRANT_URL = 'https://abc.qdrant.io:6333';
+      const config = new ConfigService();
+      expect(config.getQdrantUrl()).toBe('https://abc.qdrant.io:6333');
+    });
+
+    it('throws when QDRANT_URL is not set', () => {
+      delete process.env.QDRANT_URL;
+      const config = new ConfigService();
+      expect(() => config.getQdrantUrl()).toThrow('QDRANT_URL');
+    });
+
+    it('throws when QDRANT_URL is whitespace-only', () => {
+      process.env.QDRANT_URL = '   ';
+      const config = new ConfigService();
+      expect(() => config.getQdrantUrl()).toThrow('QDRANT_URL');
+    });
+  });
+
+  describe('getQdrantApiKey', () => {
+    it('returns the key when QDRANT_API_KEY is set', () => {
+      process.env.QDRANT_API_KEY = 'secret-key';
+      const config = new ConfigService();
+      expect(config.getQdrantApiKey()).toBe('secret-key');
+    });
+
+    it('throws when QDRANT_API_KEY is not set', () => {
+      delete process.env.QDRANT_API_KEY;
+      const config = new ConfigService();
+      expect(() => config.getQdrantApiKey()).toThrow('QDRANT_API_KEY');
+    });
+  });
+
+  describe('getEmbeddingModel', () => {
+    it('returns the model when EMBEDDING_MODEL is set', () => {
+      process.env.EMBEDDING_MODEL = 'text-embedding-3-large';
+      const config = new ConfigService();
+      expect(config.getEmbeddingModel()).toBe('text-embedding-3-large');
+    });
+
+    it('defaults to text-embedding-3-small when unset', () => {
+      delete process.env.EMBEDDING_MODEL;
+      const config = new ConfigService();
+      expect(config.getEmbeddingModel()).toBe('text-embedding-3-small');
+    });
+  });
+
+  describe('getEmbeddingBatchSize', () => {
+    it('returns the configured batch size within bounds', () => {
+      process.env.EMBEDDING_BATCH_SIZE = '128';
+      const config = new ConfigService();
+      expect(config.getEmbeddingBatchSize()).toBe(128);
+    });
+
+    it('defaults to 96 when unset', () => {
+      delete process.env.EMBEDDING_BATCH_SIZE;
+      const config = new ConfigService();
+      expect(config.getEmbeddingBatchSize()).toBe(96);
+    });
+
+    it('falls back to default when out of bounds', () => {
+      process.env.EMBEDDING_BATCH_SIZE = '99999';
+      const config = new ConfigService();
+      expect(config.getEmbeddingBatchSize()).toBe(96);
+    });
+  });
+
+  describe('getEmbeddingConcurrency', () => {
+    it('returns the configured concurrency within bounds', () => {
+      process.env.EMBEDDING_CONCURRENCY = '5';
+      const config = new ConfigService();
+      expect(config.getEmbeddingConcurrency()).toBe(5);
+    });
+
+    it('defaults to 3 when unset', () => {
+      delete process.env.EMBEDDING_CONCURRENCY;
+      const config = new ConfigService();
+      expect(config.getEmbeddingConcurrency()).toBe(3);
+    });
+
+    it('falls back to default when below minimum', () => {
+      process.env.EMBEDDING_CONCURRENCY = '0';
+      const config = new ConfigService();
+      expect(config.getEmbeddingConcurrency()).toBe(3);
     });
   });
 });
