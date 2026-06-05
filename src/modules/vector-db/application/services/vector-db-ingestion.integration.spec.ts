@@ -11,6 +11,9 @@
 
 import { Pool } from 'pg';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { QdrantClient } from '@qdrant/js-client-rest';
 import { ConfigService } from '../../../../shared/config/config.service';
 import { VectorDbDatabaseRepository } from '../../infrastructure/persistence/repositories/vector-db.database-repository';
@@ -19,6 +22,7 @@ import { OpenAiEmbedderAdapter } from '../../infrastructure/openai/openai-embedd
 import { VectorDbFileUploaderService } from '../../infrastructure/s3/vector-db-file-uploader.service';
 import { PgBossIngestionQueueAdapter } from '../../infrastructure/queue/pg-boss-ingestion-queue.adapter';
 import { RecursiveTextChunker } from '../../infrastructure/textsplitter/recursive-text-chunker.adapter';
+import { DocumentExtractorAdapter } from '../../infrastructure/extractor/document-extractor.adapter';
 import { VectorDbService } from './vector-db.service';
 import {
   VectorDbIngestionService,
@@ -93,6 +97,7 @@ describeIfLive('Vector DB ingestion pipeline (live integration)', () => {
       new OpenAiEmbedderAdapter(config),
       files,
       new RecursiveTextChunker(),
+      new DocumentExtractorAdapter(),
     );
     vectorDbService = new VectorDbService(repository, files, service);
     await queue.start();
@@ -128,7 +133,10 @@ describeIfLive('Vector DB ingestion pipeline (live integration)', () => {
   afterEach(async () => {
     await raw.deleteCollection(ref).catch(() => undefined);
     await files.delete(s3Key).catch(() => undefined);
-    await pool.query(`DELETE FROM vector_db_ingestion_job WHERE vector_db_id = $1`, [vdbId]);
+    await pool.query(
+      `DELETE FROM vector_db_ingestion_job WHERE vector_db_id = $1`,
+      [vdbId],
+    );
     await pool.query(`DELETE FROM org_vector_db WHERE id = $1`, [vdbId]);
     await pool.query(`DELETE FROM organization WHERE id = $1`, [orgId]);
   }, 30_000);
@@ -141,6 +149,28 @@ describeIfLive('Vector DB ingestion pipeline (live integration)', () => {
       originalFilename: 'doc.txt',
       fileSizeBytes: Buffer.byteLength(text),
       contentType: 'text/plain',
+    });
+    return job.id;
+  }
+
+  async function seedBinaryFixtureAndJob(
+    fixtureName: string,
+    contentType: string,
+  ): Promise<string> {
+    const body = readFileSync(
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        '../../infrastructure/extractor/__fixtures__',
+        fixtureName,
+      ),
+    );
+    await files.put(s3Key, body, contentType, fixtureName);
+    const job = await repository.createIngestionJob({
+      vectorDbId: vdbId,
+      s3Key,
+      originalFilename: fixtureName,
+      fileSizeBytes: body.length,
+      contentType,
     });
     return job.id;
   }
@@ -161,6 +191,45 @@ describeIfLive('Vector DB ingestion pipeline (live integration)', () => {
 
     const job = await repository.findIngestionJobById(jobId, vdbId);
     expect(job?.status).toBe('done');
+  }, 60_000);
+
+  it('ingests a real PDF end-to-end: the EXTRACTED text (not raw bytes) lands as searchable vectors in Qdrant', async () => {
+    // The fixture is FlateDecode-compressed, so the marker is absent from the
+    // raw bytes — it can only reach Qdrant if real PDF extraction ran. Reverting
+    // to `body.toString('utf-8')` would store mojibake and fail the scroll assert.
+    const jobId = await seedBinaryFixtureAndJob(
+      'sample.pdf',
+      'application/pdf',
+    );
+
+    await service.ingest({ jobId, vectorDbId: vdbId } as IngestionJobPayload);
+
+    expect((await repository.findById(vdbId))?.status).toBe('ready');
+    expect((await raw.count(ref, { exact: true })).count).toBeGreaterThan(0);
+
+    const scrolled = await raw.scroll(ref, { with_payload: true, limit: 50 });
+    const chunkTexts = scrolled.points.map(
+      (p) => (p.payload?.text as string) ?? '',
+    );
+    expect(
+      chunkTexts.some((t) => t.includes('Velocity ingestion smoke test')),
+    ).toBe(true);
+
+    expect((await repository.findIngestionJobById(jobId, vdbId))?.status).toBe(
+      'done',
+    );
+  }, 60_000);
+
+  it('fails a scanned/image-only PDF terminally with KB error (does not land "ready" empty)', async () => {
+    const jobId = await seedBinaryFixtureAndJob('empty.pdf', 'application/pdf');
+
+    await service.ingest({ jobId, vectorDbId: vdbId } as IngestionJobPayload);
+
+    expect((await repository.findById(vdbId))?.status).toBe('error');
+    const job = await repository.findIngestionJobById(jobId, vdbId);
+    expect(job?.status).toBe('failed');
+    // Terminal in one attempt — non-retryable, retry budget untouched.
+    expect(job?.attempts).toBe(0);
   }, 60_000);
 
   it('drives document_count through the real upload entry point, then ingests to ready', async () => {
@@ -185,15 +254,20 @@ describeIfLive('Vector DB ingestion pipeline (live integration)', () => {
 
     // Capture the s3 key the service generated so afterEach cleans it up.
     const jobRow = await repository.findIngestionJobById(job.id, vdbId);
-    s3Key = jobRow!.s3_key;
+    s3Key = jobRow.s3_key;
 
-    await service.ingest({ jobId: job.id, vectorDbId: vdbId } as IngestionJobPayload);
+    await service.ingest({
+      jobId: job.id,
+      vectorDbId: vdbId,
+    } as IngestionJobPayload);
     const ready = await repository.findById(vdbId);
     expect(ready?.status).toBe('ready');
   }, 60_000);
 
   it('is idempotent: re-ingesting the same job does not duplicate vectors', async () => {
-    const jobId = await seedFileAndJob('A document about idempotent vector ingestion.');
+    const jobId = await seedFileAndJob(
+      'A document about idempotent vector ingestion.',
+    );
 
     await service.ingest({ jobId, vectorDbId: vdbId } as IngestionJobPayload);
     const first = await raw.count(ref, { exact: true });
@@ -216,7 +290,10 @@ describeIfLive('Vector DB ingestion pipeline (live integration)', () => {
     await repository.incrementJobAttempts(job.id);
     await repository.incrementJobAttempts(job.id); // attempts now 2 (MAX-1)
 
-    await service.ingest({ jobId: job.id, vectorDbId: vdbId } as IngestionJobPayload);
+    await service.ingest({
+      jobId: job.id,
+      vectorDbId: vdbId,
+    } as IngestionJobPayload);
 
     const vdb = await repository.findById(vdbId);
     expect(vdb?.status).toBe('error');
@@ -246,7 +323,9 @@ describeIfLive('Vector DB ingestion pipeline (live integration)', () => {
   // Worker-registering test runs LAST so the shared-queue worker does not
   // consume other tests' fixtures.
   it('crash recovery: reconcile re-enqueues a stale job and a worker completes it', async () => {
-    const jobId = await seedFileAndJob('Crash recovery content processed by reconcile sweep.');
+    const jobId = await seedFileAndJob(
+      'Crash recovery content processed by reconcile sweep.',
+    );
 
     // Simulate a worker that died mid-flight: job stuck in processing, backdated.
     await repository.setJobStatus(jobId, 'processing', null);
@@ -258,7 +337,9 @@ describeIfLive('Vector DB ingestion pipeline (live integration)', () => {
     // Register the real worker on the ingestion queue, then run the boot-time
     // reconcile sweep: it re-enqueues the stale job and the worker finishes it.
     await queue.work<IngestionJobPayload>(VECTOR_DB_INGESTION_QUEUE, (jobs) =>
-      Promise.all(jobs.map((j) => service.ingest(j.data))).then(() => undefined),
+      Promise.all(jobs.map((j) => service.ingest(j.data))).then(
+        () => undefined,
+      ),
     );
     await service.reconcile();
 

@@ -49,6 +49,7 @@ This keeps skill files focused on *how* and the ADR file as the canonical *why*.
 | [012](./ADR-012-sql-connection-permission-family.md) | SQL connection permission family and backwards-compatible grant inheritance | Accepted | 2026-05-27 |
 | [013](./ADR-013-vector-db-persistence-lifecycle.md) | Vector DB module — persistence, provider abstraction, and lifecycle | Accepted | 2026-06-02 |
 | [014](./ADR-014-vector-db-ingestion-queue.md) | Vector DB ingestion — durable queue, idempotent indexing, and crash recovery | Accepted | 2026-06-04 |
+| [015](./ADR-015-document-text-extraction.md) | Document text extraction — PDF/DOCX via a domain port, with non-retryable failure handling | Accepted | 2026-06-04 |
 
 ## Adding a new ADR
 

@@ -6,6 +6,7 @@ import {
 } from './vector-db-ingestion.service';
 import { deterministicPointId } from '../../domain/point-id';
 import { chunkText } from '../../infrastructure/textsplitter/chunker';
+import { NonRetryableIngestionError } from '../../domain/ingestion-errors';
 
 const PAYLOAD: IngestionJobPayload = { jobId: 'job-1', vectorDbId: 'kb-1' };
 const S3_KEY = 'vector-dbs/org-1/kb-1/abc';
@@ -54,7 +55,9 @@ function buildMocks() {
     ensureCollection: jest
       .fn<(...a: unknown[]) => Promise<void>>()
       .mockResolvedValue(undefined),
-    upsert: jest.fn<(...a: unknown[]) => Promise<void>>().mockResolvedValue(undefined),
+    upsert: jest
+      .fn<(...a: unknown[]) => Promise<void>>()
+      .mockResolvedValue(undefined),
   };
   const embedder = {
     embed: jest.fn<(...a: unknown[]) => Promise<number[][]>>(),
@@ -68,6 +71,16 @@ function buildMocks() {
   // Delegate to the real splitter so chunk-count expectations are realistic.
   const chunker = {
     chunk: jest.fn((text: string) => chunkText(text)),
+  };
+  // Default extractor: decode UTF-8, mirroring the real adapter's text path so
+  // the existing text/plain cases behave as before. Overridden per test for
+  // routing / failure cases.
+  const extractor = {
+    extract: jest
+      .fn<(...a: unknown[]) => Promise<string>>()
+      .mockImplementation((body: unknown) =>
+        Promise.resolve((body as Buffer).toString('utf-8')),
+      ),
   };
   const queue = {
     start: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -83,8 +96,18 @@ function buildMocks() {
     embedder as never,
     files as never,
     chunker as never,
+    extractor as never,
   );
-  return { service, repository, vectorStore, embedder, files, chunker, queue };
+  return {
+    service,
+    repository,
+    vectorStore,
+    embedder,
+    files,
+    chunker,
+    extractor,
+    queue,
+  };
 }
 
 describe('VectorDbIngestionService.ingest', () => {
@@ -104,7 +127,11 @@ describe('VectorDbIngestionService.ingest', () => {
     expect(m.vectorStore.upsert).toHaveBeenCalledWith(REF, [
       expect.objectContaining({ id: deterministicPointId('kb-1', S3_KEY, 0) }),
     ]);
-    expect(m.repository.setJobStatus).toHaveBeenCalledWith('job-1', 'done', null);
+    expect(m.repository.setJobStatus).toHaveBeenCalledWith(
+      'job-1',
+      'done',
+      null,
+    );
     expect(m.repository.setVectorDbReadyIfIdle).toHaveBeenCalledWith('kb-1');
   });
 
@@ -112,31 +139,47 @@ describe('VectorDbIngestionService.ingest', () => {
     const m = buildMocks();
     m.repository.findIngestionJobById.mockResolvedValue(jobRow());
     m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({ body: Buffer.from('hi'), contentType: 'text/plain' });
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('hi'),
+      contentType: 'text/plain',
+    });
     m.embedder.embed.mockResolvedValue([[0.1]]);
 
     await m.service.ingest(PAYLOAD);
 
-    expect(m.repository.updateStatus).toHaveBeenCalledWith('kb-1', 'processing', null);
+    expect(m.repository.updateStatus).toHaveBeenCalledWith(
+      'kb-1',
+      'processing',
+      null,
+    );
   });
 
   it('handles an empty file as a valid ingest: no embed/upsert, job done', async () => {
     const m = buildMocks();
     m.repository.findIngestionJobById.mockResolvedValue(jobRow());
     m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({ body: Buffer.from('   '), contentType: 'text/plain' });
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('   '),
+      contentType: 'text/plain',
+    });
 
     await m.service.ingest(PAYLOAD);
 
     expect(m.embedder.embed).not.toHaveBeenCalled();
     expect(m.vectorStore.upsert).not.toHaveBeenCalled();
-    expect(m.repository.setJobStatus).toHaveBeenCalledWith('job-1', 'done', null);
+    expect(m.repository.setJobStatus).toHaveBeenCalledWith(
+      'job-1',
+      'done',
+      null,
+    );
     expect(m.repository.setVectorDbReadyIfIdle).toHaveBeenCalledWith('kb-1');
   });
 
   it('is idempotent: an already-done job is skipped without re-processing', async () => {
     const m = buildMocks();
-    m.repository.findIngestionJobById.mockResolvedValue(jobRow({ status: 'done' }));
+    m.repository.findIngestionJobById.mockResolvedValue(
+      jobRow({ status: 'done' }),
+    );
 
     await m.service.ingest(PAYLOAD);
 
@@ -174,29 +217,45 @@ describe('VectorDbIngestionService.ingest', () => {
     const m = buildMocks();
     m.repository.findIngestionJobById.mockResolvedValue(jobRow());
     m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({ body: Buffer.from('hello world'), contentType: 'text/plain' });
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('hello world'),
+      contentType: 'text/plain',
+    });
     m.embedder.embed.mockResolvedValue([[0.1]]);
 
     await m.service.ingest(PAYLOAD);
     await m.service.ingest(PAYLOAD);
 
-    const firstIds = (m.vectorStore.upsert.mock.calls[0][1] as { id: string }[]).map((p) => p.id);
-    const secondIds = (m.vectorStore.upsert.mock.calls[1][1] as { id: string }[]).map((p) => p.id);
+    const firstIds = (
+      m.vectorStore.upsert.mock.calls[0][1] as { id: string }[]
+    ).map((p) => p.id);
+    const secondIds = (
+      m.vectorStore.upsert.mock.calls[1][1] as { id: string }[]
+    ).map((p) => p.id);
     expect(secondIds).toEqual(firstIds);
   });
 
   describe('failure handling', () => {
     it('on a non-terminal failure: increments attempts, resets to pending, and rethrows', async () => {
       const m = buildMocks();
-      m.repository.findIngestionJobById.mockResolvedValue(jobRow({ attempts: 0 }));
+      m.repository.findIngestionJobById.mockResolvedValue(
+        jobRow({ attempts: 0 }),
+      );
       m.repository.findById.mockResolvedValue(vdbRow());
-      m.files.get.mockResolvedValue({ body: Buffer.from('hi'), contentType: 'text/plain' });
+      m.files.get.mockResolvedValue({
+        body: Buffer.from('hi'),
+        contentType: 'text/plain',
+      });
       m.embedder.embed.mockRejectedValue(new Error('openai 429'));
 
       await expect(m.service.ingest(PAYLOAD)).rejects.toThrow('openai 429');
 
       expect(m.repository.incrementJobAttempts).toHaveBeenCalledWith('job-1');
-      expect(m.repository.setJobStatus).toHaveBeenCalledWith('job-1', 'pending', 'openai 429');
+      expect(m.repository.setJobStatus).toHaveBeenCalledWith(
+        'job-1',
+        'pending',
+        'openai 429',
+      );
       expect(m.repository.updateStatus).not.toHaveBeenCalledWith(
         'kb-1',
         'error',
@@ -210,15 +269,100 @@ describe('VectorDbIngestionService.ingest', () => {
         jobRow({ attempts: MAX_INGESTION_ATTEMPTS - 1 }),
       );
       m.repository.findById.mockResolvedValue(vdbRow());
-      m.files.get.mockResolvedValue({ body: Buffer.from('hi'), contentType: 'text/plain' });
+      m.files.get.mockResolvedValue({
+        body: Buffer.from('hi'),
+        contentType: 'text/plain',
+      });
       m.embedder.embed.mockRejectedValue(new Error('openai down'));
 
       await expect(m.service.ingest(PAYLOAD)).resolves.toBeUndefined();
 
-      expect(m.repository.setJobStatus).toHaveBeenCalledWith('job-1', 'failed', 'openai down');
+      expect(m.repository.setJobStatus).toHaveBeenCalledWith(
+        'job-1',
+        'failed',
+        'openai down',
+      );
       expect(m.repository.updateStatus).toHaveBeenCalledWith('kb-1', 'error', {
         message: 'openai down',
       });
+    });
+
+    it('on a non-retryable failure: fails terminally in one attempt without consuming the retry budget', async () => {
+      const m = buildMocks();
+      m.repository.findIngestionJobById.mockResolvedValue(
+        jobRow({ attempts: 0 }),
+      );
+      m.repository.findById.mockResolvedValue(vdbRow());
+      m.files.get.mockResolvedValue({
+        body: Buffer.from('%PDF-garbage'),
+        contentType: 'application/pdf',
+      });
+      m.extractor.extract.mockRejectedValue(
+        new NonRetryableIngestionError('no extractable text'),
+      );
+
+      await expect(m.service.ingest(PAYLOAD)).resolves.toBeUndefined();
+
+      // terminal in one attempt: failed + KB error, no rethrow…
+      expect(m.repository.setJobStatus).toHaveBeenCalledWith(
+        'job-1',
+        'failed',
+        'no extractable text',
+      );
+      expect(m.repository.updateStatus).toHaveBeenCalledWith('kb-1', 'error', {
+        message: 'no extractable text',
+      });
+      // …and the retry budget is untouched (it would never succeed on retry).
+      expect(m.repository.incrementJobAttempts).not.toHaveBeenCalled();
+      expect(m.embedder.embed).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('extraction routing', () => {
+    it('extracts using the file content type, then chunks the extracted text', async () => {
+      const m = buildMocks();
+      m.repository.findIngestionJobById.mockResolvedValue(
+        jobRow({ content_type: 'application/pdf' }),
+      );
+      m.repository.findById.mockResolvedValue(vdbRow());
+      const pdfBytes = Buffer.from('%PDF-1.4 ...');
+      m.files.get.mockResolvedValue({
+        body: pdfBytes,
+        contentType: 'application/pdf',
+      });
+      m.extractor.extract.mockResolvedValue('extracted pdf text body');
+      m.embedder.embed.mockResolvedValue([[0.1]]);
+
+      await m.service.ingest(PAYLOAD);
+
+      expect(m.extractor.extract).toHaveBeenCalledWith(
+        pdfBytes,
+        'application/pdf',
+      );
+      expect(m.chunker.chunk).toHaveBeenCalledWith('extracted pdf text body');
+    });
+
+    it('routes on the DB content_type, not the S3-returned content type', async () => {
+      const m = buildMocks();
+      m.repository.findIngestionJobById.mockResolvedValue(
+        jobRow({ content_type: 'application/pdf' }),
+      );
+      m.repository.findById.mockResolvedValue(vdbRow());
+      const bytes = Buffer.from('%PDF...');
+      // S3 reports a stale/wrong content type; the DB value is the source of truth.
+      m.files.get.mockResolvedValue({
+        body: bytes,
+        contentType: 'application/octet-stream',
+      });
+      m.extractor.extract.mockResolvedValue('text');
+      m.embedder.embed.mockResolvedValue([[0.1]]);
+
+      await m.service.ingest(PAYLOAD);
+
+      expect(m.extractor.extract).toHaveBeenCalledWith(
+        bytes,
+        'application/pdf',
+      );
     });
   });
 });

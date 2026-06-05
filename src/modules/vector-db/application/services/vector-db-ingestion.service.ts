@@ -23,7 +23,15 @@ import {
   type IIngestionQueue,
   type QueuedJob,
 } from '../../domain/ingestion-queue.port';
-import { TEXT_CHUNKER, type ITextChunker } from '../../domain/text-chunker.port';
+import {
+  TEXT_CHUNKER,
+  type ITextChunker,
+} from '../../domain/text-chunker.port';
+import {
+  DOCUMENT_EXTRACTOR,
+  type IDocumentExtractor,
+} from '../../domain/document-extractor.port';
+import { NonRetryableIngestionError } from '../../domain/ingestion-errors';
 import { deterministicPointId } from '../../domain/point-id';
 
 export const VECTOR_DB_INGESTION_QUEUE = 'vector-db-ingestion';
@@ -46,9 +54,7 @@ export interface IngestionJobPayload {
  * (ADR-009); this service never imports an SDK directly.
  */
 @Injectable()
-export class VectorDbIngestionService
-  implements OnModuleInit, OnModuleDestroy
-{
+export class VectorDbIngestionService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(VectorDbIngestionService.name);
 
   constructor(
@@ -60,6 +66,8 @@ export class VectorDbIngestionService
     @Inject(VECTOR_DB_FILE_UPLOADER)
     private readonly files: IVectorDbFileUploader,
     @Inject(TEXT_CHUNKER) private readonly chunker: ITextChunker,
+    @Inject(DOCUMENT_EXTRACTOR)
+    private readonly extractor: IDocumentExtractor,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -128,7 +136,10 @@ export class VectorDbIngestionService
   async ingest(payload: IngestionJobPayload): Promise<void> {
     const { jobId, vectorDbId } = payload;
 
-    const jobRow = await this.repository.findIngestionJobById(jobId, vectorDbId);
+    const jobRow = await this.repository.findIngestionJobById(
+      jobId,
+      vectorDbId,
+    );
     if (!jobRow) {
       this.logger.warn('ingestion job row not found; skipping', {
         jobId,
@@ -140,7 +151,11 @@ export class VectorDbIngestionService
 
     const vdb = await this.repository.findById(vectorDbId);
     if (!vdb) {
-      await this.repository.setJobStatus(jobId, 'failed', 'vector db not found');
+      await this.repository.setJobStatus(
+        jobId,
+        'failed',
+        'vector db not found',
+      );
       this.logger.warn('vector db not found for ingestion job; failing', {
         jobId,
         vectorDbId,
@@ -153,7 +168,8 @@ export class VectorDbIngestionService
       await this.repository.updateStatus(vectorDbId, 'processing', null);
 
       const { body } = await this.files.get(jobRow.s3_key);
-      const chunks = await this.chunker.chunk(body.toString('utf-8'));
+      const text = await this.extractor.extract(body, jobRow.content_type);
+      const chunks = await this.chunker.chunk(text);
 
       if (chunks.length > 0) {
         const vectors = await this.embedder.embed(chunks);
@@ -164,7 +180,12 @@ export class VectorDbIngestionService
         const points = chunks.map((text, index) => ({
           id: deterministicPointId(vectorDbId, jobRow.s3_key, index),
           vector: vectors[index],
-          payload: { vectorDbId, s3Key: jobRow.s3_key, chunkIndex: index, text },
+          payload: {
+            vectorDbId,
+            s3Key: jobRow.s3_key,
+            chunkIndex: index,
+            text,
+          },
         }));
         await this.vectorStore.upsert(vdb.vector_store_ref, points);
       }
@@ -177,7 +198,12 @@ export class VectorDbIngestionService
         chunks: chunks.length,
       });
     } catch (error) {
-      const terminal = await this.handleFailure(jobRow.id, vectorDbId, jobRow.attempts, error);
+      const terminal = await this.handleFailure(
+        jobRow.id,
+        vectorDbId,
+        jobRow.attempts,
+        error,
+      );
       if (!terminal) throw error; // let pg-boss reschedule with backoff
     }
   }
@@ -190,9 +216,16 @@ export class VectorDbIngestionService
     error: unknown,
   ): Promise<boolean> {
     const message = error instanceof Error ? error.message : String(error);
-    await this.repository.incrementJobAttempts(jobId);
 
-    if (priorAttempts + 1 >= MAX_INGESTION_ATTEMPTS) {
+    // A non-retryable failure (unsupported/corrupt/empty document) is permanent:
+    // it does not consume the retry budget and goes terminal in one attempt
+    // (ADR-015, refining ADR-014 §5 — the single terminal-write path below).
+    const nonRetryable = error instanceof NonRetryableIngestionError;
+    if (!nonRetryable) {
+      await this.repository.incrementJobAttempts(jobId);
+    }
+
+    if (nonRetryable || priorAttempts + 1 >= MAX_INGESTION_ATTEMPTS) {
       await this.repository.setJobStatus(jobId, 'failed', message);
       await this.repository.updateStatus(vectorDbId, 'error', { message });
       this.logger.error('ingestion job failed permanently', {
