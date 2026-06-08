@@ -26,8 +26,8 @@ const DIM = 8;
 
 function makeConfig(): ConfigService {
   return {
-    getQdrantUrl: () => url as string,
-    getQdrantApiKey: () => apiKey as string,
+    getQdrantUrl: () => url,
+    getQdrantApiKey: () => apiKey,
   } as unknown as ConfigService;
 }
 
@@ -47,7 +47,7 @@ describeIfQdrant('QdrantVectorStoreAdapter (integration)', () => {
 
   beforeAll(() => {
     adapter = new QdrantVectorStoreAdapter(makeConfig());
-    raw = new QdrantClient({ url: url as string, apiKey: apiKey as string });
+    raw = new QdrantClient({ url: url, apiKey: apiKey });
   });
 
   afterAll(async () => {
@@ -79,5 +79,30 @@ describeIfQdrant('QdrantVectorStoreAdapter (integration)', () => {
   it('upsert of an empty point list is a no-op', async () => {
     await adapter.ensureCollection(ref, DIM);
     await expect(adapter.upsert(ref, [])).resolves.toBeUndefined();
+  });
+
+  it('search returns the nearest point first with its payload (Slice 6 retrieval)', async () => {
+    const searchRef = `vdb_search_${randomBytes(8).toString('hex')}`;
+    await adapter.ensureCollection(searchRef, DIM);
+    try {
+      // Orthogonal basis vectors so the nearest neighbour is unambiguous.
+      const points: VectorPoint[] = [0, 1, 2].map((i) => ({
+        id: deterministicPointId('vdb-search', 's3/key', i),
+        vector: Array.from({ length: DIM }, (_, d) => (d === i ? 1 : 0)),
+        payload: { chunkIndex: i, text: `chunk ${i}` },
+      }));
+      await adapter.upsert(searchRef, points);
+
+      // Query closest to the basis vector of point 1.
+      const query = Array.from({ length: DIM }, (_, d) => (d === 1 ? 1 : 0));
+      const hits = await adapter.search(searchRef, query, 2);
+
+      expect(hits.length).toBeGreaterThan(0);
+      expect(hits[0].payload.text).toBe('chunk 1');
+      expect(hits[0].payload.chunkIndex).toBe(1);
+      expect(hits[0].score).toBeGreaterThan(hits[1]?.score ?? -Infinity);
+    } finally {
+      await raw.deleteCollection(searchRef).catch(() => undefined);
+    }
   });
 });

@@ -7,11 +7,18 @@ export interface VectorPoint {
   payload: Record<string, unknown>;
 }
 
+export interface VectorSearchHit {
+  id: string;
+  /** Similarity score (cosine) — higher is more relevant. */
+  score: number;
+  payload: Record<string, unknown>;
+}
+
 /**
  * Port for the vector store (Qdrant today). Lives in `domain/` so the
  * application layer never imports the Qdrant SDK directly (ADR-009).
- * `search` / `deleteCollection` are intentionally deferred to Slice 6 / the
- * janitor — this port carries only what the ingestion pipeline needs.
+ * `deleteCollection` is still deferred to the janitor — this port carries the
+ * ingestion pipeline's needs plus `search` (Slice 6 retrieval lane).
  */
 export interface IVectorStore {
   /**
@@ -25,4 +32,15 @@ export interface IVectorStore {
    * job overwrites the same points instead of duplicating them (ADR-014 §3).
    */
   upsert(ref: string, points: VectorPoint[]): Promise<void>;
+
+  /**
+   * Top-`limit` nearest points to `vector` in the collection, with payloads.
+   * Returns `[]` for an empty collection. Throws if the collection does not
+   * exist — callers must only search collections known to be `ready`.
+   */
+  search(
+    ref: string,
+    vector: number[],
+    limit: number,
+  ): Promise<VectorSearchHit[]>;
 }

@@ -4,6 +4,7 @@ import { ProjectsModule } from '../projects/projects.module';
 import { VectorDbController } from './api/controllers/vector-db.controller';
 import { VectorDbService } from './application/services/vector-db.service';
 import { VectorDbIngestionService } from './application/services/vector-db-ingestion.service';
+import { VectorDbRetrievalService } from './application/services/vector-db-retrieval.service';
 import { VectorDbMigrationService } from './vector-db.migration';
 import { VectorDbDatabaseRepository } from './infrastructure/persistence/repositories/vector-db.database-repository';
 import { VectorDbFileUploaderService } from './infrastructure/s3/vector-db-file-uploader.service';
@@ -30,6 +31,7 @@ import { DOCUMENT_EXTRACTOR } from './domain/document-extractor.port';
   providers: [
     VectorDbService,
     VectorDbIngestionService,
+    VectorDbRetrievalService,
     VectorDbMigrationService,
     {
       provide: VECTOR_DB_REPOSITORY,
@@ -60,6 +62,10 @@ import { DOCUMENT_EXTRACTOR } from './domain/document-extractor.port';
       useClass: DocumentExtractorAdapter,
     },
   ],
-  exports: [VectorDbService, VectorDbMigrationService],
+  exports: [
+    VectorDbService,
+    VectorDbRetrievalService,
+    VectorDbMigrationService,
+  ],
 })
 export class VectorDbModule {}

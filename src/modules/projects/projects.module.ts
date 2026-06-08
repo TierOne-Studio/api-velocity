@@ -9,6 +9,7 @@ import { ProjectsService } from './application/services/projects.service';
 import { AirweaveCollectionProvider } from './application/providers/airweave-collection.provider';
 import { DatabaseSourceProvider } from './application/providers/database.provider';
 import { ExternalSourceProvider } from './application/providers/external.provider';
+import { VectorDbDataSourceProvider } from './application/providers/vector-db-data-source.provider';
 import { DataSourceRegistry } from './application/providers/data-source.registry';
 import { ChatToSqlService } from './application/providers/database/chat-to-sql.service';
 import { ProjectsDatabaseRepository } from './infrastructure/persistence/repositories/projects.database-repository';
@@ -39,6 +40,7 @@ import { ProjectsMigrationService } from './projects.migration';
     AirweaveCollectionProvider,
     DatabaseSourceProvider,
     ExternalSourceProvider,
+    VectorDbDataSourceProvider,
     ChatToSqlService,
     DataSourceRegistry,
     { provide: PROJECTS_REPOSITORY, useClass: ProjectsDatabaseRepository },

@@ -4,6 +4,7 @@ import { ConfigService } from '../../../../shared/config/config.service';
 import type {
   IVectorStore,
   VectorPoint,
+  VectorSearchHit,
 } from '../../domain/vector-store.port';
 
 /**
@@ -46,5 +47,22 @@ export class QdrantVectorStoreAdapter implements IVectorStore {
         payload: p.payload,
       })),
     });
+  }
+
+  async search(
+    ref: string,
+    vector: number[],
+    limit: number,
+  ): Promise<VectorSearchHit[]> {
+    const hits = await this.client.search(ref, {
+      vector,
+      limit,
+      with_payload: true,
+    });
+    return hits.map((hit) => ({
+      id: String(hit.id),
+      score: hit.score,
+      payload: hit.payload ?? {},
+    }));
   }
 }

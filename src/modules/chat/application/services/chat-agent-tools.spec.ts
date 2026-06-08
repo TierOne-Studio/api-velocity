@@ -72,6 +72,7 @@ describe('createSearchKnowledgeBaseTool', () => {
   ) {
     return {
       projectId: 'proj-1',
+      organizationId: 'org-1',
       sources,
       registry,
       sourcesSink,
@@ -129,6 +130,7 @@ describe('createSearchKnowledgeBaseTool', () => {
       limit: 12,
       offset: 0,
       retrievalStrategy: undefined,
+      organizationId: 'org-1',
     });
   });
 
