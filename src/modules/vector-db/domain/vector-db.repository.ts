@@ -68,7 +68,6 @@ export interface IVectorDbRepository {
     name: string,
   ): Promise<VectorDbRow | null>;
   delete(id: string, organizationId: string): Promise<boolean>;
-  countProjectReferences(vectorDbId: string): Promise<number>;
   createIngestionJob(row: CreateIngestionJobRow): Promise<IngestionJobRow>;
   listJobsForVectorDb(vectorDbId: string): Promise<IngestionJobRow[]>;
   findIngestionJobById(jobId: string, vectorDbId: string): Promise<IngestionJobRow | null>;

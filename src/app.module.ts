@@ -30,8 +30,11 @@ import { ChatModule } from './modules/chat';
     // SqlConnectionsModule must be imported before ProjectsModule: the
     // database source provider injects SqlConnectionsService.
     SqlConnectionsModule,
-    // VectorDbModule before ProjectsModule: chat provider (Slice 6)
-    // will inject KnowledgeBaseService from the registry.
+    // VectorDbModule and ProjectsModule form a forwardRef cycle (Slice 5):
+    // ProjectsService injects VectorDbService for vector_db source attach, and
+    // VectorDbService injects PROJECTS_REPOSITORY for delete-time reference
+    // counting (ADR-013 Decision 9). Import order is non-binding under
+    // forwardRef; VectorDbModule stays ahead of ProjectsModule for readability.
     VectorDbModule,
     // ProjectsModule MUST be imported before ChatModule — ChatMigrationService
     // cross-injects ProjectsMigrationService to force the Projects tables to

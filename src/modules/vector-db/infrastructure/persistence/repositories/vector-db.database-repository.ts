@@ -42,9 +42,7 @@ const SELECT_COLUMNS = `
 `;
 
 @Injectable()
-export class VectorDbDatabaseRepository
-  implements IVectorDbRepository
-{
+export class VectorDbDatabaseRepository implements IVectorDbRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async assertOrganizationExists(orgId: string): Promise<void> {
@@ -77,10 +75,7 @@ export class VectorDbDatabaseRepository
     return inserted;
   }
 
-  async update(
-    id: string,
-    row: UpdateVectorDbRow,
-  ): Promise<VectorDbRow> {
+  async update(id: string, row: UpdateVectorDbRow): Promise<VectorDbRow> {
     const sets: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
@@ -193,9 +188,7 @@ export class VectorDbDatabaseRepository
     );
   }
 
-  async listForOrganization(
-    organizationId: string,
-  ): Promise<VectorDbRow[]> {
+  async listForOrganization(organizationId: string): Promise<VectorDbRow[]> {
     return this.db.query<VectorDbRow>(
       `SELECT ${SELECT_COLUMNS} FROM org_vector_db
          WHERE organization_id = $1 AND deleted_at IS NULL
@@ -226,7 +219,9 @@ export class VectorDbDatabaseRepository
     return Boolean(result);
   }
 
-  async createIngestionJob(row: CreateIngestionJobRow): Promise<IngestionJobRow> {
+  async createIngestionJob(
+    row: CreateIngestionJobRow,
+  ): Promise<IngestionJobRow> {
     const inserted = await this.db.queryOne<IngestionJobRow>(
       `INSERT INTO vector_db_ingestion_job (
          vector_db_id, s3_key, original_filename, file_size_bytes, content_type
@@ -274,7 +269,10 @@ export class VectorDbDatabaseRepository
     );
   }
 
-  async deleteIngestionJob(jobId: string, vectorDbId: string): Promise<boolean> {
+  async deleteIngestionJob(
+    jobId: string,
+    vectorDbId: string,
+  ): Promise<boolean> {
     const result = await this.db.queryOne<{ id: string }>(
       `DELETE FROM vector_db_ingestion_job
         WHERE id = $1 AND vector_db_id = $2
@@ -323,17 +321,5 @@ export class VectorDbDatabaseRepository
          WHERE id = $2 AND deleted_at IS NULL`,
       [delta, id],
     );
-  }
-
-  async countProjectReferences(vectorDbId: string): Promise<number> {
-    // Raw SQL required: JSON operator on project_data_source.config (JSONB column).
-    const row = await this.db.queryOne<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-         FROM project_data_source
-         WHERE kind = 'vector-db'
-           AND config->>'knowledgeBaseId' = $1`,
-      [vectorDbId],
-    );
-    return row ? parseInt(row.count, 10) : 0;
   }
 }

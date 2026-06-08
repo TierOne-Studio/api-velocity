@@ -7,6 +7,8 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type {
   CreateKnowledgeBaseInput,
@@ -30,6 +32,10 @@ import {
 } from '../../vector-db.constants';
 import { VectorDbIngestionService } from './vector-db-ingestion.service';
 import type { PlatformRole } from '../../../admin/utils/admin.utils';
+import {
+  PROJECTS_REPOSITORY,
+  type IProjectsRepository,
+} from '../../../projects/domain/repositories/projects.repository.interface';
 
 type CallerScope = {
   userId: string;
@@ -48,7 +54,24 @@ export class VectorDbService {
     @Inject(VECTOR_DB_FILE_UPLOADER)
     private readonly fileUploader: IVectorDbFileUploader,
     private readonly ingestion: VectorDbIngestionService,
+    // Inverted reference query (ADR-013 Decision 9): the Projects module owns
+    // the `project_data_source.config` JSON shape, so delete-time reference
+    // counting asks Projects rather than reaching into its table from here.
+    // `@Optional()` + the forwardRef module cycle mirror the AirweaveService
+    // precedent; the guard surfaces a missing wiring as 503, not a crash.
+    @Optional()
+    @Inject(PROJECTS_REPOSITORY)
+    private readonly projectsRepository?: IProjectsRepository,
   ) {}
+
+  private requireProjectsRepository(): IProjectsRepository {
+    if (!this.projectsRepository) {
+      throw new ServiceUnavailableException(
+        'Vector database deletion is unavailable (projects repository missing)',
+      );
+    }
+    return this.projectsRepository;
+  }
 
   async list(scope: CallerScope): Promise<VectorDb[]> {
     const orgId = await this.requireOrg(scope);
@@ -133,10 +156,14 @@ export class VectorDbService {
     const existing = await this.repository.findByIdInOrg(id, orgId);
     if (!existing) throw new NotFoundException('Vector database not found');
 
-    const referenceCount = await this.repository.countProjectReferences(id);
-    if (referenceCount > 0) {
+    const referencingProjects =
+      await this.requireProjectsRepository().findProjectsReferencingVectorDb(
+        id,
+        orgId,
+      );
+    if (referencingProjects.length > 0) {
       throw new ConflictException(
-        `Cannot delete vector database: ${referenceCount} project data source(s) still reference it. Detach them first.`,
+        `Cannot delete vector database: ${referencingProjects.length} project data source(s) still reference it. Detach them first.`,
       );
     }
 
@@ -168,9 +195,18 @@ export class VectorDbService {
     const s3Key = `vector-dbs/${orgId}/${id}/${randomUUID()}`;
 
     // Log s3Key before the put so operators can correlate an orphan on DB failure.
-    this.logger.log('Uploading file to S3', { s3Key, vectorDbId: id, organizationId: orgId });
+    this.logger.log('Uploading file to S3', {
+      s3Key,
+      vectorDbId: id,
+      organizationId: orgId,
+    });
 
-    await this.fileUploader.put(s3Key, file.buffer, file.mimetype, file.originalname);
+    await this.fileUploader.put(
+      s3Key,
+      file.buffer,
+      file.mimetype,
+      file.originalname,
+    );
 
     // If this throws, the S3 object at s3Key is orphaned. The log line above
     // gives operators the key for manual cleanup until the Slice 4 janitor ships.

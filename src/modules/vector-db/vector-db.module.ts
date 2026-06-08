@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { DatabaseModule } from '../../shared/infrastructure/database/database.module';
+import { ProjectsModule } from '../projects/projects.module';
 import { VectorDbController } from './api/controllers/vector-db.controller';
 import { VectorDbService } from './application/services/vector-db.service';
 import { VectorDbIngestionService } from './application/services/vector-db-ingestion.service';
@@ -20,7 +21,11 @@ import { TEXT_CHUNKER } from './domain/text-chunker.port';
 import { DOCUMENT_EXTRACTOR } from './domain/document-extractor.port';
 
 @Module({
-  imports: [DatabaseModule],
+  // forwardRef: VectorDbService injects PROJECTS_REPOSITORY for delete-time
+  // reference counting (ADR-013 Decision 9), while ProjectsService injects
+  // VectorDbService for vector_db source attach. Bidirectional cycle resolved
+  // by forwardRef on both modules.
+  imports: [DatabaseModule, forwardRef(() => ProjectsModule)],
   controllers: [VectorDbController],
   providers: [
     VectorDbService,

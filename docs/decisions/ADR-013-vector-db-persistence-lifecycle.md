@@ -87,11 +87,19 @@ Structured JSONB enables: SPA error localization, operator dashboard filtering, 
 
 Minimum shape shipped in Slice 1: `{ message: string }`. Fields are additive — no migration needed to extend later.
 
-### Decision 9 — `countProjectReferences` stays in `VectorDbRepository` for Slice 1
+### Decision 9 — `countProjectReferences` stays in `VectorDbRepository` for Slice 1 (RESOLVED in Slice 5)
 
-The reviewer (ADR-013 §H) correctly identifies that `VectorDbRepository` reaching into `project_data_source.config->>'knowledgeBaseId'` violates the dependency rule — `VectorDb` should not know the `Projects` module's JSON shape. The correct inversion is `ProjectsService.countDataSourceReferences({ kind: 'vector-db', refId: id })`.
+The reviewer (ADR-013 §H) correctly identifies that `VectorDbRepository` reaching into `project_data_source.config->>'knowledgeBaseId'` violates the dependency rule — `VectorDb` should not know the `Projects` module's JSON shape. The correct inversion is for the Projects module to own the query.
 
-This inversion is deferred to Slice 4 when the Projects module is extended with vector-db source support. Inverting before there is a consumer would require adding a `countDataSourceReferences` method to `ProjectsService` with no test coverage and no real callers — a YAGNI violation. The raw SQL is annotated with a comment pointing to this ADR.
+This inversion was deferred until the Projects module gained a vector-db source consumer. Inverting before there was a consumer would have added a method with no callers — a YAGNI violation. The raw SQL was annotated with a comment pointing to this ADR.
+
+**Resolved in Slice 5 (project attach):** the inversion landed when `vector_db` became an attachable `project_data_source` kind. Concretely:
+
+- The cross-module query now lives in the Projects module as `IProjectsRepository.findProjectsReferencingVectorDb(vectorDbId, organizationId)` (org-scoped, mirroring `findProjectsReferencingAirweaveCollection`). Projects owns the `project_data_source.config` JSON shape; `VectorDb` no longer reaches into it.
+- `VectorDbService.delete` consumes it via `@Optional() @Inject(PROJECTS_REPOSITORY)` + a `requireProjectsRepository()` guard, exactly as `AirweaveService` already does. The module cycle (`ProjectsService` → `VectorDbService` for attach; `VectorDbService` → `PROJECTS_REPOSITORY` for delete-protection) is resolved by `forwardRef` on both modules.
+- `VectorDbRepository.countProjectReferences` was removed.
+- **Contract standardization:** the data-source kind is `vector_db` (underscore, consistent with `airweave_collection` / `database` / `external`) and the config key is `vectorDbId`. The pre-inversion query used the legacy `kind = 'vector-db'` / `config->>'knowledgeBaseId'` (a leftover from the knowledge-base → vector-db rename) which never matched a producer; the inverted query is the single source of truth and cannot drift from the producer.
+- **Latent fix:** the old `countProjectReferences` was NOT org-scoped; the inverted query is, closing a cross-org count leak.
 
 ### Decision 10 — Status state machine (documented, not enforced in Slice 1)
 
@@ -145,7 +153,7 @@ Uploaded files are stored in AWS S3 before the ingestion worker processes them. 
   - Slice 4: implement `VectorStoreProvider` port + `QdrantVectorStoreAdapter`.
   - Slice 4: extract `VectorDbAuthorizationService`.
   - Slice 4: enforce status transition guards in `updateStatus`.
-  - Slice 4: invert `countProjectReferences` → `ProjectsService.countDataSourceReferences`.
+  - ~~Slice 4: invert `countProjectReferences` → Projects module~~ — **done in Slice 5** as `IProjectsRepository.findProjectsReferencingVectorDb` (see Decision 9).
   - Slice 4: implement soft-delete janitor (Qdrant drop + S3 purge + orphan sweep).
   - Future: add `created_by_user_id` / `updated_by_user_id` audit columns when a compliance requirement appears.
 

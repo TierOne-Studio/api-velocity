@@ -50,6 +50,10 @@ export class ProjectsMigrationService implements OnModuleInit {
         name: 'projects_003_seed_airweave_allowlist',
         up: () => this.seedAirweaveAllowlist(),
       },
+      {
+        name: 'projects_004_extend_kind_vector_db',
+        up: () => this.extendKindConstraintForVectorDb(),
+      },
     ];
 
     let pendingCount = 0;
@@ -92,7 +96,7 @@ export class ProjectsMigrationService implements OnModuleInit {
       CREATE TABLE IF NOT EXISTS project_data_source (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         project_id UUID NOT NULL REFERENCES project(id) ON DELETE CASCADE,
-        kind TEXT NOT NULL CHECK (kind IN ('airweave_collection', 'database', 'external')),
+        kind TEXT NOT NULL CHECK (kind IN ('airweave_collection', 'database', 'external', 'vector_db')),
         name TEXT NOT NULL,
         config JSONB NOT NULL DEFAULT '{}'::jsonb,
         status TEXT NOT NULL DEFAULT 'ready',
@@ -233,6 +237,24 @@ export class ProjectsMigrationService implements OnModuleInit {
 
     await this.db.query(
       `ALTER TABLE project ADD CONSTRAINT project_org_name_unique UNIQUE (organization_id, name)`,
+    );
+  }
+
+  async extendKindConstraintForVectorDb(): Promise<void> {
+    // Widen the project_data_source.kind CHECK to admit 'vector_db' (Slice 5).
+    // Authoritative re-add: drop the existing constraint (Postgres auto-names
+    // the inline column CHECK 'project_data_source_kind_check') and recreate it
+    // with the canonical kind set. This converges any prior state to the same
+    // target — including dev databases that accumulated a stray
+    // 'qdrant_collection' value that never existed in a tracked migration.
+    await this.db.query(
+      `ALTER TABLE project_data_source
+         DROP CONSTRAINT IF EXISTS project_data_source_kind_check`,
+    );
+    await this.db.query(
+      `ALTER TABLE project_data_source
+         ADD CONSTRAINT project_data_source_kind_check
+         CHECK (kind IN ('airweave_collection', 'database', 'external', 'vector_db'))`,
     );
   }
 
