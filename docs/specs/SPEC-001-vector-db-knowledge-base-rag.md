@@ -113,6 +113,21 @@ via `vector-db.module.ts` and wired in `app.module.ts`.
   `last_error`, timestamps. Index `(status, locked_until)` for the claim query; index
   `(vector_db_id)`.
 
+**Status state machine** (`org_vector_db.status`, `ADR-014` Decision 10) — enforced, not
+advisory: `updateStatus` in `VectorDbDatabaseRepository` runs a single atomic guarded
+`UPDATE … WHERE status = ANY(<legal sources>)`, and an attempt outside the table raises
+`Illegal vector-db status transition: <from> -> <to>`. Allowed transitions (self-loops are
+legal no-ops):
+
+| From | To | Trigger |
+|---|---|---|
+| `empty` | `processing` | First ingestion job starts |
+| `processing` | `ready` | Ingestion completes successfully |
+| `processing` | `error` | Ingestion fails |
+| `ready` | `processing` | Re-ingest / new upload |
+| `error` | `processing` | Retry after failure |
+| `ready` | `empty` | All documents purged |
+
 **RBAC scopes** (`src/permissions.ts`): `vector-db:{read,create,update,delete,upload}`.
 Owner/admin: all five. Manager: read/create/update/upload (no delete). Viewer: read only.
 
@@ -205,6 +220,9 @@ and the paired spa-velocity `ui` SPEC for knowledge-base management screens.
 
 Append-only. Newest first.
 
+- 2026-06-09 · PR #28+ (feat/kb-crud) · Added the §5 Status state machine subsection
+  (allowed `org_vector_db.status` transitions + enforcement in `updateStatus`), documenting
+  behavior already shipped per `ADR-014` Decision 10. · No code or assumption changes.
 - 2026-06-09 · PR #28+ (feat/kb-crud) · Documents the as-built Vector DB / RAG feature
   (slices 1–6: CRUD, upload/S3, async ingestion queue, extraction, chunk/embed/upsert,
   project attach + chat RAG grounding) as the governing contract SPEC. The code is implemented
