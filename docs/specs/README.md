@@ -19,6 +19,7 @@ restate rationale. `plan-mode` is ephemeral execution sequencing, persisted *int
 | # | Title | Status | Updated | Feature paths |
 |---|---|---|---|---|
 | [SPEC-000](SPEC-000-specification-first-workflow.md) | Specification-first workflow | Draft | 2026-06-04 | .ruler, docs/specs, scripts |
+| [SPEC-001](SPEC-001-vector-db-knowledge-base-rag.md) | Vector DB Knowledge Bases + RAG retrieval | Draft | 2026-06-09 | src/modules/vector-db |
 
 ## Status lifecycle
 
