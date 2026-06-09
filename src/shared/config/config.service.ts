@@ -105,6 +105,19 @@ export class ConfigService {
     return this.boundedInt('EMBEDDING_BATCH_SIZE', 96, { min: 1, max: 2048 });
   }
 
+  /**
+   * Minimum cosine similarity (0..1) a vector_db chunk must clear to count as a
+   * retrieval hit (SPEC-001 AC13). Below it, a top-k result is noise rather than
+   * an answer source, so it is dropped from both the LLM context and the chat
+   * Sources citations. Expressed as an integer percent (`VECTOR_DB_MIN_SCORE_PCT`,
+   * default 30) per the same convention as CHAT_ROUTER_CONFIDENCE_PCT.
+   */
+  getVectorDbMinScore(): number {
+    return (
+      this.boundedInt('VECTOR_DB_MIN_SCORE_PCT', 30, { min: 0, max: 100 }) / 100
+    );
+  }
+
   getEmbeddingConcurrency(): number {
     return this.boundedInt('EMBEDDING_CONCURRENCY', 3, { min: 1, max: 20 });
   }

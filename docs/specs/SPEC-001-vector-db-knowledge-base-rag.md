@@ -153,6 +153,8 @@ Owner/admin: all five. Manager: read/create/update/upload (no delete). Viewer: r
 | AC9 | Retrieval performs semantic search re-scoped to the org's collection at query time | `.../application/services/vector-db-retrieval.service.spec.ts`; `.../infrastructure/qdrant/qdrant-vector-store.adapter.integration.spec.ts` |
 | AC10 | Migrations create both tables/indexes; org delete is RESTRICTed while KBs exist | `src/modules/vector-db/vector-db.migration.spec.ts` |
 | AC11 | `VectorDbDataSourceProvider` only handles `vector_db` sources and delegates to org-scoped retrieval; other kinds are rejected | `.../application/services/vector-db-retrieval.service.spec.ts` |
+| AC12 | A `vector_db` retrieval hit is attributed to its source document: retrieval resolves each chunk's `s3Key` to the ingestion job's `original_filename` (scoped to the org-scoped vector DB), and the citation's `name` is that filename (`sourceName` stays the collection). Chunks from distinct documents are not collapsed by a chunk-index `entityId` collision | `.../application/services/vector-db-retrieval.service.spec.ts`; `src/modules/projects/application/providers/vector-db-data-source.provider.spec.ts`; `.../infrastructure/persistence/repositories/vector-db.database-repository.integration.spec.ts` |
+| AC13 | Retrieval drops chunks scoring below a configurable minimum cosine similarity (`VECTOR_DB_MIN_SCORE_PCT`, default 0.30) before name resolution, so only documents the answer was actually found in become citations (and feed the LLM) — a top-k search no longer surfaces every document. `0` disables the floor | `.../application/services/vector-db-retrieval.service.spec.ts`; `src/shared/config/config.service.spec.ts` |
 
 ## 7. Implementation plan
 
@@ -220,6 +222,18 @@ and the paired spa-velocity `ui` SPEC for knowledge-base management screens.
 
 Append-only. Newest first.
 
+- 2026-06-09 · PR #28+ (feat/kb-crud) · Relevance floor for `vector_db` retrieval (AC13):
+  `VectorDbRetrievalService` now drops hits below `ConfigService.getVectorDbMinScore()`
+  (`VECTOR_DB_MIN_SCORE_PCT`, default 30 ⇒ 0.30) before resolving names, so a top-k search
+  stops surfacing every document as a "source" (the entityId fix in AC12 had made the
+  pre-existing over-retrieval visible). Scoped to the `vector_db` lane; Airweave unaffected. ·
+  Shows only the documents an answer was actually grounded in. · No assumption corrections.
+- 2026-06-09 · PR #28+ (feat/kb-crud) · Source-document attribution for `vector_db` citations
+  (AC12): retrieval now carries each chunk's `s3Key` and resolves it to the ingestion job's
+  `original_filename` (scoped by `vector_db_id`); the provider sets citation `name` = filename
+  (was the collection name, causing the "collection · collection" chip) and disambiguates
+  `entityId` with `s3Key` so chunk-index collisions across documents no longer drop sources. ·
+  Surfaces the document behind a grounded answer in the chat Sources chip. · No assumption corrections.
 - 2026-06-09 · PR #28+ (feat/kb-crud) · Added the §5 Status state machine subsection
   (allowed `org_vector_db.status` transitions + enforcement in `updateStatus`), documenting
   behavior already shipped per `ADR-014` Decision 10. · No code or assumption changes.

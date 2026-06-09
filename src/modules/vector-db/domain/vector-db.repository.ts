@@ -73,6 +73,16 @@ export interface IVectorDbRepository {
   findIngestionJobById(jobId: string, vectorDbId: string): Promise<IngestionJobRow | null>;
   deleteIngestionJob(jobId: string, vectorDbId: string): Promise<boolean>;
   decrementDocumentCount(id: string, delta: number): Promise<void>;
+  /**
+   * Map each chunk's `s3Key` (carried in the vector-store payload) back to its
+   * source document's `original_filename`, scoped to one vector DB. Feeds the
+   * retrieval lane's citation attribution (SPEC-001 AC12). Distinct rows only;
+   * an unknown key is simply absent from the result (caller falls back).
+   */
+  findDocumentNamesByS3Keys(
+    vectorDbId: string,
+    s3Keys: string[],
+  ): Promise<Array<{ s3_key: string; original_filename: string }>>;
 
   // Slice 4 — ingestion pipeline (ADR-014).
   /** Set the ingestion job's status + last_error (the UI source of truth). */

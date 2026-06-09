@@ -18,7 +18,13 @@ function makeSource(): ProjectDataSource {
 }
 
 function makeProvider(
-  results: Array<{ text: string; score: number; chunkIndex: number }> = [],
+  results: Array<{
+    text: string;
+    score: number;
+    chunkIndex: number;
+    s3Key: string;
+    documentName: string | null;
+  }> = [],
 ) {
   const retrieval = {
     search: jest
@@ -34,9 +40,15 @@ describe('VectorDbDataSourceProvider', () => {
     expect(provider.kind).toBe('vector_db');
   });
 
-  it('embeds via the retrieval service and maps hits to the search response shape', async () => {
+  it('names the citation after the source document and keys entityId by s3Key', async () => {
     const { provider, retrieval } = makeProvider([
-      { text: 'onboarding steps', score: 0.93, chunkIndex: 0 },
+      {
+        text: 'onboarding steps',
+        score: 0.93,
+        chunkIndex: 0,
+        s3Key: 's3/onboarding.pdf',
+        documentName: 'onboarding.pdf',
+      },
     ]);
 
     const response = await provider.search(makeSource(), 'how to onboard', {
@@ -52,8 +64,8 @@ describe('VectorDbDataSourceProvider', () => {
     );
     expect(response.results).toEqual([
       {
-        entityId: 'vdb-1:0',
-        name: 'Handbook',
+        entityId: 'vdb-1:s3/onboarding.pdf:0',
+        name: 'onboarding.pdf',
         relevanceScore: 0.93,
         breadcrumbs: [],
         createdAt: null,
@@ -66,6 +78,33 @@ describe('VectorDbDataSourceProvider', () => {
     ]);
   });
 
+  it('falls back to the collection name when the document is unresolved', async () => {
+    const { provider } = makeProvider([
+      { text: 'x', score: 0.5, chunkIndex: 0, s3Key: 's3/x', documentName: null },
+    ]);
+
+    const response = await provider.search(makeSource(), 'q', {
+      organizationId: 'org-1',
+    });
+
+    expect(response.results[0].name).toBe('Handbook');
+  });
+
+  it('does not collide entityIds for chunk 0 of two different documents', async () => {
+    const { provider } = makeProvider([
+      { text: 'a', score: 0.9, chunkIndex: 0, s3Key: 's3/a', documentName: 'a.pdf' },
+      { text: 'b', score: 0.8, chunkIndex: 0, s3Key: 's3/b', documentName: 'b.pdf' },
+    ]);
+
+    const response = await provider.search(makeSource(), 'q', {
+      organizationId: 'org-1',
+    });
+
+    const ids = response.results.map((r) => r.entityId);
+    expect(ids).toEqual(['vdb-1:s3/a:0', 'vdb-1:s3/b:0']);
+    expect(new Set(ids).size).toBe(2);
+  });
+
   it('returns no results when the retrieval service finds nothing', async () => {
     const { provider } = makeProvider([]);
     const response = await provider.search(makeSource(), 'q', {
@@ -76,7 +115,7 @@ describe('VectorDbDataSourceProvider', () => {
 
   it('returns no results and does not query when no organizationId is threaded', async () => {
     const { provider, retrieval } = makeProvider([
-      { text: 'x', score: 1, chunkIndex: 0 },
+      { text: 'x', score: 1, chunkIndex: 0, s3Key: 's3/x', documentName: 'x.pdf' },
     ]);
 
     const response = await provider.search(makeSource(), 'q', {});

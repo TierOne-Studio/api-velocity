@@ -199,6 +199,39 @@ describe('ConfigService', () => {
     });
   });
 
+  describe('getVectorDbMinScore', () => {
+    let warnSpy: jest.SpiedFunction<typeof console.warn>;
+    beforeEach(() => {
+      warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      delete process.env.VECTOR_DB_MIN_SCORE_PCT;
+      warnSpy.mockRestore();
+    });
+
+    it('defaults to 0.3 when unset', () => {
+      delete process.env.VECTOR_DB_MIN_SCORE_PCT;
+      expect(new ConfigService().getVectorDbMinScore()).toBeCloseTo(0.3, 5);
+    });
+
+    it('reads an in-range percent as a 0..1 fraction', () => {
+      process.env.VECTOR_DB_MIN_SCORE_PCT = '45';
+      expect(new ConfigService().getVectorDbMinScore()).toBeCloseTo(0.45, 5);
+    });
+
+    it('allows 0 (disable the floor)', () => {
+      process.env.VECTOR_DB_MIN_SCORE_PCT = '0';
+      expect(new ConfigService().getVectorDbMinScore()).toBe(0);
+    });
+
+    it('falls back to the default for out-of-range or non-numeric values', () => {
+      process.env.VECTOR_DB_MIN_SCORE_PCT = '150';
+      expect(new ConfigService().getVectorDbMinScore()).toBeCloseTo(0.3, 5);
+      process.env.VECTOR_DB_MIN_SCORE_PCT = 'abc';
+      expect(new ConfigService().getVectorDbMinScore()).toBeCloseTo(0.3, 5);
+    });
+  });
+
   describe('getTrustedOrigins', () => {
     it('should read TRUSTED_ORIGINS from the environment', () => {
       process.env.TRUSTED_ORIGINS =

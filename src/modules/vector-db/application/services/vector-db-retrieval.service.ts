@@ -8,12 +8,17 @@ import {
   VECTOR_STORE,
   type IVectorStore,
 } from '../../domain/vector-store.port';
+import { ConfigService } from '../../../../shared/config/config.service';
 
 /** A single retrieved chunk from a vector database (read side of ingestion). */
 export type VectorDbSearchResult = {
   text: string;
   score: number;
   chunkIndex: number;
+  /** Vector-store payload key tying the chunk to its uploaded blob/document. */
+  s3Key: string;
+  /** Source document's `original_filename`, or null when it cannot be resolved. */
+  documentName: string | null;
 };
 
 /**
@@ -29,6 +34,7 @@ export class VectorDbRetrievalService {
     private readonly repository: IVectorDbRepository,
     @Inject(EMBEDDER) private readonly embedder: IEmbedder,
     @Inject(VECTOR_STORE) private readonly vectorStore: IVectorStore,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -51,17 +57,53 @@ export class VectorDbRetrievalService {
     if (!vdb || vdb.status !== 'ready') return [];
 
     const [vector] = await this.embedder.embed([query]);
-    const hits = await this.vectorStore.search(
+    const rawHits = await this.vectorStore.search(
       vdb.vector_store_ref,
       vector,
       limit,
     );
 
-    return hits.map((hit) => ({
-      text: typeof hit.payload.text === 'string' ? hit.payload.text : '',
-      score: hit.score,
-      chunkIndex:
-        typeof hit.payload.chunkIndex === 'number' ? hit.payload.chunkIndex : 0,
-    }));
+    // Drop weakly-similar chunks (SPEC-001 AC13): a top-k search always returns
+    // `limit` points regardless of relevance, so without a floor every document
+    // surfaces as a "source". Keeping only hits at/above the configured minimum
+    // score trims both the LLM context and the citation chips to the documents
+    // the answer was actually found in.
+    const minScore = this.config.getVectorDbMinScore();
+    const hits = rawHits.filter((hit) => hit.score >= minScore);
+
+    // Attribute each chunk to its source document (SPEC-001 AC12). The point
+    // payload carries `s3Key`; resolve the distinct keys to `original_filename`
+    // in one query, scoped to this (already org-scoped) vector DB. An unresolved
+    // key falls back to null — the provider then shows the collection name.
+    const s3Keys = [
+      ...new Set(
+        hits
+          .map((hit) =>
+            typeof hit.payload.s3Key === 'string' ? hit.payload.s3Key : '',
+          )
+          .filter((key) => key !== ''),
+      ),
+    ];
+    const nameRows = s3Keys.length
+      ? await this.repository.findDocumentNamesByS3Keys(vectorDbId, s3Keys)
+      : [];
+    const nameByS3Key = new Map(
+      nameRows.map((row) => [row.s3_key, row.original_filename]),
+    );
+
+    return hits.map((hit) => {
+      const s3Key =
+        typeof hit.payload.s3Key === 'string' ? hit.payload.s3Key : '';
+      return {
+        text: typeof hit.payload.text === 'string' ? hit.payload.text : '',
+        score: hit.score,
+        chunkIndex:
+          typeof hit.payload.chunkIndex === 'number'
+            ? hit.payload.chunkIndex
+            : 0,
+        s3Key,
+        documentName: nameByS3Key.get(s3Key) ?? null,
+      };
+    });
   }
 }

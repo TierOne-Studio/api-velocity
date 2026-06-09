@@ -113,6 +113,72 @@ describeIfDb('VectorDbDatabaseRepository (ingestion) — real Postgres', () => {
     });
   });
 
+  describe('findDocumentNamesByS3Keys', () => {
+    async function makeJobWith(s3Key: string, originalFilename: string) {
+      await repo.createIngestionJob({
+        vectorDbId: vdbId,
+        s3Key,
+        originalFilename,
+        fileSizeBytes: 10,
+        contentType: 'text/plain',
+      });
+    }
+
+    it('maps known s3Keys to their original_filename and omits unknown keys', async () => {
+      await makeJobWith('s3/a', 'alpha.pdf');
+      await makeJobWith('s3/b', 'beta.docx');
+
+      const rows = await repo.findDocumentNamesByS3Keys(vdbId, [
+        's3/a',
+        's3/b',
+        's3/missing',
+      ]);
+
+      expect(new Map(rows.map((r) => [r.s3_key, r.original_filename]))).toEqual(
+        new Map([
+          ['s3/a', 'alpha.pdf'],
+          ['s3/b', 'beta.docx'],
+        ]),
+      );
+    });
+
+    it('returns [] for an empty key list without touching the DB', async () => {
+      expect(await repo.findDocumentNamesByS3Keys(vdbId, [])).toEqual([]);
+    });
+
+    it('does not resolve a key that belongs to another vector DB', async () => {
+      const other = await repo.create({
+        id: randomBytes(16)
+          .toString('hex')
+          .replace(/(.{8})(.{4})(.{4})(.{4})(.{12}).*/, '$1-$2-$3-$4-$5'),
+        organizationId: orgId,
+        name: `other-${randomBytes(4).toString('hex')}`,
+        description: null,
+        vectorStoreKind: 'qdrant',
+        vectorStoreRef: `other_${randomBytes(4).toString('hex')}`,
+      });
+      try {
+        await repo.createIngestionJob({
+          vectorDbId: other.id,
+          s3Key: 's3/shared',
+          originalFilename: 'leak.pdf',
+          fileSizeBytes: 10,
+          contentType: 'text/plain',
+        });
+
+        const rows = await repo.findDocumentNamesByS3Keys(vdbId, ['s3/shared']);
+
+        expect(rows).toEqual([]);
+      } finally {
+        await pool.query(
+          `DELETE FROM vector_db_ingestion_job WHERE vector_db_id = $1`,
+          [other.id],
+        );
+        await pool.query(`DELETE FROM org_vector_db WHERE id = $1`, [other.id]);
+      }
+    });
+  });
+
   describe('incrementJobAttempts', () => {
     it('increments attempts by one each call', async () => {
       const jobId = await makeJob();

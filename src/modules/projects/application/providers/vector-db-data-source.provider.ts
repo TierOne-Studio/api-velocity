@@ -47,9 +47,14 @@ export class VectorDbDataSourceProvider implements DataSourceProvider {
     );
 
     return {
+      // `name` = the source document (mirrors Airweave's entity/source split,
+      // so the chat Sources chip reads "<document> · <collection>"); falls back
+      // to the collection name when the filename can't be resolved. `entityId`
+      // includes `s3Key` so chunk 0 of two different documents doesn't collide
+      // and get dropped by the downstream entityId dedupe (SPEC-001 AC12).
       results: results.map((hit) => ({
-        entityId: `${source.config.vectorDbId}:${hit.chunkIndex}`,
-        name: source.config.vectorDbName,
+        entityId: `${source.config.vectorDbId}:${hit.s3Key}:${hit.chunkIndex}`,
+        name: hit.documentName ?? source.config.vectorDbName,
         relevanceScore: hit.score,
         breadcrumbs: [],
         createdAt: null,

@@ -282,6 +282,19 @@ export class VectorDbDatabaseRepository implements IVectorDbRepository {
     return Boolean(result);
   }
 
+  async findDocumentNamesByS3Keys(
+    vectorDbId: string,
+    s3Keys: string[],
+  ): Promise<Array<{ s3_key: string; original_filename: string }>> {
+    if (s3Keys.length === 0) return [];
+    return this.db.query<{ s3_key: string; original_filename: string }>(
+      `SELECT DISTINCT s3_key, original_filename
+         FROM vector_db_ingestion_job
+        WHERE vector_db_id = $1 AND s3_key = ANY($2::text[])`,
+      [vectorDbId, s3Keys],
+    );
+  }
+
   async setJobStatus(
     jobId: string,
     status: IngestionJobStatus,
