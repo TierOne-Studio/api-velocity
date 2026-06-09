@@ -141,7 +141,7 @@ Owner/admin: all five. Manager: read/create/update/upload (no delete). Viewer: r
 
 ## 7. Implementation plan
 
-Shipped as ordered slices (mirrors the merged commit history); each slice carried its tests.
+Built as ordered slices (mirrors the branch commit history); each slice carried its tests.
 
 1. **Persistence + CRUD** — `files:` controller, DTO, service, repository interface +
    database-repository, `org_vector_db` migration. `tests:` controller.spec,
@@ -205,8 +205,10 @@ and the paired spa-velocity `ui` SPEC for knowledge-base management screens.
 
 Append-only. Newest first.
 
-- 2026-06-09 · PR #28+ (feat/kb-crud) · Retroactively documents the shipped Vector DB / RAG
-  feature (slices 1–6: CRUD, upload/S3, async ingestion queue, extraction, chunk/embed/upsert,
-  project attach + chat RAG grounding) as the governing contract SPEC. · Created to satisfy the
-  spec-first gate (SPEC-000) for the behavioral `src/modules/vector-db` change. · No assumption
-  corrections.
+- 2026-06-09 · PR #28+ (feat/kb-crud) · Documents the as-built Vector DB / RAG feature
+  (slices 1–6: CRUD, upload/S3, async ingestion queue, extraction, chunk/embed/upsert,
+  project attach + chat RAG grounding) as the governing contract SPEC. The code is implemented
+  on `feat/kb-crud` but not yet merged to master, so `status` stays `Draft` (under review);
+  it moves to `Implemented` on merge, when the SPEC is reconciled with the merged diff. ·
+  Created to satisfy the spec-first gate (SPEC-000) for the behavioral `src/modules/vector-db`
+  change. · No assumption corrections.
