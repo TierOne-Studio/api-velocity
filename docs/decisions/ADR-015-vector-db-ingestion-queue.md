@@ -1,4 +1,4 @@
-# ADR-014: Vector DB ingestion — durable queue, idempotent indexing, and crash recovery
+# ADR-015: Vector DB ingestion — durable queue, idempotent indexing, and crash recovery
 
 **Status:** Accepted
 **Date:** 2026-06-04
@@ -24,7 +24,7 @@ durable work is pending, and how do we avoid losing or double-processing it?"). 
 needs both, and the non-negotiables in §7.4 (idempotent upserts, status as UI source of truth,
 batched embeddings, lease + reclaim, graceful shutdown) constrain the design.
 
-This ADR records the decisions deferred to Slice 4 by ADR-013 (VectorStoreProvider port,
+This ADR records the decisions deferred to Slice 4 by ADR-014 (VectorStoreProvider port,
 status-transition enforcement) plus the queue/embeddings/Qdrant decisions D1–D4.
 
 ## Decision
@@ -80,7 +80,7 @@ We will run ingestion as a **`pg-boss` durable queue inside our existing Postgre
 
 8. **Embeddings (D2/D3) behind domain ports (ADR-009).** OpenAI embeddings and Qdrant are
    reached only through `IEmbedder` and `IVectorStore` ports in `domain/`; the SDKs live in
-   `infrastructure/`. This satisfies ADR-013's deferred "VectorStoreProvider port" follow-up.
+   `infrastructure/`. This satisfies ADR-014's deferred "VectorStoreProvider port" follow-up.
    Embeddings are sent in **bounded batches with bounded concurrency** (`EMBEDDING_BATCH_SIZE`,
    `EMBEDDING_CONCURRENCY`) to respect OpenAI rate limits — never `Promise.all` over thousands
    of chunks at once.
@@ -105,7 +105,7 @@ We will run ingestion as a **`pg-boss` durable queue inside our existing Postgre
   reconcile sweep (decision 4), which covers both lost-enqueue *and* crash-mid-flight with one
   mechanism and a cleaner SoT story.
 - **Alt E — Derive UI status from pg-boss state + a view (no domain status column).** Rejected:
-  the UI needs the ADR-013 columns (`status_error` JSONB, `processing_started_at`,
+  the UI needs the ADR-014 columns (`status_error` JSONB, `processing_started_at`,
   `last_ingested_at`) and a stable shape independent of the queue library.
 
 ## Consequences
@@ -129,7 +129,7 @@ We will run ingestion as a **`pg-boss` durable queue inside our existing Postgre
     provide isolation.
   - Changing `EMBEDDING_MODEL` after vectors exist requires a **new collection** (Qdrant rejects
     a dimension mismatch on upsert). No automatic re-index/migration.
-- **Follow-ups (still deferred, per ADR-013):** soft-delete janitor (Qdrant drop + S3 purge +
+- **Follow-ups (still deferred, per ADR-014):** soft-delete janitor (Qdrant drop + S3 purge +
   orphan sweep) — this is also the mechanism that purges PII from Qdrant on KB delete, so it
   must land before GA; confirm Qdrant Cloud at-rest encryption is enabled on the provisioned
   cluster. `OrganizationDeleted` event subscriber, `countProjectReferences` inversion
@@ -146,7 +146,7 @@ We will run ingestion as a **`pg-boss` durable queue inside our existing Postgre
 - `src/modules/vector-db/infrastructure/{qdrant, openai, queue}/` — adapters.
 - `src/shared/config/config.service.ts` — `getQdrantUrl`, `getQdrantApiKey`, `getEmbeddingModel`,
   `getEmbeddingBatchSize`, `getEmbeddingConcurrency`; `QDRANT_URL`/`QDRANT_API_KEY` in `validateEnvironment`.
-- ADR-013 (vector-db persistence/lifecycle — Decision 10 status state machine, deferred follow-ups).
+- ADR-014 (vector-db persistence/lifecycle — Decision 10 status state machine, deferred follow-ups).
 - ADR-009 (clean-architecture layering — ports in domain, adapters in infrastructure).
 - ADR-006 (asks-first dependency gate — `pg-boss`, `@qdrant/js-client-rest` adoption).
 - ADR-001 (TypeORM-first persistence — raw-SQL fallback used by `VectorDbDatabaseRepository`).

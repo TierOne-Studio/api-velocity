@@ -1,4 +1,4 @@
-# ADR-015: Document text extraction — PDF/DOCX via a domain port, with non-retryable failure handling
+# ADR-016: Document text extraction — PDF/DOCX via a domain port, with non-retryable failure handling
 
 **Status:** Accepted
 **Date:** 2026-06-04
@@ -6,7 +6,7 @@
 
 ## Context
 
-ADR-014 shipped the ingestion pipeline (read S3 blob → chunk → embed → upsert) but
+ADR-015 shipped the ingestion pipeline (read S3 blob → chunk → embed → upsert) but
 recorded a known MVP limitation: file bodies were decoded as **UTF-8 text**
 (`body.toString('utf-8')`) before chunking, with "no PDF/DOCX text extraction." The
 upload endpoint already accepts `application/pdf` and the DOCX MIME type
@@ -17,7 +17,7 @@ extract real text from PDFs and DOCX before chunking.
 
 Two forces shape the design:
 1. **Layering (ADR-009):** parsing SDKs must not leak into the application/domain layers.
-2. **Failure semantics (ADR-014 §5):** the worker retries thrown errors up to
+2. **Failure semantics (ADR-015 §5):** the worker retries thrown errors up to
    `MAX_INGESTION_ATTEMPTS`. Some extraction failures are *permanent* — an unsupported
    type, a corrupt/mislabelled file, or a scanned/image-only PDF that yields no text.
    Retrying those three times wastes an S3 download + parse per attempt and leaves the
@@ -52,16 +52,16 @@ Two forces shape the design:
    `body.toString('utf-8')`. The text-type set is an explicit allow-list rather than
    "anything not binary," so an unrecognised type fails fast instead of being silently
    chunked as garbage. A genuinely empty text file still yields `""` → 0 chunks → a
-   validly ingested empty document (unchanged from ADR-014).
+   validly ingested empty document (unchanged from ADR-015).
 
 5. **A `NonRetryableIngestionError` taxonomy makes permanent failures terminal in one
-   attempt** (`domain/ingestion-errors.ts`), refining ADR-014 §5. The adapter throws it
+   attempt** (`domain/ingestion-errors.ts`), refining ADR-015 §5. The adapter throws it
    for: unsupported content type, a blob over the extraction size ceiling
    (`VECTOR_DB_MAX_UPLOAD_SIZE`), a parser rejection (corrupt/mislabelled file), or a
    binary document that parses to whitespace-only (scanned PDF, no OCR). The worker's
    `handleFailure` honours it by routing into the **existing** terminal-write block
    (`setJobStatus 'failed'` + `updateStatus 'error'`) — there remains exactly one
-   terminal-write site (ADR-014 §5 invariant preserved). Such a failure does **not**
+   terminal-write site (ADR-015 §5 invariant preserved). Such a failure does **not**
    increment the attempts counter: it was never a transient attempt, and the budget is
    reserved for failures a retry could fix (OpenAI/Qdrant blips), which stay plain
    `Error`s on the existing retry path.
@@ -111,7 +111,7 @@ Two forces shape the design:
 
 ## References
 
-- ADR-014 (ingestion pipeline; §5 terminal-failure single code path — refined here).
+- ADR-015 (ingestion pipeline; §5 terminal-failure single code path — refined here).
 - ADR-009 (clean-architecture layering — port in `domain/`, SDK in `infrastructure/`).
 - ADR-006 (asks-first dependency gate — `unpdf`, `mammoth` adoption).
 - `src/modules/vector-db/domain/{document-extractor.port.ts, ingestion-errors.ts}`.

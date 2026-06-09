@@ -1,4 +1,4 @@
-# ADR-013: Vector DB module — persistence, provider abstraction, and lifecycle
+# ADR-014: Vector DB module — persistence, provider abstraction, and lifecycle
 
 **Status:** Accepted
 **Date:** 2026-06-02
@@ -89,7 +89,7 @@ Minimum shape shipped in Slice 1: `{ message: string }`. Fields are additive —
 
 ### Decision 9 — `countProjectReferences` stays in `VectorDbRepository` for Slice 1 (RESOLVED in Slice 5)
 
-The reviewer (ADR-013 §H) correctly identifies that `VectorDbRepository` reaching into `project_data_source.config->>'knowledgeBaseId'` violates the dependency rule — `VectorDb` should not know the `Projects` module's JSON shape. The correct inversion is for the Projects module to own the query.
+The reviewer (ADR-014 §H) correctly identifies that `VectorDbRepository` reaching into `project_data_source.config->>'knowledgeBaseId'` violates the dependency rule — `VectorDb` should not know the `Projects` module's JSON shape. The correct inversion is for the Projects module to own the query.
 
 This inversion was deferred until the Projects module gained a vector-db source consumer. Inverting before there was a consumer would have added a method with no callers — a YAGNI violation. The raw SQL was annotated with a comment pointing to this ADR.
 
