@@ -124,7 +124,7 @@ We will run ingestion as a **`pg-boss` durable queue inside our existing Postgre
 - **Known limitations (MVP):**
   - ~~Uploaded file bodies are decoded as **UTF-8 text** for chunking. No PDF/DOCX text
     extraction — a binary upload will be chunked as raw text. Extraction is future work.~~
-    **Superseded by ADR-015** — PDF/DOCX text extraction now runs before chunking.
+    **Superseded by ADR-016** — PDF/DOCX text extraction now runs before chunking.
   - A single shared Qdrant instance via env (not per-org encrypted creds). Per-KB collections
     provide isolation.
   - Changing `EMBEDDING_MODEL` after vectors exist requires a **new collection** (Qdrant rejects
