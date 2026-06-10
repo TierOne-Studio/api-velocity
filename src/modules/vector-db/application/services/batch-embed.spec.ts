@@ -1,6 +1,26 @@
 import { batchEmbed, type EmbedBatchFn } from './batch-embed';
 
 describe('batchEmbed', () => {
+  it('throws (no infinite loop) when batchSize is not a positive integer', async () => {
+    const embed: EmbedBatchFn = async (texts) => texts.map(() => [0]);
+    await expect(
+      batchEmbed(['a'], { batchSize: 0, concurrency: 1 }, embed),
+    ).rejects.toThrow(RangeError);
+    await expect(
+      batchEmbed(['a'], { batchSize: -2, concurrency: 1 }, embed),
+    ).rejects.toThrow(/batchSize/);
+  });
+
+  it('throws when concurrency is not a positive integer', async () => {
+    const embed: EmbedBatchFn = async (texts) => texts.map(() => [0]);
+    await expect(
+      batchEmbed(['a'], { batchSize: 2, concurrency: 0 }, embed),
+    ).rejects.toThrow(RangeError);
+    await expect(
+      batchEmbed(['a'], { batchSize: 2, concurrency: 1.5 }, embed),
+    ).rejects.toThrow(/concurrency/);
+  });
+
   it('returns an empty array for no texts without calling the embedder', async () => {
     let called = false;
     const embed: EmbedBatchFn = async (texts) => {
@@ -18,7 +38,11 @@ describe('batchEmbed', () => {
       seen.push(texts);
       return texts.map(() => [0]);
     };
-    await batchEmbed(['a', 'b', 'c', 'd', 'e'], { batchSize: 2, concurrency: 1 }, embed);
+    await batchEmbed(
+      ['a', 'b', 'c', 'd', 'e'],
+      { batchSize: 2, concurrency: 1 },
+      embed,
+    );
     expect(seen).toEqual([['a', 'b'], ['c', 'd'], ['e']]);
   });
 
@@ -29,7 +53,11 @@ describe('batchEmbed', () => {
       await new Promise((r) => setTimeout(r, delay));
       return texts.map((t) => [t.charCodeAt(0)]);
     };
-    const out = await batchEmbed(['a', 'b', 'c', 'd'], { batchSize: 2, concurrency: 2 }, embed);
+    const out = await batchEmbed(
+      ['a', 'b', 'c', 'd'],
+      { batchSize: 2, concurrency: 2 },
+      embed,
+    );
     expect(out).toEqual([[97], [98], [99], [100]]);
   });
 
@@ -44,13 +72,21 @@ describe('batchEmbed', () => {
       return texts.map(() => [0]);
     };
     // 6 batches of 1, concurrency 2.
-    await batchEmbed(['a', 'b', 'c', 'd', 'e', 'f'], { batchSize: 1, concurrency: 2 }, embed);
+    await batchEmbed(
+      ['a', 'b', 'c', 'd', 'e', 'f'],
+      { batchSize: 1, concurrency: 2 },
+      embed,
+    );
     expect(maxInFlight).toBe(2);
   });
 
   it('returns one vector per input text', async () => {
     const embed: EmbedBatchFn = async (texts) => texts.map((_, i) => [i]);
-    const out = await batchEmbed(['a', 'b', 'c'], { batchSize: 2, concurrency: 2 }, embed);
+    const out = await batchEmbed(
+      ['a', 'b', 'c'],
+      { batchSize: 2, concurrency: 2 },
+      embed,
+    );
     expect(out).toHaveLength(3);
   });
 });

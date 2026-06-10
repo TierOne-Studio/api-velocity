@@ -129,7 +129,7 @@ Invalid transitions (e.g., `empty → ready`, `ready → empty` without purge) w
 - **Alt B — NoopVectorStoreAdapter in Slice 1.** Correct direction, premature timing. The port and adapter will ship alongside Slice 4's Qdrant code, when there is a real adapter to implement against.
 - **Alt C — `ON DELETE CASCADE` + a TODO comment.** Already in Slice 1. Rejected because it silently orphans Qdrant/S3 resources the moment any org is deleted — a billing and data-leak risk even before Slice 4 ships.
 
-### Decision 11 — S3 as blob store for uploaded files (Slice 3)
+### Decision 12 — S3 as blob store for uploaded files (Slice 3)
 
 **Status:** Accepted
 

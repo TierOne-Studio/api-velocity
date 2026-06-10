@@ -10,7 +10,10 @@ const mockSend = jest.fn<(command: unknown) => Promise<unknown>>();
 jest.unstable_mockModule('@aws-sdk/client-s3', () => ({
   S3Client: jest.fn(() => ({ send: mockSend })),
   PutObjectCommand: jest.fn((input: unknown) => ({ __type: 'put', input })),
-  DeleteObjectCommand: jest.fn((input: unknown) => ({ __type: 'delete', input })),
+  DeleteObjectCommand: jest.fn((input: unknown) => ({
+    __type: 'delete',
+    input,
+  })),
   GetObjectCommand: jest.fn((input: unknown) => ({ __type: 'get', input })),
 }));
 

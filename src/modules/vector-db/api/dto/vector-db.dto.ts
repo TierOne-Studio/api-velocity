@@ -1,8 +1,12 @@
 import type {
   VectorDbStatus,
   IngestionJobStatus,
+  VectorDbRow,
 } from '../../domain/vector-db.repository';
-export type { VectorDbStatus, IngestionJobStatus };
+// VectorDbRow is the DB-facing persistence shape owned by the domain layer;
+// re-exported here for the api/infra consumers that already import it from this
+// module. The API's own public surface is the camelCase DTOs below.
+export type { VectorDbStatus, IngestionJobStatus, VectorDbRow };
 
 export type IngestionJob = {
   id: string;
@@ -31,24 +35,6 @@ export type VectorDb = {
   lastIngestedAt: string | null;
   createdAt: string;
   updatedAt: string;
-};
-
-export type VectorDbRow = {
-  id: string;
-  organization_id: string;
-  name: string;
-  description: string | null;
-  vector_store_kind: string;
-  vector_store_ref: string;
-  status: VectorDbStatus;
-  status_error: { message: string } | null;
-  document_count: number;
-  deleted_at: string | null;
-  version: number;
-  processing_started_at: string | null;
-  last_ingested_at: string | null;
-  created_at: string;
-  updated_at: string;
 };
 
 export type CreateKnowledgeBaseInput = {

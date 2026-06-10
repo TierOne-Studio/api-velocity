@@ -1,8 +1,29 @@
-import type { VectorDbRow } from '../api/dto/vector-db.dto';
-
 export type VectorDbStatus = 'empty' | 'processing' | 'ready' | 'error';
 
 export type IngestionJobStatus = 'pending' | 'processing' | 'done' | 'failed';
+
+/**
+ * Persistence row shape for `org_vector_db` (snake_case, DB-facing). Owned by the
+ * domain layer; `api/dto` re-exports it. The repository returns rows of this
+ * shape and the service maps them to the public camelCase `VectorDb` DTO.
+ */
+export type VectorDbRow = {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string | null;
+  vector_store_kind: string;
+  vector_store_ref: string;
+  status: VectorDbStatus;
+  status_error: { message: string } | null;
+  document_count: number;
+  deleted_at: string | null;
+  version: number;
+  processing_started_at: string | null;
+  last_ingested_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 export type IngestionJobRow = {
   id: string;

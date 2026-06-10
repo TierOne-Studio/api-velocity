@@ -10,8 +10,12 @@ describe('VectorDbMigrationService', () => {
   beforeEach(() => {
     db = {
       query: jest.fn<() => Promise<unknown>>().mockResolvedValue(undefined),
-      hasMigrationRun: jest.fn<() => Promise<boolean>>().mockResolvedValue(false),
-      recordMigration: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      hasMigrationRun: jest
+        .fn<() => Promise<boolean>>()
+        .mockResolvedValue(false),
+      recordMigration: jest
+        .fn<() => Promise<void>>()
+        .mockResolvedValue(undefined),
     } as unknown as jest.Mocked<DatabaseService>;
     service = new VectorDbMigrationService(db);
     infoSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -71,7 +75,9 @@ describe('VectorDbMigrationService', () => {
       (args) => (args as unknown[])[0] as string,
     );
     expect(calls.some((sql) => /vector_store_ref/.test(sql))).toBe(true);
-    expect(calls.some((sql) => /DROP COLUMN.*qdrant_collection/i.test(sql))).toBe(true);
+    expect(
+      calls.some((sql) => /DROP COLUMN.*qdrant_collection/i.test(sql)),
+    ).toBe(true);
   });
 
   it('addSchemaImprovements adds deleted_at and version columns', async () => {

@@ -16,6 +16,21 @@ export async function batchEmbed(
   opts: BatchEmbedOptions,
   embedBatch: EmbedBatchFn,
 ): Promise<number[][]> {
+  // Fail fast on misconfiguration: batchSize < 1 would never advance the batch
+  // loop (infinite loop / OOM) and concurrency < 1 would spawn zero workers and
+  // silently return wrong-length output. Both come from config — surface the bad
+  // value instead of hanging or corrupting results.
+  if (!Number.isInteger(opts.batchSize) || opts.batchSize < 1) {
+    throw new RangeError(
+      `batchEmbed: batchSize must be a positive integer, got ${opts.batchSize}`,
+    );
+  }
+  if (!Number.isInteger(opts.concurrency) || opts.concurrency < 1) {
+    throw new RangeError(
+      `batchEmbed: concurrency must be a positive integer, got ${opts.concurrency}`,
+    );
+  }
+
   if (texts.length === 0) return [];
 
   const batches: string[][] = [];
