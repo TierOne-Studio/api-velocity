@@ -90,18 +90,14 @@ describe('VectorDbMigrationService', () => {
     const calls = (db.query as jest.Mock).mock.calls.map(
       (args) => (args as unknown[])[0] as string,
     );
-    expect(
-      calls.some((sql) => /ON DELETE RESTRICT/i.test(sql)),
-    ).toBe(true);
+    expect(calls.some((sql) => /ON DELETE RESTRICT/i.test(sql))).toBe(true);
   });
 
   it('createTable emits CREATE TABLE with status CHECK constraint', async () => {
     await service.createTable();
 
     expect(db.query).toHaveBeenCalledWith(
-      expect.stringMatching(
-        /CREATE TABLE IF NOT EXISTS org_vector_db/i,
-      ),
+      expect.stringMatching(/CREATE TABLE IF NOT EXISTS org_vector_db/i),
     );
     expect(db.query).toHaveBeenCalledWith(
       expect.stringMatching(
