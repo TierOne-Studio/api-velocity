@@ -87,7 +87,9 @@ export class VectorDbController {
   @HttpCode(201)
   @RequirePermissions('vector-db:upload')
   @UseInterceptors(
-    FileInterceptor('file', { limits: { fileSize: VECTOR_DB_MAX_UPLOAD_SIZE } }),
+    FileInterceptor('file', {
+      limits: { fileSize: VECTOR_DB_MAX_UPLOAD_SIZE },
+    }),
   )
   async upload(
     @Session() session: UserSession,
@@ -112,9 +114,12 @@ export class VectorDbController {
     return { data };
   }
 
+  // File removal is a delete-grade action (mirrors collection delete below):
+  // gated on vector-db:delete, NOT vector-db:upload, so roles that can add
+  // files (manager holds upload) still cannot remove them.
   @Delete(':id/files/:jobId')
   @HttpCode(204)
-  @RequirePermissions('vector-db:upload')
+  @RequirePermissions('vector-db:delete')
   async deleteFile(
     @Session() session: UserSession,
     @Param('id') id: string,

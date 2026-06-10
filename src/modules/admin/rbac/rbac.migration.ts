@@ -81,10 +81,14 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
   { resource: 'sql-connection', action: 'create' },
   { resource: 'sql-connection', action: 'update' },
   { resource: 'sql-connection', action: 'delete' },
+  // Manager: vector-db read/create/update/upload but NOT delete. Removal of a
+  // vector-db element (collection or file) is admin-only — mirrors the airweave
+  // delete asymmetry above (ADR-011). Revoked from existing deployments by
+  // rbac_023. (`upload` is granted via permissions.ts / pending rbac catalog
+  // work — tracked separately.)
   { resource: 'vector-db', action: 'read' },
   { resource: 'vector-db', action: 'create' },
   { resource: 'vector-db', action: 'update' },
-  { resource: 'vector-db', action: 'delete' },
 ] as const;
 
 const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
@@ -196,6 +200,10 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_022_add_vector_db_permissions',
         up: () => this.addVectorDbPermissions(),
+      },
+      {
+        name: 'rbac_023_revoke_manager_vector_db_delete',
+        up: () => this.revokeManagerVectorDbDelete(),
       },
     ];
 
@@ -1951,6 +1959,60 @@ export class RbacMigrationService implements OnModuleInit {
 
     console.log(
       '✅ vector-db permissions added and assigned to default roles (superadmin/admin/manager/member); custom roles inherit from organization:read|update',
+    );
+  }
+
+  /**
+   * Revoke vector-db:delete from the manager role.
+   *
+   * rbac_022 granted manager the full vector-db CRUD set (incl. delete). Policy
+   * revised: a manager must not REMOVE vector-db elements — neither the
+   * collection (DELETE /:id) nor its files (DELETE /:id/files/:jobId, now gated
+   * on vector-db:delete). `delete` was dropped from
+   * ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS; this step re-syncs existing
+   * manager roles so deployments already carrying the grant converge to the new
+   * policy (syncRolePermissions' DELETE-allowlist removes the now-absent grant).
+   *
+   * Manager-only by design: admin/superadmin keep delete; member never had it.
+   * Custom roles that inherited vector-db:delete via organization:update are
+   * intentionally left untouched — out of scope for this policy change.
+   *
+   * NOT wrapped in db.transaction — syncRolePermissions does its own
+   * DELETE-then-INSERT against this.db; a wrapper would be false atomicity.
+   * Matches the addAirweave/addSqlConnection/addVectorDb precedent; converges on
+   * re-run via hasMigrationRun + the allowlist re-sync.
+   */
+  async revokeManagerVectorDbDelete(): Promise<void> {
+    // Re-sync the global manager role.
+    const globalManager = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE organization_id IS NULL AND name = 'manager'`,
+    );
+    if (globalManager) {
+      await this.syncRolePermissions(
+        globalManager.id,
+        ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+      );
+    }
+
+    // Re-sync the manager role in every organization.
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
+    for (const organization of organizations) {
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(
+          managerRole.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    console.log(
+      '✅ vector-db:delete revoked from manager role (collection + file removal now admin-only)',
     );
   }
 }

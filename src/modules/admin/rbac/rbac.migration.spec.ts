@@ -82,7 +82,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_019 already run
         .mockResolvedValueOnce(true) // rbac_020 already run
         .mockResolvedValueOnce(true) // rbac_021 already run
-        .mockResolvedValueOnce(true); // rbac_022 already run
+        .mockResolvedValueOnce(true) // rbac_022 already run
+        .mockResolvedValueOnce(true); // rbac_023 already run
 
       const consoleSpy = jest
         .spyOn(console, 'log')
@@ -119,7 +120,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_019 already run
         .mockResolvedValueOnce(true) // rbac_020 already run
         .mockResolvedValueOnce(true) // rbac_021 already run
-        .mockResolvedValueOnce(true); // rbac_022 already run
+        .mockResolvedValueOnce(true) // rbac_022 already run
+        .mockResolvedValueOnce(true); // rbac_023 already run
 
       // rbac_013 calls seedDefaultOrganization → UPSERT returns new org id.
       // Use mockImplementation so it isn't consumed by earlier migrations that also call queryOne.
@@ -458,11 +460,11 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce({ id: 'perm-sql-connection-create' })
         .mockResolvedValueOnce({ id: 'perm-sql-connection-update' })
         .mockResolvedValueOnce({ id: 'perm-sql-connection-delete' })
-        // rbac_022 — manager gains full vector-db CRUD.
+        // rbac_022 — manager gains vector-db read/create/update (no delete:
+        // removal is admin-only, revoked from the constant by rbac_023).
         .mockResolvedValueOnce({ id: 'perm-vector-db-read' })
         .mockResolvedValueOnce({ id: 'perm-vector-db-create' })
         .mockResolvedValueOnce({ id: 'perm-vector-db-update' })
-        .mockResolvedValueOnce({ id: 'perm-vector-db-delete' })
         .mockResolvedValueOnce({ id: 'member-role-1' })
         .mockResolvedValueOnce({ id: 'perm-member-org-read' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-read' })
@@ -534,15 +536,13 @@ describe('RbacMigrationService', () => {
           'update',
           'sql-connection',
           'delete',
-          // rbac_022 — manager vector-db full CRUD.
+          // rbac_022 — manager vector-db read/create/update (no delete).
           'vector-db',
           'read',
           'vector-db',
           'create',
           'vector-db',
           'update',
-          'vector-db',
-          'delete',
         ],
       );
       expect(dbService.query).toHaveBeenCalledWith(
@@ -1116,7 +1116,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_019 already run
         .mockResolvedValueOnce(true) // rbac_020 already run
         .mockResolvedValueOnce(true) // rbac_021 already run
-        .mockResolvedValueOnce(true); // rbac_022 already run
+        .mockResolvedValueOnce(true) // rbac_022 already run
+        .mockResolvedValueOnce(true); // rbac_023 already run
 
       // Needed by backfillRolePermissions and assignAllPermissionsToAdmin
       dbService.queryOne.mockResolvedValue(null);
@@ -1545,7 +1546,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_019 already run
         .mockResolvedValueOnce(true) // rbac_020 already run
         .mockResolvedValueOnce(true) // rbac_021 already run
-        .mockResolvedValueOnce(true); // rbac_022 already run
+        .mockResolvedValueOnce(true) // rbac_022 already run
+        .mockResolvedValueOnce(true); // rbac_023 already run
 
       dbService.query.mockImplementation(async (sql: string) => {
         if (sql.includes('SELECT id FROM organization')) return [];
@@ -1929,6 +1931,159 @@ describe('RbacMigrationService', () => {
         'rbac_021_add_sql_connection_permissions',
       );
       sqlConnSpy.mockRestore();
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('revokeManagerVectorDbDelete (rbac_023)', () => {
+    // Policy change: manager must not remove vector-db elements. rbac_022 had
+    // granted manager full vector-db CRUD (incl. delete); this step re-syncs
+    // manager roles to the updated constant, dropping the delete grant.
+
+    function setupRevokeMocks() {
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT id FROM organization'))
+          return [{ id: 'org-1' }];
+        return [];
+      });
+      dbService.queryOne.mockImplementation(
+        async (sql: string, params?: unknown[]) => {
+          if (
+            sql.includes('organization_id IS NULL') &&
+            sql.includes("name = 'manager'")
+          )
+            return { id: 'g-manager' };
+          if (sql.includes("name = 'manager'") && params?.[0] === 'org-1')
+            return { id: 'org-manager' };
+          if (sql.includes('FROM permissions')) return { id: 'perm-x' };
+          return null;
+        },
+      );
+    }
+
+    function deleteAllowlistPairs(): Array<[string, string]> {
+      const deleteCall = dbService.query.mock.calls.find(
+        (call: unknown[]) =>
+          typeof call[0] === 'string' &&
+          call[0].includes('DELETE FROM role_permissions'),
+      );
+      expect(deleteCall).toBeDefined();
+      const params = deleteCall![1] as string[];
+      // params[0] is the role id; the remainder are (resource, action) pairs.
+      const pairs: Array<[string, string]> = [];
+      for (let i = 1; i < params.length; i += 2) {
+        pairs.push([params[i], params[i + 1]]);
+      }
+      return pairs;
+    }
+
+    it('re-syncs manager to an allowlist that keeps vector-db read/create/update but NOT delete', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      setupRevokeMocks();
+
+      await service.revokeManagerVectorDbDelete();
+
+      const pairs = deleteAllowlistPairs();
+      expect(pairs).toContainEqual(['vector-db', 'read']);
+      expect(pairs).toContainEqual(['vector-db', 'create']);
+      expect(pairs).toContainEqual(['vector-db', 'update']);
+      // The whole point of the migration: delete is no longer in the allowlist,
+      // so syncRolePermissions' DELETE removes any existing grant.
+      expect(pairs).not.toContainEqual(['vector-db', 'delete']);
+      consoleSpy.mockRestore();
+    });
+
+    it('re-syncs both the global manager role and each org-scoped manager role', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      setupRevokeMocks();
+
+      await service.revokeManagerVectorDbDelete();
+
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('organization_id IS NULL'),
+      );
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining("name = 'manager'"),
+        ['org-1'],
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('does NOT touch admin or member roles (manager-only revoke)', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      setupRevokeMocks();
+
+      await service.revokeManagerVectorDbDelete();
+
+      const touchedAdmin = dbService.queryOne.mock.calls.some(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].includes("name = 'admin'"),
+      );
+      const touchedMember = dbService.queryOne.mock.calls.some(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].includes("name = 'member'"),
+      );
+      expect(touchedAdmin).toBe(false);
+      expect(touchedMember).toBe(false);
+      consoleSpy.mockRestore();
+    });
+
+    it('does NOT wrap in db.transaction (false-atomicity avoidance, matches precedent)', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      setupRevokeMocks();
+
+      await service.revokeManagerVectorDbDelete();
+
+      expect(dbService.transaction).not.toHaveBeenCalled();
+      consoleSpy.mockRestore();
+    });
+
+    it('runs cleanly when no global manager role and no organizations exist', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT id FROM organization')) return [];
+        return [];
+      });
+      dbService.queryOne.mockResolvedValue(null);
+
+      await service.revokeManagerVectorDbDelete();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('vector-db:delete revoked from manager role'),
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('is registered as rbac_023 in the migrations array', async () => {
+      dbService.hasMigrationRun.mockImplementation(async (name: string) => {
+        // Only let rbac_023 run; skip all others.
+        return name !== 'rbac_023_revoke_manager_vector_db_delete';
+      });
+
+      const revokeSpy = jest
+        .spyOn(service, 'revokeManagerVectorDbDelete')
+        .mockResolvedValue();
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      await service.runTrackedMigrations();
+
+      expect(revokeSpy).toHaveBeenCalledTimes(1);
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_023_revoke_manager_vector_db_delete',
+      );
+      revokeSpy.mockRestore();
       consoleSpy.mockRestore();
     });
   });

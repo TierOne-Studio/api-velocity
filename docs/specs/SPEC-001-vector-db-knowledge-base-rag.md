@@ -97,7 +97,7 @@ via `vector-db.module.ts` and wired in `app.module.ts`.
 | `PATCH /api/vector-dbs/:id` | `vector-db:update` | Update name/description |
 | `POST /api/vector-dbs/:id/upload` | `vector-db:upload` | Upload file → 201, enqueue ingestion job |
 | `GET /api/vector-dbs/:id/files` | `vector-db:read` | List ingestion jobs/files |
-| `DELETE /api/vector-dbs/:id/files/:jobId` | `vector-db:upload` | Delete a file/job → 204 |
+| `DELETE /api/vector-dbs/:id/files/:jobId` | `vector-db:delete` | Delete a file/job → 204 (removal is delete-grade, not upload) |
 | `DELETE /api/vector-dbs/:id` | `vector-db:delete` | Delete knowledge base → 204 |
 
 **Entities + migrations** (`vector-db.migration.ts`):
@@ -129,7 +129,11 @@ legal no-ops):
 | `ready` | `empty` | All documents purged |
 
 **RBAC scopes** (`src/permissions.ts`): `vector-db:{read,create,update,delete,upload}`.
-Owner/admin: all five. Manager: read/create/update/upload (no delete). Viewer: read only.
+Owner/admin: all five. Manager: read/create/update/upload (**no delete** — managers
+cannot remove vector-db elements: `vector-db:delete` gates both knowledge-base deletion
+*and* file deletion). Viewer: read only. The runtime grant lives in the DB-seeded role
+matrix (`rbac.migration.ts` `ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS`); `rbac_023`
+revokes the delete grant rbac_022 had given manager.
 
 **Project integration:** `vector_db` data-source kind + `VectorDbDataSourceProvider`
 (`data-source.registry.ts`, `data-source-provider.interface.ts`,
@@ -144,7 +148,7 @@ Owner/admin: all five. Manager: read/create/update/upload (no delete). Viewer: r
 |---|---|---|
 | AC1 | `POST /api/vector-dbs` creates an org-scoped KB; duplicate `(org,name)` is rejected | `src/modules/vector-db/api/controllers/vector-db.controller.spec.ts`; `.../infrastructure/persistence/repositories/vector-db.database-repository.integration.spec.ts` |
 | AC2 | `GET` list/by-id return only KBs of the caller's org; another org's id is not found | `.../infrastructure/persistence/repositories/vector-db.database-repository.integration.spec.ts` |
-| AC3 | RBAC: viewer is read-only; manager cannot `DELETE`; required permission per route is enforced | `src/modules/vector-db/api/controllers/vector-db.controller.spec.ts` |
+| AC3 | RBAC: viewer is read-only; manager cannot remove elements (neither `DELETE /:id` nor `DELETE /:id/files/:jobId` — both gated on `vector-db:delete`, which manager lacks); required permission per route is enforced | `src/modules/vector-db/api/controllers/vector-db.controller.spec.ts`; `src/modules/admin/rbac/rbac.migration.spec.ts` |
 | AC4 | `POST /:id/upload` returns 201, stores the blob, and creates a `pending` ingestion job | `src/modules/vector-db/infrastructure/s3/vector-db-file-uploader.service.spec.ts`; `.../application/services/vector-db-ingestion.integration.spec.ts` |
 | AC5 | Ingestion claims a job, runs extract→chunk→embed→upsert, and transitions status (`pending`→`processing`→`done`/`failed`) with bounded attempts | `.../application/services/vector-db-ingestion.service.spec.ts`; `.../application/services/vector-db-ingestion.integration.spec.ts` |
 | AC6 | PDF/DOCX/plain-text documents are extracted to text; unsupported types fail fast | `.../infrastructure/extractor/extract.spec.ts`; `.../infrastructure/extractor/document-extractor.adapter.integration.spec.ts` |
@@ -222,6 +226,15 @@ and the paired spa-velocity `ui` SPEC for knowledge-base management screens.
 
 Append-only. Newest first.
 
+- 2026-06-10 · feat/kb-crud · Managers can no longer remove vector-db elements (AC3): file
+  deletion (`DELETE /:id/files/:jobId`) is re-gated from `vector-db:upload` to
+  `vector-db:delete`, and `rbac_023_revoke_manager_vector_db_delete` revokes the
+  `vector-db:delete` grant rbac_022 had given the manager role (dropped from
+  `ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS`). Removal of any vector-db element is now
+  admin-only. Supersedes the earlier "manager gets full vector-db access" direction. Custom
+  roles inheriting `vector-db:delete` via `organization:update` are intentionally untouched. ·
+  Aligns "manager can't remove elements" across collection + file deletion. · No assumption
+  corrections.
 - 2026-06-09 · PR #28+ (feat/kb-crud) · Relevance floor for `vector_db` retrieval (AC13):
   `VectorDbRetrievalService` now drops hits below `ConfigService.getVectorDbMinScore()`
   (`VECTOR_DB_MIN_SCORE_PCT`, default 30 ⇒ 0.30) before resolving names, so a top-k search

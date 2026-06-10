@@ -94,9 +94,9 @@ describe('VectorDbController', () => {
   });
 
   it('create rejects non-object body', async () => {
-    await expect(
-      controller.create(session, null as never),
-    ).rejects.toThrow('body must be an object');
+    await expect(controller.create(session, null as never)).rejects.toThrow(
+      'body must be an object',
+    );
   });
 
   it('update rejects non-object body', async () => {
@@ -114,15 +114,39 @@ describe('VectorDbController', () => {
     expect(permissions).toContain('vector-db:upload');
   });
 
+  it('deleteFile requires vector-db:delete (file removal is delete-grade, not upload)', () => {
+    const handler = (controller as unknown as Record<string, object>)[
+      'deleteFile'
+    ];
+    const permissions = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      handler,
+    ) as string[];
+    // Removal of any vector-db element requires the delete grade so a manager
+    // (who holds upload but not delete) cannot delete files.
+    expect(permissions).toContain('vector-db:delete');
+    expect(permissions).not.toContain('vector-db:upload');
+  });
+
   it('upload delegates to service and returns 201 shape', async () => {
     const job = {
-      id: 'job-1', vectorDbId: 'kb-1', s3Key: 'k', originalFilename: 'f',
-      fileSizeBytes: '5', contentType: 'text/plain', status: 'pending' as const,
-      createdAt: '', updatedAt: '',
+      id: 'job-1',
+      vectorDbId: 'kb-1',
+      s3Key: 'k',
+      originalFilename: 'f',
+      fileSizeBytes: '5',
+      contentType: 'text/plain',
+      status: 'pending' as const,
+      createdAt: '',
+      updatedAt: '',
     };
     service.uploadFile.mockResolvedValue(job as never);
 
-    const file = { originalname: 'doc.txt', mimetype: 'text/plain', size: 5 } as Express.Multer.File;
+    const file = {
+      originalname: 'doc.txt',
+      mimetype: 'text/plain',
+      size: 5,
+    } as Express.Multer.File;
     const result = await controller.upload(session, 'kb-1', file);
 
     expect(service.uploadFile).toHaveBeenCalledWith(
