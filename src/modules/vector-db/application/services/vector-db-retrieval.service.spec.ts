@@ -118,9 +118,21 @@ describe('VectorDbRetrievalService.search', () => {
   it('resolves document names per distinct s3Key and leaves unresolved keys null', async () => {
     const { service, repo } = makeService({
       hits: [
-        { id: 'p1', score: 0.9, payload: { text: 'a', chunkIndex: 0, s3Key: 's3/a' } },
-        { id: 'p2', score: 0.8, payload: { text: 'b', chunkIndex: 0, s3Key: 's3/b' } },
-        { id: 'p3', score: 0.7, payload: { text: 'c', chunkIndex: 1, s3Key: 's3/a' } },
+        {
+          id: 'p1',
+          score: 0.9,
+          payload: { text: 'a', chunkIndex: 0, s3Key: 's3/a' },
+        },
+        {
+          id: 'p2',
+          score: 0.8,
+          payload: { text: 'b', chunkIndex: 0, s3Key: 's3/b' },
+        },
+        {
+          id: 'p3',
+          score: 0.7,
+          payload: { text: 'c', chunkIndex: 1, s3Key: 's3/a' },
+        },
       ],
       names: [{ s3_key: 's3/a', original_filename: 'handbook.pdf' }],
     });
@@ -143,9 +155,21 @@ describe('VectorDbRetrievalService.search', () => {
     const { service, repo } = makeService({
       minScore: 0.3,
       hits: [
-        { id: 'p1', score: 0.61, payload: { text: 'relevant', chunkIndex: 0, s3Key: 's3/a' } },
-        { id: 'p2', score: 0.18, payload: { text: 'noise', chunkIndex: 0, s3Key: 's3/b' } },
-        { id: 'p3', score: 0.3, payload: { text: 'edge', chunkIndex: 0, s3Key: 's3/c' } },
+        {
+          id: 'p1',
+          score: 0.61,
+          payload: { text: 'relevant', chunkIndex: 0, s3Key: 's3/a' },
+        },
+        {
+          id: 'p2',
+          score: 0.18,
+          payload: { text: 'noise', chunkIndex: 0, s3Key: 's3/b' },
+        },
+        {
+          id: 'p3',
+          score: 0.3,
+          payload: { text: 'edge', chunkIndex: 0, s3Key: 's3/c' },
+        },
       ],
       names: [
         { s3_key: 's3/a', original_filename: 'a.pdf' },
@@ -168,8 +192,16 @@ describe('VectorDbRetrievalService.search', () => {
     const { service, repo } = makeService({
       minScore: 0.9,
       hits: [
-        { id: 'p1', score: 0.42, payload: { text: 'a', chunkIndex: 0, s3Key: 's3/a' } },
-        { id: 'p2', score: 0.11, payload: { text: 'b', chunkIndex: 0, s3Key: 's3/b' } },
+        {
+          id: 'p1',
+          score: 0.42,
+          payload: { text: 'a', chunkIndex: 0, s3Key: 's3/a' },
+        },
+        {
+          id: 'p2',
+          score: 0.11,
+          payload: { text: 'b', chunkIndex: 0, s3Key: 's3/b' },
+        },
       ],
       names: [{ s3_key: 's3/a', original_filename: 'a.pdf' }],
     });

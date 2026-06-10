@@ -80,7 +80,13 @@ describe('VectorDbDataSourceProvider', () => {
 
   it('falls back to the collection name when the document is unresolved', async () => {
     const { provider } = makeProvider([
-      { text: 'x', score: 0.5, chunkIndex: 0, s3Key: 's3/x', documentName: null },
+      {
+        text: 'x',
+        score: 0.5,
+        chunkIndex: 0,
+        s3Key: 's3/x',
+        documentName: null,
+      },
     ]);
 
     const response = await provider.search(makeSource(), 'q', {
@@ -92,8 +98,20 @@ describe('VectorDbDataSourceProvider', () => {
 
   it('does not collide entityIds for chunk 0 of two different documents', async () => {
     const { provider } = makeProvider([
-      { text: 'a', score: 0.9, chunkIndex: 0, s3Key: 's3/a', documentName: 'a.pdf' },
-      { text: 'b', score: 0.8, chunkIndex: 0, s3Key: 's3/b', documentName: 'b.pdf' },
+      {
+        text: 'a',
+        score: 0.9,
+        chunkIndex: 0,
+        s3Key: 's3/a',
+        documentName: 'a.pdf',
+      },
+      {
+        text: 'b',
+        score: 0.8,
+        chunkIndex: 0,
+        s3Key: 's3/b',
+        documentName: 'b.pdf',
+      },
     ]);
 
     const response = await provider.search(makeSource(), 'q', {
@@ -115,7 +133,13 @@ describe('VectorDbDataSourceProvider', () => {
 
   it('returns no results and does not query when no organizationId is threaded', async () => {
     const { provider, retrieval } = makeProvider([
-      { text: 'x', score: 1, chunkIndex: 0, s3Key: 's3/x', documentName: 'x.pdf' },
+      {
+        text: 'x',
+        score: 1,
+        chunkIndex: 0,
+        s3Key: 's3/x',
+        documentName: 'x.pdf',
+      },
     ]);
 
     const response = await provider.search(makeSource(), 'q', {});
