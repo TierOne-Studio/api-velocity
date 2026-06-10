@@ -132,8 +132,10 @@ legal no-ops):
 Owner/admin: all five. Manager: read/create/update/upload (**no delete** — managers
 cannot remove vector-db elements: `vector-db:delete` gates both knowledge-base deletion
 *and* file deletion). Viewer: read only. The runtime grant lives in the DB-seeded role
-matrix (`rbac.migration.ts` `ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS`); `rbac_023`
-revokes the delete grant rbac_022 had given manager.
+matrix (`rbac.migration.ts`); `rbac_023` revokes the delete grant rbac_022 had given
+manager, and `rbac_024` registers `vector-db:upload` in the catalog (rbac_022 had omitted
+it, which silently broke admin **and** manager upload at the guard) and grants it to admin
++ manager.
 
 **Project integration:** `vector_db` data-source kind + `VectorDbDataSourceProvider`
 (`data-source.registry.ts`, `data-source-provider.interface.ts`,
@@ -226,6 +228,13 @@ and the paired spa-velocity `ui` SPEC for knowledge-base management screens.
 
 Append-only. Newest first.
 
+- 2026-06-10 · feat/kb-crud · `vector-db:upload` registered in the RBAC catalog and granted
+  to admin + manager (AC4): rbac_022 had shipped the vector-db catalog without `upload`, so
+  the upload endpoint was grantable only to superadmin — admin AND manager upload was
+  silently broken at the DB-backed `PermissionsGuard`. `rbac_024_add_vector_db_upload_permission`
+  inserts the catalog row, adds `upload` to `ORGANIZATION_ADMIN/MANAGER_DEFAULT_PERMISSIONS`,
+  and re-syncs roles (custom roles inherit via `organization:update`). Member stays read-only;
+  manager `delete` stays revoked. · No assumption corrections.
 - 2026-06-10 · feat/kb-crud · Managers can no longer remove vector-db elements (AC3): file
   deletion (`DELETE /:id/files/:jobId`) is re-gated from `vector-db:upload` to
   `vector-db:delete`, and `rbac_023_revoke_manager_vector_db_delete` revokes the

@@ -1,26 +1,24 @@
-// Integration spec for `rbac_021_add_sql_connection_permissions` against
-// real PostgreSQL (NOT a mock). Proves the load-bearing claims of ADR-012:
+// Integration spec for `rbac_024_add_vector_db_upload_permission` against real
+// PostgreSQL (NOT a mock). Fills the gap qa-validator flagged: the sibling
+// `rbac.migration.spec.ts` covers the SQL string SHAPES but does not execute the
+// SQL, and rbac_024 reuses the same error-prone `CROSS JOIN permissions … ON
+// CONFLICT DO NOTHING` inheritance construct that the rbac_021 integration spec
+// was created to guard. This file observes actual pre/post `role_permissions`
+// capability sets against a real Postgres.
 //
-//   Decision 3 — "post-migration capability ⊇ pre-migration capability for
-//   every role at migration time. No role loses any ability."
+// Load-bearing claims proven here:
+//   - admin + manager gain `vector-db:upload`; member stays read-only.
+//   - rbac_023's revocation holds: re-syncing manager does NOT re-grant delete.
+//   - custom-role inheritance: `organization:update` → upload; `organization:read`
+//     alone → nothing; no org perms → nothing.
+//   - idempotency: row-count stable on re-run; exactly one catalog row.
+//   - superadmin gains upload.
 //
-// The sibling `rbac.migration.spec.ts` covers the SQL string SHAPES (the
-// migration emits the right INSERTs for the right SELECTs) but does not
-// execute the SQL. This file fills the gap qa-validator flagged: actual
-// pre/post `role_permissions` capability sets are observed against a real
-// Postgres, for the full matrix of role fixtures the ADR enumerates.
-//
-// Per the post-impl review, this was the third gap: shape-only assertions
-// are how the `metadata::jsonb` cast bug shipped past three review subagents
-// for ADR-011. We're not repeating that.
-//
-// SETUP CONTRACT:
+// SETUP CONTRACT (mirrors rbac.migration.sql-connection.integration.spec.ts):
 // - DATABASE_URL must point to a Postgres test DB (.env.test loaded by Jest
-//   setup). Missing → all tests SKIPPED (describe.skip). Unit-only CI stays
-//   green without infrastructure.
-// - `permissions`, `roles`, `role_permissions`, `organization` tables must
-//   exist (created by the boot-time migrations).
-// - Test fixtures use UUID-prefixed ids and clean up in afterEach.
+//   setup). Missing → all tests SKIPPED (describe.skip). Unit-only CI stays green.
+// - `permissions`, `roles`, `role_permissions`, `organization` tables must exist
+//   (created by the boot-time migrations). Fixtures clean up in afterEach.
 
 import { jest } from '@jest/globals';
 import { Pool, type PoolClient } from 'pg';
@@ -33,10 +31,11 @@ const databaseUrl = process.env.DATABASE_URL;
 const describeIfDb = databaseUrl ? describe : describe.skip;
 
 // Shared Postgres advisory-lock key serializing ALL RBAC migration integration
-// specs against the same DB (each migration's additive `CROSS JOIN` grant scans
-// the `roles` table org-wide; a sibling spec's afterEach `DELETE FROM roles`
-// racing the SELECT→INSERT window causes a foreign-key violation). The key MUST
-// match the sibling specs (rbac.migration.vector-db-upload.integration.spec.ts).
+// specs against the same DB. Each migration's additive `CROSS JOIN` grant scans
+// the `roles` table org-wide; without serialization a sibling spec's afterEach
+// `DELETE FROM roles` can land between this migration's SELECT and INSERT →
+// foreign-key violation. The key MUST match the sibling specs
+// (rbac.migration.sql-connection.integration.spec.ts).
 const RBAC_INTEGRATION_LOCK_KEY = 7281240;
 
 function makeDb(pool: Pool): DatabaseService {
@@ -131,11 +130,10 @@ async function grant(
 }
 
 describeIfDb(
-  'RbacMigrationService.addSqlConnectionPermissions — real Postgres',
+  'RbacMigrationService.addVectorDbUploadPermission — real Postgres',
   () => {
-    // The migration enumerates every organization + re-syncs every default
-    // role per-org, so it can run for several seconds against a non-trivial
-    // test DB. Default Jest timeout (5s) is too tight.
+    // The migration enumerates every organization + re-syncs every default role
+    // per-org, so it can run for several seconds. Default Jest timeout is tight.
     jest.setTimeout(60_000);
 
     let pool: Pool;
@@ -150,6 +148,7 @@ describeIfDb(
       // are session-scoped, so lock + unlock must use the SAME client).
       lockClient = await pool.connect();
       service = new RbacMigrationService(makeDb(pool));
+      jest.spyOn(console, 'log').mockImplementation(() => {});
     });
 
     afterAll(async () => {
@@ -165,16 +164,15 @@ describeIfDb(
         RBAC_INTEGRATION_LOCK_KEY,
       ]);
       const suffix = randomBytes(4).toString('hex');
-      testOrgId = `e2e-sqlconn-${suffix}`;
+      testOrgId = `e2e-vdbupload-${suffix}`;
       await pool.query(
         `INSERT INTO organization (id, name, slug, "createdAt", metadata)
          VALUES ($1, $2, $3, NOW(), NULL)`,
-        [testOrgId, `E2E SqlConn ${suffix}`, `e2e-sqlconn-${suffix}`],
+        [testOrgId, `E2E VdbUpload ${suffix}`, `e2e-vdbupload-${suffix}`],
       );
     });
 
     afterEach(async () => {
-      // Delete custom roles created during this test
       for (const id of cleanupRoleIds.splice(0)) {
         await pool.query(`DELETE FROM roles WHERE id = $1`, [id]);
       }
@@ -199,139 +197,146 @@ describeIfDb(
       return id;
     }
 
-    // ── ADR-012 Decision 3 capability-superset guarantee ─────────────────
+    // ── Default-role policy matrix (the core of the change) ───────────────
 
-    it('grants sql-connection:create|update|delete to a custom role with organization:update', async () => {
+    it('grants vector-db:upload to per-org admin + manager, leaves member read-only, and does NOT re-grant manager delete', async () => {
+      const adminId = await createCustomRole('admin', testOrgId);
+      const managerId = await createCustomRole('manager', testOrgId);
+      const memberId = await createCustomRole('member', testOrgId);
+
+      await service.addVectorDbUploadPermission();
+
+      const adminCaps = await fetchRolePermissionTuples(pool, adminId);
+      const managerCaps = await fetchRolePermissionTuples(pool, managerId);
+      const memberCaps = await fetchRolePermissionTuples(pool, memberId);
+
+      expect(containsPermission(adminCaps, 'vector-db', 'upload')).toBe(true);
+      expect(containsPermission(managerCaps, 'vector-db', 'upload')).toBe(true);
+      // Member is read-only.
+      expect(containsPermission(memberCaps, 'vector-db', 'upload')).toBe(false);
+      // Cross-step seam: re-syncing manager from the constant must NOT undo
+      // rbac_023's delete revocation.
+      expect(containsPermission(managerCaps, 'vector-db', 'delete')).toBe(
+        false,
+      );
+      // Sanity: manager keeps the rest of the vector-db CRUD set.
+      expect(containsPermission(managerCaps, 'vector-db', 'read')).toBe(true);
+      expect(containsPermission(managerCaps, 'vector-db', 'create')).toBe(true);
+      expect(containsPermission(managerCaps, 'vector-db', 'update')).toBe(true);
+    });
+
+    // ── Custom-role inheritance (organization:update) ─────────────────────
+
+    it('grants vector-db:upload to a custom role holding organization:update (capability superset preserved)', async () => {
       const customRoleId = await createCustomRole(
-        `custom-with-org-update-${randomBytes(3).toString('hex')}`,
+        `custom-upd-${randomBytes(3).toString('hex')}`,
         testOrgId,
       );
       await grant(pool, customRoleId, 'organization', 'update');
 
       const pre = await fetchRolePermissionTuples(pool, customRoleId);
-      expect(containsPermission(pre, 'organization', 'update')).toBe(true);
-      expect(containsPermission(pre, 'sql-connection', 'create')).toBe(false);
+      expect(containsPermission(pre, 'vector-db', 'upload')).toBe(false);
 
-      await service.addSqlConnectionPermissions();
+      await service.addVectorDbUploadPermission();
 
       const post = await fetchRolePermissionTuples(pool, customRoleId);
-      // Capability superset: every pre-perm is still there.
       for (const cap of pre) {
         expect(containsPermission(post, cap.resource, cap.action)).toBe(true);
       }
-      // New grants per ADR-012 Decision 3b inheritance:
-      expect(containsPermission(post, 'sql-connection', 'create')).toBe(true);
-      expect(containsPermission(post, 'sql-connection', 'update')).toBe(true);
-      expect(containsPermission(post, 'sql-connection', 'delete')).toBe(true);
+      expect(containsPermission(post, 'vector-db', 'upload')).toBe(true);
     });
 
-    it('grants sql-connection:read (only) to a custom role with organization:read but NOT organization:update', async () => {
+    it('does NOT grant vector-db:upload to a custom role with only organization:read', async () => {
       const customRoleId = await createCustomRole(
-        `custom-read-only-${randomBytes(3).toString('hex')}`,
+        `custom-read-${randomBytes(3).toString('hex')}`,
         testOrgId,
       );
       await grant(pool, customRoleId, 'organization', 'read');
 
-      await service.addSqlConnectionPermissions();
+      await service.addVectorDbUploadPermission();
 
       const post = await fetchRolePermissionTuples(pool, customRoleId);
       expect(containsPermission(post, 'organization', 'read')).toBe(true);
-      expect(containsPermission(post, 'sql-connection', 'read')).toBe(true);
-      // Mutate grants must NOT leak in:
-      expect(containsPermission(post, 'sql-connection', 'create')).toBe(false);
-      expect(containsPermission(post, 'sql-connection', 'update')).toBe(false);
-      expect(containsPermission(post, 'sql-connection', 'delete')).toBe(false);
+      expect(containsPermission(post, 'vector-db', 'upload')).toBe(false);
     });
 
-    it('grants NOTHING to a custom role with no organization:* permissions', async () => {
+    it('grants no vector-db:upload to a custom role with no organization:* permissions', async () => {
       const customRoleId = await createCustomRole(
-        `custom-no-org-${randomBytes(3).toString('hex')}`,
+        `custom-none-${randomBytes(3).toString('hex')}`,
         testOrgId,
       );
-      // No grants at all.
 
-      await service.addSqlConnectionPermissions();
+      await service.addVectorDbUploadPermission();
 
       const post = await fetchRolePermissionTuples(pool, customRoleId);
-      expect(post.filter((p) => p.resource === 'sql-connection').length).toBe(
-        0,
-      );
+      expect(containsPermission(post, 'vector-db', 'upload')).toBe(false);
     });
 
-    it('preserves user-edited extra permissions on a custom role (additive only — no DELETE for custom roles)', async () => {
+    it('preserves user-edited extra permissions on a custom role (additive only)', async () => {
       const customRoleId = await createCustomRole(
-        `custom-with-extras-${randomBytes(3).toString('hex')}`,
+        `custom-extras-${randomBytes(3).toString('hex')}`,
         testOrgId,
       );
       await grant(pool, customRoleId, 'organization', 'update');
-      // Extras that should survive the migration:
       await grant(pool, customRoleId, 'chat', 'read');
       await grant(pool, customRoleId, 'project', 'read');
 
-      await service.addSqlConnectionPermissions();
+      await service.addVectorDbUploadPermission();
 
       const post = await fetchRolePermissionTuples(pool, customRoleId);
       expect(containsPermission(post, 'chat', 'read')).toBe(true);
       expect(containsPermission(post, 'project', 'read')).toBe(true);
       expect(containsPermission(post, 'organization', 'update')).toBe(true);
-      // And the new inheritance grants are also present:
-      expect(containsPermission(post, 'sql-connection', 'create')).toBe(true);
+      expect(containsPermission(post, 'vector-db', 'upload')).toBe(true);
     });
 
-    // ── Idempotency on intentional re-run ────────────────────────────────
+    // ── Idempotency ──────────────────────────────────────────────────────
 
-    it('is row-count idempotent on intentional re-run (ON CONFLICT DO NOTHING + syncRolePermissions convergence)', async () => {
+    it('is row-count idempotent on intentional re-run', async () => {
       const customRoleId = await createCustomRole(
-        `custom-idempotent-${randomBytes(3).toString('hex')}`,
+        `custom-idem-${randomBytes(3).toString('hex')}`,
         testOrgId,
       );
       await grant(pool, customRoleId, 'organization', 'update');
 
-      await service.addSqlConnectionPermissions();
+      await service.addVectorDbUploadPermission();
       const afterFirst = await fetchRolePermissionTuples(pool, customRoleId);
 
-      await service.addSqlConnectionPermissions();
+      await service.addVectorDbUploadPermission();
       const afterSecond = await fetchRolePermissionTuples(pool, customRoleId);
 
       // Cross-spec serialization is enforced by RBAC_INTEGRATION_LOCK_KEY;
-      // scoping idempotency to sql-connection is additionally the correct
-      // assertion — it proves THIS migration's own grants are stable on re-run
-      // rather than coupling to the whole role row set.
-      const sc = (caps: Array<{ resource: string; action: string }>) =>
-        caps.filter((c) => c.resource === 'sql-connection');
-      expect(sc(afterSecond)).toEqual(sc(afterFirst));
-    });
-
-    it('registers exactly 4 sql-connection permissions in the catalog (no duplicates after multiple runs)', async () => {
-      await service.addSqlConnectionPermissions();
-      await service.addSqlConnectionPermissions();
-      await service.addSqlConnectionPermissions();
-
-      const result = await pool.query(
-        `SELECT resource, action FROM permissions
-         WHERE resource = 'sql-connection'
-         ORDER BY action`,
-      );
-      expect(result.rows).toEqual([
-        { resource: 'sql-connection', action: 'create' },
-        { resource: 'sql-connection', action: 'delete' },
-        { resource: 'sql-connection', action: 'read' },
-        { resource: 'sql-connection', action: 'update' },
+      // scoping idempotency to vector-db is additionally the correct assertion —
+      // it proves THIS migration's own grants are stable on re-run rather than
+      // coupling to the whole role row set.
+      const vdb = (caps: Array<{ resource: string; action: string }>) =>
+        caps.filter((c) => c.resource === 'vector-db');
+      expect(vdb(afterSecond)).toEqual(vdb(afterFirst));
+      expect(vdb(afterSecond)).toEqual([
+        { resource: 'vector-db', action: 'upload' },
       ]);
     });
 
-    // ── Superadmin coverage ──────────────────────────────────────────────
+    it('registers exactly one vector-db:upload catalog row after multiple runs', async () => {
+      await service.addVectorDbUploadPermission();
+      await service.addVectorDbUploadPermission();
+      await service.addVectorDbUploadPermission();
 
-    it('grants all sql-connection permissions to the global superadmin role (matches addAirweavePermissions pattern)', async () => {
-      await service.addSqlConnectionPermissions();
+      const result = await pool.query(
+        `SELECT count(*)::int AS n FROM permissions
+         WHERE resource = 'vector-db' AND action = 'upload'`,
+      );
+      expect((result.rows[0] as { n: number }).n).toBe(1);
+    });
+
+    // ── Superadmin ────────────────────────────────────────────────────────
+
+    it('grants vector-db:upload to the global superadmin role', async () => {
+      await service.addVectorDbUploadPermission();
 
       const superadminRow = await pool.query(
         `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
       );
-      // The boot-time RBAC seed MUST have created the superadmin role. A
-      // missing row means the test DB bootstrap is incomplete — fail
-      // explicitly so a future incomplete fixture surfaces as a real test
-      // failure instead of a silent false-positive.
       if (superadminRow.rows.length === 0) {
         throw new Error(
           'superadmin seed missing — fix the test DB bootstrap (run earlier RBAC migrations first)',
@@ -339,14 +344,7 @@ describeIfDb(
       }
       const superadminId = (superadminRow.rows[0] as { id: string }).id;
       const caps = await fetchRolePermissionTuples(pool, superadminId);
-      for (const action of ['read', 'create', 'update', 'delete']) {
-        expect(containsPermission(caps, 'sql-connection', action)).toBe(true);
-      }
-    });
-
-    // Suppress noisy console.log during integration runs.
-    beforeAll(() => {
-      jest.spyOn(console, 'log').mockImplementation(() => {});
+      expect(containsPermission(caps, 'vector-db', 'upload')).toBe(true);
     });
   },
 );

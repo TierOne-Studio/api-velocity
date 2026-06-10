@@ -48,6 +48,7 @@ const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
   { resource: 'vector-db', action: 'create' },
   { resource: 'vector-db', action: 'update' },
   { resource: 'vector-db', action: 'delete' },
+  { resource: 'vector-db', action: 'upload' },
 ] as const;
 
 const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
@@ -83,12 +84,12 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
   { resource: 'sql-connection', action: 'delete' },
   // Manager: vector-db read/create/update/upload but NOT delete. Removal of a
   // vector-db element (collection or file) is admin-only — mirrors the airweave
-  // delete asymmetry above (ADR-011). Revoked from existing deployments by
-  // rbac_023. (`upload` is granted via permissions.ts / pending rbac catalog
-  // work — tracked separately.)
+  // delete asymmetry above (ADR-011). delete revoked from existing deployments
+  // by rbac_023; upload registered in the catalog + granted by rbac_024.
   { resource: 'vector-db', action: 'read' },
   { resource: 'vector-db', action: 'create' },
   { resource: 'vector-db', action: 'update' },
+  { resource: 'vector-db', action: 'upload' },
 ] as const;
 
 const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
@@ -204,6 +205,10 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_023_revoke_manager_vector_db_delete',
         up: () => this.revokeManagerVectorDbDelete(),
+      },
+      {
+        name: 'rbac_024_add_vector_db_upload_permission',
+        up: () => this.addVectorDbUploadPermission(),
       },
     ];
 
@@ -2013,6 +2018,132 @@ export class RbacMigrationService implements OnModuleInit {
 
     console.log(
       '✅ vector-db:delete revoked from manager role (collection + file removal now admin-only)',
+    );
+  }
+
+  /**
+   * Register `vector-db:upload` and grant it to admin + manager.
+   *
+   * rbac_022 shipped the vector-db catalog WITHOUT `upload`, so the upload
+   * endpoint (`POST /:id/upload`) was grantable only to superadmin — admin AND
+   * manager upload was silently broken at the DB-backed PermissionsGuard.
+   * `upload` is added to ORGANIZATION_ADMIN/MANAGER_DEFAULT_PERMISSIONS; this
+   * step inserts the catalog row and re-syncs roles so existing deployments
+   * gain it. Member stays read-only.
+   *
+   * NOT wrapped in db.transaction — syncRolePermissions does its own
+   * DELETE-then-INSERT against this.db; a wrapper would be false atomicity.
+   * Mirrors the addVectorDb/addSqlConnection precedent; converges on re-run via
+   * hasMigrationRun + ON CONFLICT DO NOTHING + the allowlist re-sync.
+   */
+  async addVectorDbUploadPermission(): Promise<void> {
+    await this.db.query(
+      `INSERT INTO permissions (resource, action, description)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (resource, action) DO NOTHING`,
+      [
+        'vector-db',
+        'upload',
+        'Upload files to a vector database (knowledge base)',
+      ],
+    );
+
+    // Grant to the global superadmin role (redundant per guard bypass, matches
+    // the established repo pattern).
+    const superadminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
+    );
+    if (superadminRole) {
+      await this.db.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT $1, p.id
+         FROM permissions p
+         WHERE p.resource = 'vector-db' AND p.action = 'upload'
+         ON CONFLICT DO NOTHING`,
+        [superadminRole.id],
+      );
+    }
+
+    // Re-sync global admin/manager/member roles from the updated constants.
+    const globalRoles = await this.db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM roles
+       WHERE organization_id IS NULL
+         AND name IN ('admin', 'manager', 'member')`,
+    );
+    for (const role of globalRoles) {
+      if (role.name === 'admin') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      } else if (role.name === 'manager') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      } else if (role.name === 'member') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    // Re-sync org-scoped default roles across every organization.
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
+    for (const organization of organizations) {
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [organization.id],
+      );
+      if (adminRole) {
+        await this.syncRolePermissions(
+          adminRole.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(
+          managerRole.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const memberRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'member'`,
+        [organization.id],
+      );
+      if (memberRole) {
+        await this.syncRolePermissions(
+          memberRole.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    // Additive grant for custom roles inheriting from organization:update
+    // (matches how rbac_022 distributed vector-db create/update/delete).
+    await this.db.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT DISTINCT rp.role_id, p_new.id
+       FROM role_permissions rp
+       INNER JOIN permissions p_old ON p_old.id = rp.permission_id
+         AND p_old.resource = 'organization' AND p_old.action = 'update'
+       CROSS JOIN permissions p_new
+       WHERE p_new.resource = 'vector-db'
+         AND p_new.action = 'upload'
+       ON CONFLICT DO NOTHING`,
+    );
+
+    console.log(
+      '✅ vector-db:upload permission added and granted to admin + manager (custom roles inherit from organization:update)',
     );
   }
 }
