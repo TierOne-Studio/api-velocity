@@ -1,4 +1,8 @@
-export type DataSourceKind = 'airweave_collection' | 'database' | 'external';
+export type DataSourceKind =
+  | 'airweave_collection'
+  | 'database'
+  | 'external'
+  | 'vector_db';
 
 export type DataSourceStatus = 'ready' | 'connecting' | 'error';
 
@@ -10,6 +14,11 @@ export type AirweaveCollectionSourceConfig = {
 export type DatabaseSourceConfig = {
   connectionId: string;
   connectionName: string;
+};
+
+export type VectorDbSourceConfig = {
+  vectorDbId: string;
+  vectorDbName: string;
 };
 
 export type ExternalSourceConfig = Record<string, unknown>;
@@ -32,6 +41,17 @@ export type ProjectDataSource =
       kind: 'database';
       name: string;
       config: DatabaseSourceConfig;
+      status: DataSourceStatus;
+      statusDetail: string | null;
+      createdAt: string;
+      updatedAt: string;
+    }
+  | {
+      id: string;
+      projectId: string;
+      kind: 'vector_db';
+      name: string;
+      config: VectorDbSourceConfig;
       status: DataSourceStatus;
       statusDetail: string | null;
       createdAt: string;
@@ -83,6 +103,18 @@ export type CreateDatabaseSourceInput = {
   config: { connectionId: string; connectionName?: string };
 };
 
+export type CreateVectorDbSourceInput = {
+  kind: 'vector_db';
+  name?: string;
+  /**
+   * `vectorDbId` is the only field the external API (project form) submits.
+   * `vectorDbName` is populated server-side after resolving the org vector
+   * database and is stored in `project_data_source.config` so the chat agent
+   * can surface it without an extra read (mirrors `CreateDatabaseSourceInput`).
+   */
+  config: { vectorDbId: string; vectorDbName?: string };
+};
+
 export type CreateExternalSourceInput = {
   kind: 'external';
   name: string;
@@ -92,6 +124,7 @@ export type CreateExternalSourceInput = {
 export type CreateDataSourceInput =
   | CreateAirweaveSourceInput
   | CreateDatabaseSourceInput
+  | CreateVectorDbSourceInput
   | CreateExternalSourceInput;
 
 export type CreateProjectInput = {

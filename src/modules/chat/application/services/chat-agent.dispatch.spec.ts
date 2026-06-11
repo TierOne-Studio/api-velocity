@@ -28,10 +28,7 @@ import type {
   ProjectDataSource,
 } from '../../../projects';
 import type { AirweaveSearchResponse } from '../../../airweave/application/services/airweave.service';
-import type {
-  ChatRouterService,
-  RouterDecision,
-} from './chat-router.service';
+import type { ChatRouterService, RouterDecision } from './chat-router.service';
 
 registerPinMatcher();
 
@@ -52,6 +49,10 @@ jest.unstable_mockModule('@langchain/openai', () => ({
     invoke: jest.fn(),
     stream: jest.fn(async () => fakeLlmStream('Synthesized answer text.')),
   })),
+  // The projects index now transitively imports VectorDbModule →
+  // OpenAiEmbedderAdapter (Slice 5 attach wiring), so this boundary stub must
+  // also export OpenAIEmbeddings even though this suite never instantiates it.
+  OpenAIEmbeddings: jest.fn(),
 }));
 
 const { ChatAgentService } = await import('./chat-agent.service');
@@ -112,30 +113,31 @@ function makeFakeQueryDatabaseTool(ctx: AgentToolContext): StructuredTool {
     {
       name: 'query_database',
       description: 'fake',
-      schema: z.object({ question: z.string(), source_id: z.string().optional() }),
+      schema: z.object({
+        question: z.string(),
+        source_id: z.string().optional(),
+      }),
     },
   ) as unknown as StructuredTool;
 }
 
 function buildRegistry(opts: { withDatabase: boolean }): DataSourceRegistry {
-  const searchMock = jest
-    .fn<DataSourceProvider['search']>()
-    .mockResolvedValue({
-      results: [
-        {
-          entityId: 'e1',
-          name: 'doc',
-          relevanceScore: 0.9,
-          breadcrumbs: [],
-          createdAt: null,
-          updatedAt: null,
-          text: 'Some doc text.',
-          sourceName: 'wiki',
-          entityType: 'page',
-          webUrl: 'https://example.test/',
-        },
-      ],
-    } as unknown as AirweaveSearchResponse);
+  const searchMock = jest.fn<DataSourceProvider['search']>().mockResolvedValue({
+    results: [
+      {
+        entityId: 'e1',
+        name: 'doc',
+        relevanceScore: 0.9,
+        breadcrumbs: [],
+        createdAt: null,
+        updatedAt: null,
+        text: 'Some doc text.',
+        sourceName: 'wiki',
+        entityType: 'page',
+        webUrl: 'https://example.test/',
+      },
+    ],
+  } as unknown as AirweaveSearchResponse);
   return {
     get: jest.fn(() => ({
       kind: 'airweave_collection',
@@ -170,21 +172,29 @@ function buildConfig(opts: {
     getChatAgentSearchTier: jest.fn().mockReturnValue('classic'),
     getChatAgentRetrievalStrategy: jest.fn().mockReturnValue(undefined),
     getQueryDatabaseToolDescription: jest.fn().mockReturnValue('fake desc'),
-    getChatRoutingRules: jest.fn().mockReturnValue(
-      opts.rules ?? '# SSOT-MARKER\n- SQL: counts.\n- RAG: docs.',
-    ),
-    getChatRouterEnabled: jest.fn().mockReturnValue(opts.routerEnabled ?? false),
+    getChatRoutingRules: jest
+      .fn()
+      .mockReturnValue(
+        opts.rules ?? '# SSOT-MARKER\n- SQL: counts.\n- RAG: docs.',
+      ),
+    getChatRouterEnabled: jest
+      .fn()
+      .mockReturnValue(opts.routerEnabled ?? false),
     getChatRouterConfidenceThreshold: jest
       .fn()
       .mockReturnValue(opts.threshold ?? 0.7),
   };
 }
 
-function buildRouter(decision: RouterDecision | (() => Promise<RouterDecision>)) {
+function buildRouter(
+  decision: RouterDecision | (() => Promise<RouterDecision>),
+) {
   return {
-    classify: jest.fn().mockImplementation(async () =>
-      typeof decision === 'function' ? await decision() : decision,
-    ),
+    classify: jest
+      .fn()
+      .mockImplementation(async () =>
+        typeof decision === 'function' ? await decision() : decision,
+      ),
   } as unknown as ChatRouterService;
 }
 
@@ -410,7 +420,8 @@ describe('ChatAgentService dispatcher', () => {
 
   describe('SSoT routing-rules embedded in agent system prompt', () => {
     it('agent prompt contains routing-rules text under both router flag states', () => {
-      const customRules = '# SSOT-MARKER\nThis text MUST appear in the agent prompt.';
+      const customRules =
+        '# SSOT-MARKER\nThis text MUST appear in the agent prompt.';
       const paramsWithDb = baseParams([makeDatabaseSource()]);
 
       // Flag OFF
@@ -451,7 +462,9 @@ describe('ChatAgentService dispatcher', () => {
       const prompt = service.buildAgentSystemPrompt(
         baseParams([makeAirweaveSource()]),
       );
-      expect(prompt).not.toContain('## When the project has an attached database');
+      expect(prompt).not.toContain(
+        '## When the project has an attached database',
+      );
     });
   });
 });

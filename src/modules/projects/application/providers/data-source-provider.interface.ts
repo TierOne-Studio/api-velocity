@@ -14,6 +14,13 @@ export type DataSourceSearchOptions = {
   retrievalStrategy?: AirweaveSearchRetrievalStrategy;
   limit?: number;
   offset?: number;
+  /**
+   * The caller's active organization. Threaded from the chat tool context so
+   * providers that resolve their source against the DB at query time can
+   * re-scope by org (defense-in-depth, `repo-conventions` § 3). Providers that
+   * don't need it (airweave, database) ignore it.
+   */
+  organizationId?: string | null;
 };
 
 export type AgentToolEvent =

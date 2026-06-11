@@ -81,7 +81,10 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_018 already run
         .mockResolvedValueOnce(true) // rbac_019 already run
         .mockResolvedValueOnce(true) // rbac_020 already run
-        .mockResolvedValueOnce(true); // rbac_021 already run
+        .mockResolvedValueOnce(true) // rbac_021 already run
+        .mockResolvedValueOnce(true) // rbac_022 already run
+        .mockResolvedValueOnce(true) // rbac_023 already run
+        .mockResolvedValueOnce(true); // rbac_024 already run
 
       const consoleSpy = jest
         .spyOn(console, 'log')
@@ -117,7 +120,10 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_018 already run
         .mockResolvedValueOnce(true) // rbac_019 already run
         .mockResolvedValueOnce(true) // rbac_020 already run
-        .mockResolvedValueOnce(true); // rbac_021 already run
+        .mockResolvedValueOnce(true) // rbac_021 already run
+        .mockResolvedValueOnce(true) // rbac_022 already run
+        .mockResolvedValueOnce(true) // rbac_023 already run
+        .mockResolvedValueOnce(true); // rbac_024 already run
 
       // rbac_013 calls seedDefaultOrganization → UPSERT returns new org id.
       // Use mockImplementation so it isn't consumed by earlier migrations that also call queryOne.
@@ -456,6 +462,13 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce({ id: 'perm-sql-connection-create' })
         .mockResolvedValueOnce({ id: 'perm-sql-connection-update' })
         .mockResolvedValueOnce({ id: 'perm-sql-connection-delete' })
+        // rbac_022 — manager gains vector-db read/create/update (no delete:
+        // removal is admin-only, revoked from the constant by rbac_023).
+        // rbac_024 — manager gains vector-db:upload.
+        .mockResolvedValueOnce({ id: 'perm-vector-db-read' })
+        .mockResolvedValueOnce({ id: 'perm-vector-db-create' })
+        .mockResolvedValueOnce({ id: 'perm-vector-db-update' })
+        .mockResolvedValueOnce({ id: 'perm-vector-db-upload' })
         .mockResolvedValueOnce({ id: 'member-role-1' })
         .mockResolvedValueOnce({ id: 'perm-member-org-read' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-read' })
@@ -465,7 +478,9 @@ describe('RbacMigrationService', () => {
         // rbac_020 — member gains airweave:read only.
         .mockResolvedValueOnce({ id: 'perm-member-airweave-read' })
         // rbac_021 — member gains sql-connection:read only per ADR-012.
-        .mockResolvedValueOnce({ id: 'perm-member-sql-connection-read' });
+        .mockResolvedValueOnce({ id: 'perm-member-sql-connection-read' })
+        // rbac_022 — member gains vector-db:read only.
+        .mockResolvedValueOnce({ id: 'perm-member-vector-db-read' });
 
       await service.normalizeOrganizationDefaultRolePermissions();
 
@@ -525,6 +540,16 @@ describe('RbacMigrationService', () => {
           'update',
           'sql-connection',
           'delete',
+          // rbac_022 — manager vector-db read/create/update (no delete).
+          // rbac_024 — manager vector-db:upload.
+          'vector-db',
+          'read',
+          'vector-db',
+          'create',
+          'vector-db',
+          'update',
+          'vector-db',
+          'upload',
         ],
       );
       expect(dbService.query).toHaveBeenCalledWith(
@@ -546,6 +571,9 @@ describe('RbacMigrationService', () => {
           'read',
           // rbac_021 — member sql-connection (read only) per ADR-012.
           'sql-connection',
+          'read',
+          // rbac_022 — member vector-db (read only).
+          'vector-db',
           'read',
         ],
       );
@@ -1094,7 +1122,10 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_018 already run
         .mockResolvedValueOnce(true) // rbac_019 already run
         .mockResolvedValueOnce(true) // rbac_020 already run
-        .mockResolvedValueOnce(true); // rbac_021 already run
+        .mockResolvedValueOnce(true) // rbac_021 already run
+        .mockResolvedValueOnce(true) // rbac_022 already run
+        .mockResolvedValueOnce(true) // rbac_023 already run
+        .mockResolvedValueOnce(true); // rbac_024 already run
 
       // Needed by backfillRolePermissions and assignAllPermissionsToAdmin
       dbService.queryOne.mockResolvedValue(null);
@@ -1522,7 +1553,10 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(false) // rbac_018 NOT run
         .mockResolvedValueOnce(true) // rbac_019 already run
         .mockResolvedValueOnce(true) // rbac_020 already run
-        .mockResolvedValueOnce(true); // rbac_021 already run
+        .mockResolvedValueOnce(true) // rbac_021 already run
+        .mockResolvedValueOnce(true) // rbac_022 already run
+        .mockResolvedValueOnce(true) // rbac_023 already run
+        .mockResolvedValueOnce(true); // rbac_024 already run
 
       dbService.query.mockImplementation(async (sql: string) => {
         if (sql.includes('SELECT id FROM organization')) return [];
@@ -1906,6 +1940,341 @@ describe('RbacMigrationService', () => {
         'rbac_021_add_sql_connection_permissions',
       );
       sqlConnSpy.mockRestore();
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('revokeManagerVectorDbDelete (rbac_023)', () => {
+    // Policy change: manager must not remove vector-db elements. rbac_022 had
+    // granted manager full vector-db CRUD (incl. delete); this step re-syncs
+    // manager roles to the updated constant, dropping the delete grant.
+
+    function setupRevokeMocks() {
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT id FROM organization'))
+          return [{ id: 'org-1' }];
+        return [];
+      });
+      dbService.queryOne.mockImplementation(
+        async (sql: string, params?: unknown[]) => {
+          if (
+            sql.includes('organization_id IS NULL') &&
+            sql.includes("name = 'manager'")
+          )
+            return { id: 'g-manager' };
+          if (sql.includes("name = 'manager'") && params?.[0] === 'org-1')
+            return { id: 'org-manager' };
+          if (sql.includes('FROM permissions')) return { id: 'perm-x' };
+          return null;
+        },
+      );
+    }
+
+    function deleteAllowlistPairs(): Array<[string, string]> {
+      const deleteCall = dbService.query.mock.calls.find(
+        (call: unknown[]) =>
+          typeof call[0] === 'string' &&
+          call[0].includes('DELETE FROM role_permissions'),
+      );
+      expect(deleteCall).toBeDefined();
+      const params = deleteCall![1] as string[];
+      // params[0] is the role id; the remainder are (resource, action) pairs.
+      const pairs: Array<[string, string]> = [];
+      for (let i = 1; i < params.length; i += 2) {
+        pairs.push([params[i], params[i + 1]]);
+      }
+      return pairs;
+    }
+
+    it('re-syncs manager to an allowlist that keeps vector-db read/create/update but NOT delete', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      setupRevokeMocks();
+
+      await service.revokeManagerVectorDbDelete();
+
+      const pairs = deleteAllowlistPairs();
+      expect(pairs).toContainEqual(['vector-db', 'read']);
+      expect(pairs).toContainEqual(['vector-db', 'create']);
+      expect(pairs).toContainEqual(['vector-db', 'update']);
+      // The whole point of the migration: delete is no longer in the allowlist,
+      // so syncRolePermissions' DELETE removes any existing grant.
+      expect(pairs).not.toContainEqual(['vector-db', 'delete']);
+      consoleSpy.mockRestore();
+    });
+
+    it('re-syncs both the global manager role and each org-scoped manager role', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      setupRevokeMocks();
+
+      await service.revokeManagerVectorDbDelete();
+
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining('organization_id IS NULL'),
+      );
+      expect(dbService.queryOne).toHaveBeenCalledWith(
+        expect.stringContaining("name = 'manager'"),
+        ['org-1'],
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('does NOT touch admin or member roles (manager-only revoke)', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      setupRevokeMocks();
+
+      await service.revokeManagerVectorDbDelete();
+
+      const touchedAdmin = dbService.queryOne.mock.calls.some(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].includes("name = 'admin'"),
+      );
+      const touchedMember = dbService.queryOne.mock.calls.some(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].includes("name = 'member'"),
+      );
+      expect(touchedAdmin).toBe(false);
+      expect(touchedMember).toBe(false);
+      consoleSpy.mockRestore();
+    });
+
+    it('does NOT wrap in db.transaction (false-atomicity avoidance, matches precedent)', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      setupRevokeMocks();
+
+      await service.revokeManagerVectorDbDelete();
+
+      expect(dbService.transaction).not.toHaveBeenCalled();
+      consoleSpy.mockRestore();
+    });
+
+    it('runs cleanly when no global manager role and no organizations exist', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT id FROM organization')) return [];
+        return [];
+      });
+      dbService.queryOne.mockResolvedValue(null);
+
+      await service.revokeManagerVectorDbDelete();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('vector-db:delete revoked from manager role'),
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('is registered as rbac_023 in the migrations array', async () => {
+      dbService.hasMigrationRun.mockImplementation(async (name: string) => {
+        // Only let rbac_023 run; skip all others.
+        return name !== 'rbac_023_revoke_manager_vector_db_delete';
+      });
+
+      const revokeSpy = jest
+        .spyOn(service, 'revokeManagerVectorDbDelete')
+        .mockResolvedValue();
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      await service.runTrackedMigrations();
+
+      expect(revokeSpy).toHaveBeenCalledTimes(1);
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_023_revoke_manager_vector_db_delete',
+      );
+      revokeSpy.mockRestore();
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('addVectorDbUploadPermission (rbac_024)', () => {
+    // rbac_022 omitted vector-db:upload from the catalog, so admin + manager
+    // upload was broken at the DB-backed guard. This step registers it and
+    // grants it to admin + manager (member stays read-only).
+
+    function setupUploadMocks() {
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes("IN ('admin', 'manager', 'member')"))
+          return [
+            { id: 'g-admin', name: 'admin' },
+            { id: 'g-manager', name: 'manager' },
+            { id: 'g-member', name: 'member' },
+          ];
+        if (sql.includes('SELECT id FROM organization'))
+          return [{ id: 'org-1' }];
+        return [];
+      });
+      dbService.queryOne.mockImplementation(
+        async (sql: string, params?: unknown[]) => {
+          if (sql.includes("name = 'superadmin'"))
+            return { id: 'superadmin-id' };
+          if (sql.includes("name = 'admin'") && params?.[0] === 'org-1')
+            return { id: 'org-admin' };
+          if (sql.includes("name = 'manager'") && params?.[0] === 'org-1')
+            return { id: 'org-manager' };
+          if (sql.includes("name = 'member'") && params?.[0] === 'org-1')
+            return { id: 'org-member' };
+          if (sql.includes('FROM permissions')) return { id: 'perm-x' };
+          return null;
+        },
+      );
+    }
+
+    function deletePairsForRole(
+      roleId: string,
+    ): Array<[string, string]> | undefined {
+      const call = dbService.query.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' &&
+          c[0].includes('DELETE FROM role_permissions') &&
+          (c[1] as unknown[] | undefined)?.[0] === roleId,
+      );
+      if (!call) return undefined;
+      const params = call[1] as string[];
+      const pairs: Array<[string, string]> = [];
+      for (let i = 1; i < params.length; i += 2) {
+        pairs.push([params[i], params[i + 1]]);
+      }
+      return pairs;
+    }
+
+    it('inserts vector-db:upload into the catalog', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      setupUploadMocks();
+
+      await service.addVectorDbUploadPermission();
+
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO permissions'),
+        expect.arrayContaining(['vector-db', 'upload']),
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('grants vector-db:upload to superadmin', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      setupUploadMocks();
+
+      await service.addVectorDbUploadPermission();
+
+      expect(dbService.query).toHaveBeenCalledWith(
+        expect.stringContaining("p.action = 'upload'"),
+        ['superadmin-id'],
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('re-syncs admin + manager to include vector-db:upload but leaves member read-only', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      setupUploadMocks();
+
+      await service.addVectorDbUploadPermission();
+
+      expect(deletePairsForRole('g-admin')).toContainEqual([
+        'vector-db',
+        'upload',
+      ]);
+      expect(deletePairsForRole('g-manager')).toContainEqual([
+        'vector-db',
+        'upload',
+      ]);
+      // Member is read-only — upload must NOT be in its allowlist.
+      expect(deletePairsForRole('g-member')).not.toContainEqual([
+        'vector-db',
+        'upload',
+      ]);
+      consoleSpy.mockRestore();
+    });
+
+    it('additively grants vector-db:upload to roles holding organization:update', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      setupUploadMocks();
+
+      await service.addVectorDbUploadPermission();
+
+      const inheritCall = dbService.query.mock.calls.find((c: unknown[]) => {
+        const sql = c[0];
+        return (
+          typeof sql === 'string' &&
+          sql.includes("p_old.action = 'update'") &&
+          sql.includes("p_new.resource = 'vector-db'") &&
+          sql.includes("p_new.action = 'upload'")
+        );
+      });
+      expect(inheritCall).toBeDefined();
+      expect(inheritCall?.[0]).toContain('ON CONFLICT DO NOTHING');
+      consoleSpy.mockRestore();
+    });
+
+    it('does NOT wrap in db.transaction (false-atomicity avoidance)', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      setupUploadMocks();
+
+      await service.addVectorDbUploadPermission();
+
+      expect(dbService.transaction).not.toHaveBeenCalled();
+      consoleSpy.mockRestore();
+    });
+
+    it('runs cleanly when no default roles and no organizations exist', async () => {
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+      dbService.query.mockImplementation(async (sql: string) => {
+        if (sql.includes("IN ('admin', 'manager', 'member')")) return [];
+        if (sql.includes('SELECT id FROM organization')) return [];
+        return [];
+      });
+      dbService.queryOne.mockResolvedValue(null);
+
+      await service.addVectorDbUploadPermission();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('vector-db:upload permission added'),
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('is registered as rbac_024 in the migrations array', async () => {
+      dbService.hasMigrationRun.mockImplementation(async (name: string) => {
+        // Only let rbac_024 run; skip all others.
+        return name !== 'rbac_024_add_vector_db_upload_permission';
+      });
+
+      const uploadSpy = jest
+        .spyOn(service, 'addVectorDbUploadPermission')
+        .mockResolvedValue();
+      const consoleSpy = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => {});
+
+      await service.runTrackedMigrations();
+
+      expect(uploadSpy).toHaveBeenCalledTimes(1);
+      expect(dbService.recordMigration).toHaveBeenCalledWith(
+        'rbac_024_add_vector_db_upload_permission',
+      );
+      uploadSpy.mockRestore();
       consoleSpy.mockRestore();
     });
   });

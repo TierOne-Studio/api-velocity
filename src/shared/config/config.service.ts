@@ -69,6 +69,59 @@ export class ConfigService {
     return process.env.FE_URL || 'http://localhost:5173';
   }
 
+  getS3Bucket(): string {
+    const bucket = process.env.S3_BUCKET?.trim();
+    if (!bucket) {
+      throw new Error('S3_BUCKET environment variable is required');
+    }
+    return bucket;
+  }
+
+  getS3Region(): string {
+    return process.env.S3_REGION?.trim() || 'us-east-1';
+  }
+
+  getQdrantUrl(): string {
+    const url = process.env.QDRANT_URL?.trim();
+    if (!url) {
+      throw new Error('QDRANT_URL environment variable is required');
+    }
+    return url;
+  }
+
+  getQdrantApiKey(): string {
+    const key = process.env.QDRANT_API_KEY?.trim();
+    if (!key) {
+      throw new Error('QDRANT_API_KEY environment variable is required');
+    }
+    return key;
+  }
+
+  getEmbeddingModel(): string {
+    return process.env.EMBEDDING_MODEL?.trim() || 'text-embedding-3-small';
+  }
+
+  getEmbeddingBatchSize(): number {
+    return this.boundedInt('EMBEDDING_BATCH_SIZE', 96, { min: 1, max: 2048 });
+  }
+
+  /**
+   * Minimum cosine similarity (0..1) a vector_db chunk must clear to count as a
+   * retrieval hit (SPEC-001 AC13). Below it, a top-k result is noise rather than
+   * an answer source, so it is dropped from both the LLM context and the chat
+   * Sources citations. Expressed as an integer percent (`VECTOR_DB_MIN_SCORE_PCT`,
+   * default 30) per the same convention as CHAT_ROUTER_CONFIDENCE_PCT.
+   */
+  getVectorDbMinScore(): number {
+    return (
+      this.boundedInt('VECTOR_DB_MIN_SCORE_PCT', 30, { min: 0, max: 100 }) / 100
+    );
+  }
+
+  getEmbeddingConcurrency(): number {
+    return this.boundedInt('EMBEDDING_CONCURRENCY', 3, { min: 1, max: 20 });
+  }
+
   getAirweaveApiKey(): string | null {
     return process.env.AIRWEAVE_API_KEY?.trim() || null;
   }
@@ -277,6 +330,9 @@ export class ConfigService {
       'AUTH_SECRET',
       'DATABASE_URL',
       'PROJECT_SOURCE_SECRET_KEY',
+      'S3_BUCKET',
+      'QDRANT_URL',
+      'QDRANT_API_KEY',
     ];
     const missing = required.filter((key) => !process.env[key]);
 

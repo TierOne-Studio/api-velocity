@@ -65,4 +65,19 @@ export interface IProjectsRepository {
     collectionReadableId: string,
     organizationId: string,
   ): Promise<Array<{ id: string; name: string }>>;
+
+  /**
+   * Find projects in the given organization that reference the given vector
+   * database via a `project_data_source` row with `kind = 'vector_db'` and
+   * `config->>'vectorDbId'`. Used by `VectorDbService.delete` to produce a 409
+   * Conflict when the vector database is still in use (api-velocity ADR-013
+   * Decision 9 — the inverted owner of this cross-module query).
+   *
+   * **Scoped to `organizationId`** per `repo-conventions` § 3 defense-in-depth,
+   * mirroring `findProjectsReferencingAirweaveCollection`.
+   */
+  findProjectsReferencingVectorDb(
+    vectorDbId: string,
+    organizationId: string,
+  ): Promise<Array<{ id: string; name: string }>>;
 }

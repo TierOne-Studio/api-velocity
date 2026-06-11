@@ -3,6 +3,7 @@ import type { StructuredTool } from '@langchain/core/tools';
 import { AirweaveCollectionProvider } from './airweave-collection.provider';
 import { DatabaseSourceProvider } from './database.provider';
 import { ExternalSourceProvider } from './external.provider';
+import { VectorDbDataSourceProvider } from './vector-db-data-source.provider';
 import type {
   DataSourceKind,
   ProjectDataSource,
@@ -20,10 +21,12 @@ export class DataSourceRegistry {
     airweave: AirweaveCollectionProvider,
     database: DatabaseSourceProvider,
     external: ExternalSourceProvider,
+    vectorDb: VectorDbDataSourceProvider,
   ) {
     this.providers.set(airweave.kind, airweave);
     this.providers.set(database.kind, database);
     this.providers.set(external.kind, external);
+    this.providers.set(vectorDb.kind, vectorDb);
   }
 
   get(kind: DataSourceKind): DataSourceProvider {

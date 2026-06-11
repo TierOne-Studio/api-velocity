@@ -213,4 +213,20 @@ export class ProjectsDatabaseRepository implements IProjectsRepository {
       [collectionReadableId, organizationId],
     );
   }
+
+  // Raw SQL required: JSON operator on project_data_source.config (JSONB column).
+  async findProjectsReferencingVectorDb(
+    vectorDbId: string,
+    organizationId: string,
+  ): Promise<Array<{ id: string; name: string }>> {
+    return this.db.query<{ id: string; name: string }>(
+      `SELECT DISTINCT p.id, p.name
+         FROM project p
+         JOIN project_data_source pds ON pds.project_id = p.id
+        WHERE pds.kind = 'vector_db'
+          AND pds.config->>'vectorDbId' = $1
+          AND p.organization_id = $2`,
+      [vectorDbId, organizationId],
+    );
+  }
 }

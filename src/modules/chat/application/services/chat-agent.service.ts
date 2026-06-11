@@ -637,6 +637,7 @@ export class ChatAgentService {
       const collectedSources: AirweaveSearchResultSummary[] = [];
       const searchTool = createSearchKnowledgeBaseTool({
         projectId: params.projectId,
+        organizationId: params.orgId,
         sources: params.sources,
         registry: this.registry,
         sourcesSink: collectedSources,
@@ -995,6 +996,7 @@ export class ChatAgentService {
       const collectedSources: AirweaveSearchResultSummary[] = [];
       const searchTool = createSearchKnowledgeBaseTool({
         projectId: params.projectId,
+        organizationId: params.orgId,
         sources: params.sources,
         registry: this.registry,
         sourcesSink: collectedSources,
@@ -1144,6 +1146,7 @@ export class ChatAgentService {
     const collectedSources: AirweaveSearchResultSummary[] = [];
     const searchTool = createSearchKnowledgeBaseTool({
       projectId: params.projectId,
+      organizationId: params.orgId,
       sources: params.sources,
       registry: this.registry,
       sourcesSink: collectedSources,
@@ -1554,6 +1557,7 @@ export class ChatAgentService {
           tier: 'classic',
           limit: 5,
           offset: 0,
+          organizationId: params.orgId,
         }),
       ),
     );

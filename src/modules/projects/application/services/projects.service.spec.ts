@@ -75,6 +75,20 @@ describe('ProjectsService', () => {
       } | null>
     >;
   };
+  let vectorDbService: {
+    findByIdForAttach: jest.MockedFunction<
+      (
+        orgId: string,
+        id: string,
+      ) => Promise<{
+        id: string;
+        organizationId: string;
+        name: string;
+        status: 'empty' | 'processing' | 'ready' | 'error';
+        statusError: { message: string } | null;
+      } | null>
+    >;
+  };
   let service: ProjectsService;
 
   beforeEach(() => {
@@ -97,11 +111,17 @@ describe('ProjectsService', () => {
         jest.fn() as (typeof sqlConnectionsService)['findByIdForAttach'],
     };
 
+    vectorDbService = {
+      findByIdForAttach:
+        jest.fn() as (typeof vectorDbService)['findByIdForAttach'],
+    };
+
     service = new ProjectsService(
       repository,
       airweaveService,
       adminOrganizationsService,
       sqlConnectionsService as never,
+      vectorDbService as never,
     );
   });
 
@@ -373,6 +393,113 @@ describe('ProjectsService', () => {
         connectionId: 'db-1',
         connectionName: 'Prod replica',
       });
+    });
+
+    it('attaches a vector_db source by resolving the org vector database', async () => {
+      repository.findById.mockResolvedValue(orgProject);
+      vectorDbService.findByIdForAttach.mockResolvedValue({
+        id: 'vdb-1',
+        organizationId: 'org-1',
+        name: 'Handbook',
+        status: 'ready',
+        statusError: null,
+      });
+      repository.createSource.mockResolvedValue({
+        id: 'src-vdb-1',
+        project_id: 'project-1',
+        kind: 'vector_db',
+        name: 'Handbook',
+        config: { vectorDbId: 'vdb-1', vectorDbName: 'Handbook' },
+        status: 'ready',
+        status_detail: null,
+        created_at: now,
+        updated_at: now,
+      });
+
+      const result = await service.addSource(
+        'project-1',
+        { kind: 'vector_db', config: { vectorDbId: 'vdb-1' } },
+        adminScope,
+      );
+
+      expect(result.kind).toBe('vector_db');
+      expect(result.config).toEqual({
+        vectorDbId: 'vdb-1',
+        vectorDbName: 'Handbook',
+      });
+      expect(result.status).toBe('ready');
+      expect(vectorDbService.findByIdForAttach).toHaveBeenCalledWith(
+        'org-1',
+        'vdb-1',
+      );
+    });
+
+    it.each([
+      ['ready', 'ready'],
+      ['processing', 'connecting'],
+      ['empty', 'connecting'],
+      ['error', 'error'],
+    ] as const)(
+      'maps vector-db status %s to source status %s',
+      async (vectorDbStatus, expectedStatus) => {
+        repository.findById.mockResolvedValue(orgProject);
+        vectorDbService.findByIdForAttach.mockResolvedValue({
+          id: 'vdb-1',
+          organizationId: 'org-1',
+          name: 'Handbook',
+          status: vectorDbStatus,
+          statusError:
+            vectorDbStatus === 'error' ? { message: 'ingest failed' } : null,
+        });
+        repository.createSource.mockImplementation((params) =>
+          Promise.resolve({
+            id: 'src-vdb-1',
+            project_id: 'project-1',
+            kind: 'vector_db',
+            name: params.input.name ?? 'Handbook',
+            config: { vectorDbId: 'vdb-1', vectorDbName: 'Handbook' },
+            status: params.status ?? 'ready',
+            status_detail: params.statusDetail ?? null,
+            created_at: now,
+            updated_at: now,
+          }),
+        );
+
+        await service.addSource(
+          'project-1',
+          { kind: 'vector_db', config: { vectorDbId: 'vdb-1' } },
+          adminScope,
+        );
+
+        expect(repository.createSource).toHaveBeenCalledWith(
+          expect.objectContaining({ status: expectedStatus }),
+        );
+      },
+    );
+
+    it('throws NotFoundException when the vector database is not in the org', async () => {
+      repository.findById.mockResolvedValue(orgProject);
+      vectorDbService.findByIdForAttach.mockResolvedValue(null);
+
+      await expect(
+        service.addSource(
+          'project-1',
+          { kind: 'vector_db', config: { vectorDbId: 'missing' } },
+          adminScope,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('requires a vectorDbId when adding a vector_db source', async () => {
+      repository.findById.mockResolvedValue(orgProject);
+
+      await expect(
+        service.addSource(
+          'project-1',
+          { kind: 'vector_db', config: { vectorDbId: '   ' } },
+          adminScope,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('rejects external sources as not yet supported', async () => {

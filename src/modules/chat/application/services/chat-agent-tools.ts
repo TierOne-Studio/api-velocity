@@ -18,6 +18,8 @@ const searchKnowledgeBaseSchema = z.object({
 
 export type CreateSearchKnowledgeBaseToolParams = {
   projectId: string;
+  /** Active organization — threaded to providers that re-scope by org at query time. */
+  organizationId: string | null;
   sources: ProjectDataSource[];
   registry: DataSourceRegistry;
   /** Mutated across tool calls. Deduped and capped by the caller. */
@@ -45,6 +47,7 @@ export function createSearchKnowledgeBaseTool(
 ) {
   const {
     projectId,
+    organizationId,
     sources,
     registry,
     sourcesSink,
@@ -66,6 +69,7 @@ export function createSearchKnowledgeBaseTool(
             limit: resultLimit,
             offset: 0,
             retrievalStrategy,
+            organizationId,
           });
           return response.results;
         }),

@@ -33,21 +33,24 @@ This keeps skill files focused on *how* and the ADR file as the canonical *why*.
 
 ## Index
 
-| # | Title | Status | Date |
-|---|---|---|---|
-| [001](./ADR-001-typeorm-first-persistence.md) | TypeORM-first persistence with raw-SQL fallback | Accepted | 2026-04-30 |
-| [002](./ADR-002-rbac-scope-all-returns-400.md) | RBAC `scope=all` by non-superadmin returns 400, not 403 | Accepted | 2026-04-30 |
-| [003](./ADR-003-no-global-exception-filter.md) | No global exception filter — throw NestJS built-ins | Accepted | 2026-04-30 |
-| [004](./ADR-004-nestjs-logger-no-pino.md) | NestJS built-in `Logger` — no pino, no structured logging, no request-id middleware | Accepted | 2026-04-30 |
-| [005](./ADR-005-no-class-validator-no-validation-pipe.md) | No `class-validator` and no global `ValidationPipe` | Accepted | 2026-04-30 |
-| [006](./ADR-006-asks-first-dep-gate.md) | Asks-first dependency gate (Approach A vs Approach B per rule) | Accepted | 2026-04-30 |
-| [007](./ADR-007-skill-vs-repo-conflict-resolution.md) | Skill-vs-repo conflict resolution (P3.5) — skill default, repo wins on structural | Accepted | 2026-04-30 |
-| [008](./ADR-008-no-ai-attribution.md) | No AI-attribution trailers in commits, PRs, issues, or releases | Accepted | 2026-04-30 |
-| [009](./ADR-009-clean-architecture-layering-for-modules.md) | Clean architecture / hexagonal layering for new modules (extends ADR-001) | Accepted | 2026-04-30 |
-| [010](./ADR-010-supersede-app-db-host-guard.md) | Supersede the host+port app-DB guard; rely on the read-only contract | Accepted | 2026-05-19 |
-| [011](./ADR-011-airweave-ownership-via-org-metadata.md) | Airweave collection ownership via `organization.metadata` allowlist | Accepted | 2026-05-23 |
-| [012](./ADR-012-sql-connection-permission-family.md) | SQL connection permission family and backwards-compatible grant inheritance | Accepted | 2026-05-27 |
-| [013](./ADR-013-spec-first-documentation-workflow.md) | Specification-first documentation workflow (contract layer) | Accepted | 2026-06-04 |
+| #                                                           | Title                                                                                      | Status   | Date       |
+|-------------------------------------------------------------|--------------------------------------------------------------------------------------------|----------|------------|
+| [001](./ADR-001-typeorm-first-persistence.md)               | TypeORM-first persistence with raw-SQL fallback                                            | Accepted | 2026-04-30 |
+| [002](./ADR-002-rbac-scope-all-returns-400.md)              | RBAC `scope=all` by non-superadmin returns 400, not 403                                    | Accepted | 2026-04-30 |
+| [003](./ADR-003-no-global-exception-filter.md)              | No global exception filter — throw NestJS built-ins                                        | Accepted | 2026-04-30 |
+| [004](./ADR-004-nestjs-logger-no-pino.md)                   | NestJS built-in `Logger` — no pino, no structured logging, no request-id middleware        | Accepted | 2026-04-30 |
+| [005](./ADR-005-no-class-validator-no-validation-pipe.md)   | No `class-validator` and no global `ValidationPipe`                                        | Accepted | 2026-04-30 |
+| [006](./ADR-006-asks-first-dep-gate.md)                     | Asks-first dependency gate (Approach A vs Approach B per rule)                             | Accepted | 2026-04-30 |
+| [007](./ADR-007-skill-vs-repo-conflict-resolution.md)       | Skill-vs-repo conflict resolution (P3.5) — skill default, repo wins on structural          | Accepted | 2026-04-30 |
+| [008](./ADR-008-no-ai-attribution.md)                       | No AI-attribution trailers in commits, PRs, issues, or releases                            | Accepted | 2026-04-30 |
+| [009](./ADR-009-clean-architecture-layering-for-modules.md) | Clean architecture / hexagonal layering for new modules (extends ADR-001)                  | Accepted | 2026-04-30 |
+| [010](./ADR-010-supersede-app-db-host-guard.md)             | Supersede the host+port app-DB guard; rely on the read-only contract                       | Accepted | 2026-05-19 |
+| [011](./ADR-011-airweave-ownership-via-org-metadata.md)     | Airweave collection ownership via `organization.metadata` allowlist                        | Accepted | 2026-05-23 |
+| [012](./ADR-012-sql-connection-permission-family.md)        | SQL connection permission family and backwards-compatible grant inheritance                | Accepted | 2026-05-27 |
+| [013](./ADR-013-spec-first-documentation-workflow.md)       | Specification-first documentation workflow (contract layer)                                | Accepted | 2026-06-04 |
+| [014](./ADR-014-vector-db-persistence-lifecycle.md)         | Vector DB module — persistence, provider abstraction, and lifecycle                        | Accepted | 2026-06-02 |
+| [015](./ADR-015-vector-db-ingestion-queue.md)               | Vector DB ingestion — durable queue, idempotent indexing, and crash recovery               | Accepted | 2026-06-04 |
+| [016](./ADR-016-document-text-extraction.md)                | Document text extraction — PDF/DOCX via a domain port, with non-retryable failure handling | Accepted | 2026-06-04 |
 
 ## Adding a new ADR
 

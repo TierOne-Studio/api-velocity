@@ -1,0 +1,159 @@
+import { jest } from '@jest/globals';
+
+jest.mock('@thallesp/nestjs-better-auth', () => ({
+  Session: () => () => {},
+  AllowAnonymous: () => () => {},
+  BetterAuthGuard: class {},
+  BetterAuthModule: { forRoot: jest.fn(() => ({ module: class {} })) },
+}));
+
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import type { UserSession } from '@thallesp/nestjs-better-auth';
+import { PermissionsGuard, PERMISSIONS_KEY } from '../../../../shared';
+import { VectorDbService } from '../../application/services/vector-db.service';
+import { VectorDbController } from './vector-db.controller';
+
+const session = {
+  user: { id: 'user-1', role: 'admin' },
+  session: { activeOrganizationId: 'org-1' },
+} as unknown as UserSession;
+
+describe('VectorDbController', () => {
+  let controller: VectorDbController;
+  let service: jest.Mocked<VectorDbService>;
+
+  beforeEach(() => {
+    service = {
+      list: jest.fn(),
+      getById: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      uploadFile: jest.fn(),
+      listFiles: jest.fn(),
+      deleteFile: jest.fn(),
+      findByIdForAttach: jest.fn(),
+      findManyByIdsForOrg: jest.fn(),
+    } as unknown as jest.Mocked<VectorDbService>;
+
+    controller = new VectorDbController(service);
+  });
+
+  it('applies the class-level PermissionsGuard', () => {
+    const guards = Reflect.getMetadata(
+      GUARDS_METADATA,
+      VectorDbController,
+    ) as unknown[];
+    expect(guards).toContain(PermissionsGuard);
+  });
+
+  it.each([
+    ['list', 'vector-db:read'],
+    ['getById', 'vector-db:read'],
+    ['create', 'vector-db:create'],
+    ['update', 'vector-db:update'],
+    ['remove', 'vector-db:delete'],
+  ] as const)('%s requires %s permission', (method, expected) => {
+    const handler = (controller as unknown as Record<string, object>)[method];
+    const permissions = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      handler,
+    ) as string[];
+    expect(permissions).toContain(expected);
+  });
+
+  it('list delegates to service and wraps result', async () => {
+    const kb = { id: 'kb-1', name: 'Docs' };
+    service.list.mockResolvedValue([kb] as never);
+
+    const result = await controller.list(session);
+    expect(result).toEqual({ data: [kb] });
+  });
+
+  it('create delegates to service and wraps result', async () => {
+    const kb = { id: 'kb-new', name: 'New KB' };
+    service.create.mockResolvedValue(kb as never);
+
+    const result = await controller.create(session, { name: 'New KB' });
+    expect(service.create).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1' }),
+      { name: 'New KB' },
+    );
+    expect(result).toEqual({ data: kb });
+  });
+
+  it('remove calls service.delete and returns void (204)', async () => {
+    service.delete.mockResolvedValue(undefined);
+
+    const result = await controller.remove(session, 'kb-1');
+    expect(result).toBeUndefined();
+    expect(service.delete).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1' }),
+      'kb-1',
+    );
+  });
+
+  it('create rejects non-object body', async () => {
+    await expect(controller.create(session, null as never)).rejects.toThrow(
+      'body must be an object',
+    );
+  });
+
+  it('update rejects non-object body', async () => {
+    await expect(
+      controller.update(session, 'kb-1', null as never),
+    ).rejects.toThrow('body must be an object');
+  });
+
+  it('upload requires vector-db:upload permission', () => {
+    const handler = (controller as unknown as Record<string, object>)['upload'];
+    const permissions = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      handler,
+    ) as string[];
+    expect(permissions).toContain('vector-db:upload');
+  });
+
+  it('deleteFile requires vector-db:delete (file removal is delete-grade, not upload)', () => {
+    const handler = (controller as unknown as Record<string, object>)[
+      'deleteFile'
+    ];
+    const permissions = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      handler,
+    ) as string[];
+    // Removal of any vector-db element requires the delete grade so a manager
+    // (who holds upload but not delete) cannot delete files.
+    expect(permissions).toContain('vector-db:delete');
+    expect(permissions).not.toContain('vector-db:upload');
+  });
+
+  it('upload delegates to service and returns 201 shape', async () => {
+    const job = {
+      id: 'job-1',
+      vectorDbId: 'kb-1',
+      s3Key: 'k',
+      originalFilename: 'f',
+      fileSizeBytes: '5',
+      contentType: 'text/plain',
+      status: 'pending' as const,
+      createdAt: '',
+      updatedAt: '',
+    };
+    service.uploadFile.mockResolvedValue(job as never);
+
+    const file = {
+      originalname: 'doc.txt',
+      mimetype: 'text/plain',
+      size: 5,
+    } as Express.Multer.File;
+    const result = await controller.upload(session, 'kb-1', file);
+
+    expect(service.uploadFile).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1' }),
+      'kb-1',
+      file,
+    );
+    expect(result).toEqual({ data: job });
+  });
+});

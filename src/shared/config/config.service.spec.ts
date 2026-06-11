@@ -199,6 +199,39 @@ describe('ConfigService', () => {
     });
   });
 
+  describe('getVectorDbMinScore', () => {
+    let warnSpy: jest.SpiedFunction<typeof console.warn>;
+    beforeEach(() => {
+      warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      delete process.env.VECTOR_DB_MIN_SCORE_PCT;
+      warnSpy.mockRestore();
+    });
+
+    it('defaults to 0.3 when unset', () => {
+      delete process.env.VECTOR_DB_MIN_SCORE_PCT;
+      expect(new ConfigService().getVectorDbMinScore()).toBeCloseTo(0.3, 5);
+    });
+
+    it('reads an in-range percent as a 0..1 fraction', () => {
+      process.env.VECTOR_DB_MIN_SCORE_PCT = '45';
+      expect(new ConfigService().getVectorDbMinScore()).toBeCloseTo(0.45, 5);
+    });
+
+    it('allows 0 (disable the floor)', () => {
+      process.env.VECTOR_DB_MIN_SCORE_PCT = '0';
+      expect(new ConfigService().getVectorDbMinScore()).toBe(0);
+    });
+
+    it('falls back to the default for out-of-range or non-numeric values', () => {
+      process.env.VECTOR_DB_MIN_SCORE_PCT = '150';
+      expect(new ConfigService().getVectorDbMinScore()).toBeCloseTo(0.3, 5);
+      process.env.VECTOR_DB_MIN_SCORE_PCT = 'abc';
+      expect(new ConfigService().getVectorDbMinScore()).toBeCloseTo(0.3, 5);
+    });
+  });
+
   describe('getTrustedOrigins', () => {
     it('should read TRUSTED_ORIGINS from the environment', () => {
       process.env.TRUSTED_ORIGINS =
@@ -700,12 +733,40 @@ describe('ConfigService', () => {
       const validProjectSourceSecretKey =
         'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=';
 
+    beforeEach(() => {
+      process.env.S3_BUCKET = 'test-bucket';
+      process.env.QDRANT_URL = 'https://qdrant.example.com';
+      process.env.QDRANT_API_KEY = 'qdrant-key';
+    });
+
     it('should not throw when all required env vars are present', () => {
       process.env.AUTH_SECRET = 'secret';
       process.env.DATABASE_URL = 'postgresql://localhost/db';
         process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).not.toThrow();
+    });
+
+    it('should throw when QDRANT_URL is missing', () => {
+      process.env.AUTH_SECRET = 'secret';
+      process.env.DATABASE_URL = 'postgresql://localhost/db';
+      process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+      delete process.env.QDRANT_URL;
+      const configService = new ConfigService();
+      expect(() => configService.validateEnvironment()).toThrow(
+        'Missing required environment variables: QDRANT_URL',
+      );
+    });
+
+    it('should throw when QDRANT_API_KEY is missing', () => {
+      process.env.AUTH_SECRET = 'secret';
+      process.env.DATABASE_URL = 'postgresql://localhost/db';
+      process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+      delete process.env.QDRANT_API_KEY;
+      const configService = new ConfigService();
+      expect(() => configService.validateEnvironment()).toThrow(
+        'Missing required environment variables: QDRANT_API_KEY',
+      );
     });
 
     it('should throw when AUTH_SECRET is missing', () => {
@@ -737,6 +798,17 @@ describe('ConfigService', () => {
           'Missing required environment variables: PROJECT_SOURCE_SECRET_KEY',
         );
       });
+
+    it('should throw when S3_BUCKET is missing', () => {
+      process.env.AUTH_SECRET = 'secret';
+      process.env.DATABASE_URL = 'postgresql://localhost/db';
+      process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+      delete process.env.S3_BUCKET;
+      const configService = new ConfigService();
+      expect(() => configService.validateEnvironment()).toThrow(
+        'Missing required environment variables: S3_BUCKET',
+      );
+    });
 
     it('should list all missing vars when multiple are absent', () => {
       delete process.env.AUTH_SECRET;
@@ -854,6 +926,128 @@ describe('ConfigService', () => {
       const configService = new ConfigService();
 
       expect(configService.shouldEnforceResendTestRecipients()).toBe(false);
+    });
+  });
+
+  describe('getS3Bucket', () => {
+    it('returns the bucket name when S3_BUCKET is set', () => {
+      process.env.S3_BUCKET = 'my-velocity-bucket';
+      const config = new ConfigService();
+      expect(config.getS3Bucket()).toBe('my-velocity-bucket');
+    });
+
+    it('throws when S3_BUCKET is not set', () => {
+      delete process.env.S3_BUCKET;
+      const config = new ConfigService();
+      expect(() => config.getS3Bucket()).toThrow('S3_BUCKET');
+    });
+
+    it('throws when S3_BUCKET is whitespace-only', () => {
+      process.env.S3_BUCKET = '   ';
+      const config = new ConfigService();
+      expect(() => config.getS3Bucket()).toThrow('S3_BUCKET');
+    });
+  });
+
+  describe('getS3Region', () => {
+    it('returns the region when S3_REGION is set', () => {
+      process.env.S3_REGION = 'eu-west-1';
+      const config = new ConfigService();
+      expect(config.getS3Region()).toBe('eu-west-1');
+    });
+
+    it('defaults to us-east-1 when S3_REGION is not set', () => {
+      delete process.env.S3_REGION;
+      const config = new ConfigService();
+      expect(config.getS3Region()).toBe('us-east-1');
+    });
+  });
+
+  describe('getQdrantUrl', () => {
+    it('returns the URL when QDRANT_URL is set', () => {
+      process.env.QDRANT_URL = 'https://abc.qdrant.io:6333';
+      const config = new ConfigService();
+      expect(config.getQdrantUrl()).toBe('https://abc.qdrant.io:6333');
+    });
+
+    it('throws when QDRANT_URL is not set', () => {
+      delete process.env.QDRANT_URL;
+      const config = new ConfigService();
+      expect(() => config.getQdrantUrl()).toThrow('QDRANT_URL');
+    });
+
+    it('throws when QDRANT_URL is whitespace-only', () => {
+      process.env.QDRANT_URL = '   ';
+      const config = new ConfigService();
+      expect(() => config.getQdrantUrl()).toThrow('QDRANT_URL');
+    });
+  });
+
+  describe('getQdrantApiKey', () => {
+    it('returns the key when QDRANT_API_KEY is set', () => {
+      process.env.QDRANT_API_KEY = 'secret-key';
+      const config = new ConfigService();
+      expect(config.getQdrantApiKey()).toBe('secret-key');
+    });
+
+    it('throws when QDRANT_API_KEY is not set', () => {
+      delete process.env.QDRANT_API_KEY;
+      const config = new ConfigService();
+      expect(() => config.getQdrantApiKey()).toThrow('QDRANT_API_KEY');
+    });
+  });
+
+  describe('getEmbeddingModel', () => {
+    it('returns the model when EMBEDDING_MODEL is set', () => {
+      process.env.EMBEDDING_MODEL = 'text-embedding-3-large';
+      const config = new ConfigService();
+      expect(config.getEmbeddingModel()).toBe('text-embedding-3-large');
+    });
+
+    it('defaults to text-embedding-3-small when unset', () => {
+      delete process.env.EMBEDDING_MODEL;
+      const config = new ConfigService();
+      expect(config.getEmbeddingModel()).toBe('text-embedding-3-small');
+    });
+  });
+
+  describe('getEmbeddingBatchSize', () => {
+    it('returns the configured batch size within bounds', () => {
+      process.env.EMBEDDING_BATCH_SIZE = '128';
+      const config = new ConfigService();
+      expect(config.getEmbeddingBatchSize()).toBe(128);
+    });
+
+    it('defaults to 96 when unset', () => {
+      delete process.env.EMBEDDING_BATCH_SIZE;
+      const config = new ConfigService();
+      expect(config.getEmbeddingBatchSize()).toBe(96);
+    });
+
+    it('falls back to default when out of bounds', () => {
+      process.env.EMBEDDING_BATCH_SIZE = '99999';
+      const config = new ConfigService();
+      expect(config.getEmbeddingBatchSize()).toBe(96);
+    });
+  });
+
+  describe('getEmbeddingConcurrency', () => {
+    it('returns the configured concurrency within bounds', () => {
+      process.env.EMBEDDING_CONCURRENCY = '5';
+      const config = new ConfigService();
+      expect(config.getEmbeddingConcurrency()).toBe(5);
+    });
+
+    it('defaults to 3 when unset', () => {
+      delete process.env.EMBEDDING_CONCURRENCY;
+      const config = new ConfigService();
+      expect(config.getEmbeddingConcurrency()).toBe(3);
+    });
+
+    it('falls back to default when below minimum', () => {
+      process.env.EMBEDDING_CONCURRENCY = '0';
+      const config = new ConfigService();
+      expect(config.getEmbeddingConcurrency()).toBe(3);
     });
   });
 });

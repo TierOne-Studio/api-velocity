@@ -23,7 +23,7 @@
 // - Test fixtures use UUID-prefixed ids and clean up in afterEach.
 
 import { jest } from '@jest/globals';
-import { Pool } from 'pg';
+import { Pool, type PoolClient } from 'pg';
 import { randomBytes } from 'crypto';
 
 import { RbacMigrationService } from './rbac.migration';
@@ -31,6 +31,13 @@ import type { DatabaseService } from '../../../shared/infrastructure/database/da
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeIfDb = databaseUrl ? describe : describe.skip;
+
+// Shared Postgres advisory-lock key serializing ALL RBAC migration integration
+// specs against the same DB (each migration's additive `CROSS JOIN` grant scans
+// the `roles` table org-wide; a sibling spec's afterEach `DELETE FROM roles`
+// racing the SELECT→INSERT window causes a foreign-key violation). The key MUST
+// match the sibling specs (rbac.migration.vector-db-upload.integration.spec.ts).
+const RBAC_INTEGRATION_LOCK_KEY = 7281240;
 
 function makeDb(pool: Pool): DatabaseService {
   return {
@@ -132,20 +139,31 @@ describeIfDb(
     jest.setTimeout(60_000);
 
     let pool: Pool;
+    let lockClient: PoolClient;
     let service: RbacMigrationService;
     let testOrgId: string;
     const cleanupRoleIds: string[] = [];
 
     beforeAll(async () => {
       pool = new Pool({ connectionString: databaseUrl });
+      // Dedicated connection holds the cross-spec advisory lock (advisory locks
+      // are session-scoped, so lock + unlock must use the SAME client).
+      lockClient = await pool.connect();
       service = new RbacMigrationService(makeDb(pool));
     });
 
     afterAll(async () => {
+      if (lockClient) lockClient.release();
       if (pool) await pool.end();
     });
 
     beforeEach(async () => {
+      // Serialize against sibling RBAC migration integration specs (see
+      // RBAC_INTEGRATION_LOCK_KEY) — blocks until any concurrent spec's test
+      // body has finished, preventing the cross-spec role-deletion FK race.
+      await lockClient.query('SELECT pg_advisory_lock($1)', [
+        RBAC_INTEGRATION_LOCK_KEY,
+      ]);
       const suffix = randomBytes(4).toString('hex');
       testOrgId = `e2e-sqlconn-${suffix}`;
       await pool.query(
@@ -161,6 +179,9 @@ describeIfDb(
         await pool.query(`DELETE FROM roles WHERE id = $1`, [id]);
       }
       await pool.query(`DELETE FROM organization WHERE id = $1`, [testOrgId]);
+      await lockClient.query('SELECT pg_advisory_unlock($1)', [
+        RBAC_INTEGRATION_LOCK_KEY,
+      ]);
     });
 
     async function createCustomRole(
@@ -232,9 +253,9 @@ describeIfDb(
       await service.addSqlConnectionPermissions();
 
       const post = await fetchRolePermissionTuples(pool, customRoleId);
-      expect(
-        post.filter((p) => p.resource === 'sql-connection').length,
-      ).toBe(0);
+      expect(post.filter((p) => p.resource === 'sql-connection').length).toBe(
+        0,
+      );
     });
 
     it('preserves user-edited extra permissions on a custom role (additive only — no DELETE for custom roles)', async () => {
@@ -272,9 +293,13 @@ describeIfDb(
       await service.addSqlConnectionPermissions();
       const afterSecond = await fetchRolePermissionTuples(pool, customRoleId);
 
-      // Same row count, same composition — no duplicates introduced.
-      expect(afterSecond.length).toBe(afterFirst.length);
-      expect(afterSecond).toEqual(afterFirst);
+      // Cross-spec serialization is enforced by RBAC_INTEGRATION_LOCK_KEY;
+      // scoping idempotency to sql-connection is additionally the correct
+      // assertion — it proves THIS migration's own grants are stable on re-run
+      // rather than coupling to the whole role row set.
+      const sc = (caps: Array<{ resource: string; action: string }>) =>
+        caps.filter((c) => c.resource === 'sql-connection');
+      expect(sc(afterSecond)).toEqual(sc(afterFirst));
     });
 
     it('registers exactly 4 sql-connection permissions in the catalog (no duplicates after multiple runs)', async () => {

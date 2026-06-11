@@ -11,9 +11,12 @@ import {
 import { AirweaveService } from '../../../airweave/application/services/airweave.service';
 import { AdminOrganizationsService } from '../../../admin/organizations/application/services/admin-organizations.service';
 import { SqlConnectionsService } from '../../../sql-connections/application/services/sql-connections.service';
+import { VectorDbService } from '../../../vector-db/application/services/vector-db.service';
+import type { VectorDbStatus } from '../../../vector-db/api/dto/vector-db.dto';
 import type {
   CreateDataSourceInput,
   CreateProjectInput,
+  DataSourceStatus,
   ProjectDataSource,
   ProjectDataSourceRow,
   ProjectDetail,
@@ -43,6 +46,7 @@ export class ProjectsService {
     private readonly airweaveService: AirweaveService,
     private readonly adminOrganizationsService: AdminOrganizationsService,
     private readonly sqlConnectionsService: SqlConnectionsService,
+    private readonly vectorDbService: VectorDbService,
   ) {}
 
   async listForScope(scope: CallerScope): Promise<ProjectSummary[]> {
@@ -236,11 +240,10 @@ export class ProjectsService {
       if (!connectionId) {
         throw new BadRequestException('connectionId is required');
       }
-      const connection =
-        await this.sqlConnectionsService.findByIdForAttach(
-          organizationId,
-          connectionId,
-        );
+      const connection = await this.sqlConnectionsService.findByIdForAttach(
+        organizationId,
+        connectionId,
+      );
       if (!connection) {
         throw new NotFoundException('SQL connection not found');
       }
@@ -262,6 +265,38 @@ export class ProjectsService {
         },
         status,
         statusDetail: connection.statusError ?? null,
+      });
+    }
+
+    if (input.kind === 'vector_db') {
+      const vectorDbId = input.config?.vectorDbId?.trim();
+      if (!vectorDbId) {
+        throw new BadRequestException('vectorDbId is required');
+      }
+      const vectorDb = await this.vectorDbService.findByIdForAttach(
+        organizationId,
+        vectorDbId,
+      );
+      if (!vectorDb) {
+        throw new NotFoundException('Vector database not found');
+      }
+      // Snapshot org-level status into project_data_source.status so the
+      // registry can filter by ready at chat time. Slice 6's provider re-reads
+      // org-level status at runtime, so a later flip is still safe (mirrors the
+      // database case).
+      return this.repository.createSource({
+        id: randomUUID(),
+        projectId,
+        input: {
+          kind: 'vector_db',
+          name: input.name?.trim() || vectorDb.name,
+          config: {
+            vectorDbId: vectorDb.id,
+            vectorDbName: vectorDb.name,
+          },
+        },
+        status: mapVectorDbStatusToSourceStatus(vectorDb.status),
+        statusDetail: vectorDb.statusError?.message ?? null,
       });
     }
 
@@ -362,13 +397,25 @@ export class ProjectsService {
     }
 
     if (row.kind === 'database') {
-      const cfg = (row.config ?? {}) as Record<string, unknown>;
+      const cfg = row.config ?? {};
       return {
         ...base,
         kind: 'database',
         config: {
           connectionId: String(cfg.connectionId ?? ''),
           connectionName: String(cfg.connectionName ?? ''),
+        },
+      };
+    }
+
+    if (row.kind === 'vector_db') {
+      const cfg = row.config ?? {};
+      return {
+        ...base,
+        kind: 'vector_db',
+        config: {
+          vectorDbId: String(cfg.vectorDbId ?? ''),
+          vectorDbName: String(cfg.vectorDbName ?? ''),
         },
       };
     }
@@ -426,6 +473,26 @@ export class ProjectsService {
       );
     }
     return scope.activeOrganizationId;
+  }
+}
+
+/**
+ * Map an org-level vector-db status onto the project data-source status the
+ * chat registry filters on. The chat agent only consumes `ready` sources, so
+ * any not-yet-usable state (`empty` = no documents, `processing` = ingesting)
+ * collapses to `connecting`; `error` is preserved.
+ */
+export function mapVectorDbStatusToSourceStatus(
+  status: VectorDbStatus,
+): DataSourceStatus {
+  switch (status) {
+    case 'ready':
+      return 'ready';
+    case 'error':
+      return 'error';
+    case 'empty':
+    case 'processing':
+      return 'connecting';
   }
 }
 
