@@ -12,6 +12,7 @@ README.md
 .eslintrc.js
 eslint.config.mjs
 test
+rag-benchmark
 *.spec.ts
 *.e2e-spec.ts
 .vscode
