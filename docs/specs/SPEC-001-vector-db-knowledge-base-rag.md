@@ -12,7 +12,7 @@ feature_paths:
   - src/modules/chat/application/services/chat-agent-tools.ts
 related_adrs: [ADR-011, ADR-014, ADR-015, ADR-016]
 related_specs: [SPEC-000]
-counterpart_spec: "standalone"
+counterpart_spec: "spa-velocity#SPEC-001"
 coordination_doc: ""
 ---
 
