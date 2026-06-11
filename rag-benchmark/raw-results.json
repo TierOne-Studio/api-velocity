@@ -1,0 +1,1932 @@
+[
+  {
+    "id": 1,
+    "question": "In what year and city was Nimbus Data Systems founded?",
+    "expected_answer": "In 2017, in Buenos Aires, Argentina.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "1. About the company"
+    },
+    "actual_answer": "Nimbus Data Systems was founded in 2017 in Buenos Aires, Argentina.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4261
+  },
+  {
+    "id": 2,
+    "question": "Who founded Nimbus Data Systems?",
+    "expected_answer": "Valeria Montoya and Andrés Liang.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "1. About the company"
+    },
+    "actual_answer": "Nimbus Data Systems was founded in 2017 in Buenos Aires, Argentina.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 2540
+  },
+  {
+    "id": 3,
+    "question": "In which cities does the company have offices, and which one is the headquarters?",
+    "expected_answer": "Buenos Aires (headquarters), Bogotá, and Mexico City.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "1. About the company"
+    },
+    "actual_answer": "Nimbus Data Systems has offices in Buenos Aires (headquarters), Bogotá, and Mexico City.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 2725
+  },
+  {
+    "id": 4,
+    "question": "What are the company's four core values?",
+    "expected_answer": "Clarity above all, ownership mindset, technical curiosity, and radical respect.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "1. About the company"
+    },
+    "actual_answer": "The company’s four core values are:\n\nClarity above all\nOwnership mindset\nTechnical curiosity\nRadical respect",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 7034
+  },
+  {
+    "id": 5,
+    "question": "Who is the VP of People?",
+    "expected_answer": "Camila Funes.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "1.1 Organizational structure"
+    },
+    "actual_answer": "The VP of People is Camila Funes.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 2393
+  },
+  {
+    "id": 6,
+    "question": "What are the core hours during which the whole team must be available?",
+    "expected_answer": "From 10:00 to 16:00 Argentina Time (ART).",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "2. Working hours and work arrangements"
+    },
+    "actual_answer": "Core hours, when the entire team must be available, are 10:00 to 16:00 Argentina Time (ART).",
+    "actual_sources": [
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5451
+  },
+  {
+    "id": 7,
+    "question": "What stipend do fully remote employees receive?",
+    "expected_answer": "A one-time USD 350 equipment stipend upon joining and a USD 40 monthly internet reimbursement.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "2. Working hours and work arrangements"
+    },
+    "actual_answer": "Fully remote employees receive a one-time equipment stipend of USD 350 upon joining and a monthly reimbursement of USD 40 for internet connectivity.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4365
+  },
+  {
+    "id": 8,
+    "question": "How many vacation business days does an employee with 6 years of tenure get?",
+    "expected_answer": "25 business days (the 5-to-8-year tenure bracket).",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "2.1 Vacation and leave (table)"
+    },
+    "actual_answer": "An employee with 6 years of tenure gets 25 vacation business days per year.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4911
+  },
+  {
+    "id": 9,
+    "question": "How many paid leave days are granted for moving (relocation)?",
+    "expected_answer": "2 business days.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "2.1 Vacation and leave (table)"
+    },
+    "actual_answer": "Employees are granted 2 business days of paid leave for moving (relocation).",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4404
+  },
+  {
+    "id": 10,
+    "question": "How far in advance and on which platform must vacation be requested?",
+    "expected_answer": "At least 15 days in advance, through the Humand platform.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "2.1 Vacation and leave"
+    },
+    "actual_answer": "Vacation must be requested through the Humand platform at least 15 days in advance, and it requires approval from the employee’s direct manager.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4281
+  },
+  {
+    "id": 11,
+    "question": "How many unused vacation days can be carried over to the next year, and when do they expire?",
+    "expected_answer": "Up to 5 days, which expire on March 31.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "2.1 Vacation and leave"
+    },
+    "actual_answer": "Up to 5 unused vacation days can be carried over to the next year, and they expire on March 31.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4305
+  },
+  {
+    "id": 12,
+    "question": "When are salaries deposited, and in which months are salary adjustments reviewed?",
+    "expected_answer": "They are deposited on the last business day of each month; adjustments are reviewed in April and October.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "3.1 Payroll"
+    },
+    "actual_answer": "Salaries are deposited on the last business day of each month. Salary adjustments are reviewed twice a year, in the April and October cycles.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4194
+  },
+  {
+    "id": 13,
+    "question": "How large is the annual learning budget per person?",
+    "expected_answer": "USD 800 per year, which can accrue for up to 2 years.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "3.2 Current benefits (table)"
+    },
+    "actual_answer": "The annual learning budget is USD 800 per person per year (and it can accrue for up to 2 years).",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4138
+  },
+  {
+    "id": 14,
+    "question": "How much is the referral bonus, and what condition must be met?",
+    "expected_answer": "USD 1,500 per successful hire who stays beyond 3 months.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "3.2 Current benefits (table)"
+    },
+    "actual_answer": "The referral bonus is USD 1,500 per successful hire. The condition is that the referred person must stay beyond 3 months.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4972
+  },
+  {
+    "id": 15,
+    "question": "What is the daily meal per diem cap for trips to the United States or Europe?",
+    "expected_answer": "USD 90 per day.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "3.3 Expenses and per diems"
+    },
+    "actual_answer": "The daily meal per diem cap for trips to the United States or Europe is USD 90.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4661
+  },
+  {
+    "id": 16,
+    "question": "How long is the probation period for new hires, and when is the formal feedback conversation held?",
+    "expected_answer": "The probation period lasts 3 months, with formal feedback at the 45-day mark.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "4. Performance and professional development"
+    },
+    "actual_answer": "The probation period for new hires is 3 months, and the formal feedback conversation is held at the 45-day mark.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5125
+  },
+  {
+    "id": 17,
+    "question": "What is the resignation notice period for leadership roles, and for how long can stock options be exercised after departure?",
+    "expected_answer": "45 days' notice for leadership roles; vested stock options can be exercised for up to 90 days after departure.",
+    "source": {
+      "document": "employee-handbook.pdf",
+      "section": "6. Offboarding and departures"
+    },
+    "actual_answer": "For leadership roles, the resignation notice period is 45 calendar days. Vested stock options may be exercised for up to 90 days after the departure date.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5047
+  },
+  {
+    "id": 18,
+    "question": "Who is the company's CISO?",
+    "expected_answer": "Marcos Ettinger.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "Header of document SEC-001"
+    },
+    "actual_answer": "The company’s CISO is Marcos Ettinger.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4947
+  },
+  {
+    "id": 19,
+    "question": "Since what year has the company held SOC 2 Type II certification?",
+    "expected_answer": "Since 2023, renewed annually.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "1. Purpose and scope"
+    },
+    "actual_answer": "The company has held SOC 2 Type II certification since 2023 (renewed annually).",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 6075
+  },
+  {
+    "id": 20,
+    "question": "When is the ISO 27001 certification audit scheduled?",
+    "expected_answer": "For September 2026.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "1. Purpose and scope"
+    },
+    "actual_answer": "The ISO 27001 certification audit is scheduled for September 2026.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4920
+  },
+  {
+    "id": 21,
+    "question": "What are the four information classification levels?",
+    "expected_answer": "Public, Internal, Confidential, and Restricted.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "2. Information classification (table)"
+    },
+    "actual_answer": "The four information classification levels are:\n\nPublic — can be disclosed without risk (e.g., website, marketing material).\nInternal — company-only access (e.g., process documentation, wikis).\nConfidential — access restricted by role (e.g., customer data, source code, contracts).\nRestricted — named, audited access (e.g., sensitive personal data).",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5126
+  },
+  {
+    "id": 22,
+    "question": "What is the minimum required length for corporate passwords?",
+    "expected_answer": "14 characters.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "3.1 Passwords and authentication"
+    },
+    "actual_answer": "Corporate passwords must be at least 14 characters long. They’re managed through the corporate password manager 1Password.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5038
+  },
+  {
+    "id": 23,
+    "question": "What type of MFA must production administrators use?",
+    "expected_answer": "YubiKey physical security keys.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "3.1 Passwords and authentication"
+    },
+    "actual_answer": "Production administrators must use YubiKey physical security keys for MFA.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 7953
+  },
+  {
+    "id": 24,
+    "question": "Which corporate password manager does the company use?",
+    "expected_answer": "1Password.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "3.1 Passwords and authentication"
+    },
+    "actual_answer": "The company uses 1Password as its corporate password manager.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5004
+  },
+  {
+    "id": 25,
+    "question": "How often is access to systems with Confidential or Restricted information reviewed?",
+    "expected_answer": "Quarterly.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "3.2 Access reviews"
+    },
+    "actual_answer": "Access to systems containing Confidential or Restricted information is reviewed quarterly.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 8015
+  },
+  {
+    "id": 26,
+    "question": "What is the maximum duration of just-in-time privilege elevation?",
+    "expected_answer": "8 hours.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "3.2 Access reviews"
+    },
+    "actual_answer": "The maximum duration for just-in-time (JIT) privilege elevation is up to 8 hours through the internal approval system.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5156
+  },
+  {
+    "id": 27,
+    "question": "How quickly are accounts deactivated after an employee's departure?",
+    "expected_answer": "Within 4 hours of the departure.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "3.2 Access reviews"
+    },
+    "actual_answer": "Accounts are deactivated on the employee’s last day as part of the offboarding process (the handbook specifies that the exit interview is held on the last day).\nThe handbook also states that all equipment must be returned within 10 business days after the departure date, but it does not give a separate “account deactivation” timeline beyond the last-day offboarding step.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 7015
+  },
+  {
+    "id": 28,
+    "question": "Where must application credentials, tokens, and certificates be stored, and which tool scans commits for secrets?",
+    "expected_answer": "In HashiCorp Vault; secret scanning runs on every commit using Gitleaks.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "3.3 Secrets management"
+    },
+    "actual_answer": "Application credentials, tokens, and certificates must be stored exclusively in HashiCorp Vault.\nCommits are scanned for secrets on every commit using Gitleaks.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4947
+  },
+  {
+    "id": 29,
+    "question": "What encryption is used for data at rest, and what minimum TLS version for data in transit?",
+    "expected_answer": "AES-256 at rest and TLS 1.3 in transit (TLS 1.2 only temporarily for legacy integrations, until December 2026).",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "4.1 Encryption"
+    },
+    "actual_answer": "Data at rest encryption: AES-256.\nData in transit minimum TLS version: TLS 1.3 (TLS 1.2 is only temporarily allowed for legacy customer integrations and must be eliminated before December 2026).",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5995
+  },
+  {
+    "id": 30,
+    "question": "What are the RPO and RTO for production databases according to the security policy?",
+    "expected_answer": "RPO of 1 hour and RTO of 4 hours.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "4.2 Backups"
+    },
+    "actual_answer": "Production databases have an RPO (Recovery Point Objective) of 1 hour and an RTO (Recovery Time Objective) of 4 hours, as defined in the security policy (Security Policy SEC-001).",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5994
+  },
+  {
+    "id": 31,
+    "question": "For how many days are production backups retained?",
+    "expected_answer": "35 days.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "4.2 Backups"
+    },
+    "actual_answer": "Production backups are retained for 35 days.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5131
+  },
+  {
+    "id": 32,
+    "question": "How long are audit logs from production systems retained?",
+    "expected_answer": "400 days in immutable storage.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "4.3 Log retention"
+    },
+    "actual_answer": "Audit logs from production systems are retained for 400 days in immutable storage.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4992
+  },
+  {
+    "id": 33,
+    "question": "Which VPN solution is used for remote access, and which MDM manages corporate devices?",
+    "expected_answer": "WireGuard VPN and the Kandji MDM (with automatic lock after 5 minutes).",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "5. Device and network security"
+    },
+    "actual_answer": "Remote access uses WireGuard VPN with per-device authentication, and corporate devices are managed by Kandji MDM.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5075
+  },
+  {
+    "id": 34,
+    "question": "What is the maximum first-response time for a Critical (S1) security incident?",
+    "expected_answer": "30 minutes.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "6. Security incident management (table)"
+    },
+    "actual_answer": "The maximum first-response time for a Critical (S1) security incident is 30 minutes.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5916
+  },
+  {
+    "id": 35,
+    "question": "Within what maximum timeframe must customers be notified of incidents involving personal data?",
+    "expected_answer": "Within a maximum of 72 hours.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "6. Security incident management"
+    },
+    "actual_answer": "Customers must be notified of incidents involving personal data within a maximum of 72 hours.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4996
+  },
+  {
+    "id": 36,
+    "question": "Which firm performed the 2025 penetration test, and what was the phishing-simulation click rate in the second half of 2025?",
+    "expected_answer": "Carbide Security performed the 2025 pentest; the click rate was 3.1%.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "7. Awareness and testing"
+    },
+    "actual_answer": "The 2025 penetration test was performed by Carbide Security, and the phishing-simulation click rate in the second half of 2025 was 3.1%.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5175
+  },
+  {
+    "id": 37,
+    "question": "What is the maximum validity of an exception to the security policy?",
+    "expected_answer": "90 days, renewable only once, requested in writing to the CISO.",
+    "source": {
+      "document": "security-policy.pdf",
+      "section": "8. Compliance"
+    },
+    "actual_answer": "An exception to the security policy is valid for a maximum of 90 days, and it is renewable only once.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4948
+  },
+  {
+    "id": 38,
+    "question": "What was the Q1 2026 revenue, and what was the year-over-year growth?",
+    "expected_answer": "USD 6.7 million, year-over-year growth of 59.5% compared to USD 4.2 million in Q1 2025.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "1. Executive summary"
+    },
+    "actual_answer": "Q1 2026 revenue was USD 6.7 million, and the year-over-year growth was 59.5% (vs. USD 4.2 million in Q1 2025).",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5044
+  },
+  {
+    "id": 39,
+    "question": "What was the ARR at the end of Q1 2026?",
+    "expected_answer": "USD 26.8 million.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "1. Executive summary"
+    },
+    "actual_answer": "ARR at the end of Q1 2026 was USD 26.8 million.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4943
+  },
+  {
+    "id": 40,
+    "question": "Who led the Series B round, for how much, and when did it close?",
+    "expected_answer": "Meridian Growth Partners led a USD 40 million Series B, closed in February 2026.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "1. Executive summary"
+    },
+    "actual_answer": "The Series B round was led by Meridian Growth Partners for USD 40 million, and it closed in February 2026.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4994
+  },
+  {
+    "id": 41,
+    "question": "Which existing investors participated in the Series B?",
+    "expected_answer": "Altavista Capital and Sur Ventures.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "1. Executive summary"
+    },
+    "actual_answer": "Existing investors that participated in the Series B were Altavista Capital and Sur Ventures.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5130
+  },
+  {
+    "id": 42,
+    "question": "Which product version was launched in February 2026, and what was its main new feature?",
+    "expected_answer": "NimbusVault 3.2, featuring the new hybrid search engine.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "1. Executive summary"
+    },
+    "actual_answer": "In February 2026, the company launched NimbusVault 3.2, and its main new feature was a new hybrid search engine.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4993
+  },
+  {
+    "id": 43,
+    "question": "How many integrations did the connector marketplace have at the close of Q1 2026?",
+    "expected_answer": "41 integrations.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "1. Executive summary"
+    },
+    "actual_answer": "At the close of Q1 2026, the connector marketplace had 41 available integrations.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5000
+  },
+  {
+    "id": 44,
+    "question": "How many active customers did the company have at the close of Q1 2026, and how many were new enterprise customers in the quarter?",
+    "expected_answer": "627 active customers and 23 new enterprise customers.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "2. Commercial metrics (table)"
+    },
+    "actual_answer": "At the close of Q1 2026, the company had 627 active customers, including 23 new enterprise customers added during the quarter.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4987
+  },
+  {
+    "id": 45,
+    "question": "What was the net revenue retention (NRR) in Q1 2026?",
+    "expected_answer": "118%.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "2. Commercial metrics (table)"
+    },
+    "actual_answer": "The net revenue retention (NRR) in Q1 2026 was 118%.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4993
+  },
+  {
+    "id": 46,
+    "question": "What was the monthly customer churn in Q1 2026, and how did it change from the previous quarter?",
+    "expected_answer": "1.8%, an improvement of 0.3 points from 2.1% in Q4 2025.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "2. Commercial metrics (table)"
+    },
+    "actual_answer": "In Q1 2026, the company’s monthly customer churn was 1.8%. It decreased from 2.1% in Q4 2025, a change of -0.3 percentage points.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 6133
+  },
+  {
+    "id": 47,
+    "question": "What was the NPS in Q1 2026?",
+    "expected_answer": "56 (up from 51 in Q4 2025).",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "2. Commercial metrics (table)"
+    },
+    "actual_answer": "The NPS in Q1 2026 was 56.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4993
+  },
+  {
+    "id": 48,
+    "question": "What was the quarter's CAC and the LTV/CAC ratio?",
+    "expected_answer": "CAC of USD 11,400 and an LTV/CAC ratio of 4.6.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "2. Commercial metrics"
+    },
+    "actual_answer": "The quarter’s CAC was USD 11,400, and the LTV/CAC ratio was 4.6.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 6996
+  },
+  {
+    "id": 49,
+    "question": "What is the average annual contract value per enterprise customer?",
+    "expected_answer": "USD 78,000.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "2. Commercial metrics"
+    },
+    "actual_answer": "The average annual contract value per enterprise customer was USD 78,000.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4992
+  },
+  {
+    "id": 50,
+    "question": "How many active customers does the company have in Latin America?",
+    "expected_answer": "178 customers.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "2.1 Geographic distribution"
+    },
+    "actual_answer": "The company has 178 active customers in Latin America (as of Q1 2026).",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4993
+  },
+  {
+    "id": 51,
+    "question": "What was the gross margin in Q1 2026?",
+    "expected_answer": "74.0%.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "3. Financial results (table)"
+    },
+    "actual_answer": "The gross margin in Q1 2026 was 74.0%.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 12128
+  },
+  {
+    "id": 52,
+    "question": "How much cash did the company have at the close of Q1 2026, and what is the estimated runway?",
+    "expected_answer": "USD 19.3 million in cash and an estimated runway of 28 months.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "3. Financial results"
+    },
+    "actual_answer": "The company had USD 19.30 million in cash and equivalents at the close of Q1 2026, and the estimated runway was 28 months (based on the planned investment pace).",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5018
+  },
+  {
+    "id": 53,
+    "question": "When is the company projected to reach operating break-even?",
+    "expected_answer": "In Q3 2027.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "3. Financial results"
+    },
+    "actual_answer": "The company is projected to reach operating break-even in Q3 2027.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5091
+  },
+  {
+    "id": 54,
+    "question": "What was the annualized voluntary attrition in Q1 2026, and how many active openings are planned for Q2?",
+    "expected_answer": "Attrition of 8.4%; 24 openings are planned, concentrated in Engineering (14) and Sales (7).",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "4. People"
+    },
+    "actual_answer": "The company’s annualized voluntary attrition in Q1 2026 was 8.4%. For Q2 2026, it planned 24 active openings (Engineering: 14, Sales: 7).",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4985
+  },
+  {
+    "id": 55,
+    "question": "What ARR target was set for the close of Q2 2026?",
+    "expected_answer": "Reaching USD 30 million in ARR by 06/30/2026.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "5. Next quarter objectives (table)"
+    },
+    "actual_answer": "The ARR target set for the close of Q2 2026 was at least USD 30 million (stated as “ARR ≥ 30 M by 06/30/2026”).",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4899
+  },
+  {
+    "id": 56,
+    "question": "What percentage of ARR do the top 10 customers represent?",
+    "expected_answer": "31% of ARR.",
+    "source": {
+      "document": "q1-2026-report.pdf",
+      "section": "6. Identified risks"
+    },
+    "actual_answer": "The top 10 customers represent 31% of ARR.",
+    "actual_sources": [
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5207
+  },
+  {
+    "id": 57,
+    "question": "What is the production base URL of the NimbusVault API?",
+    "expected_answer": "https://api.nimbusvault.io/v3",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "1. Introduction"
+    },
+    "actual_answer": "The production base URL of the NimbusVault API is:\nhttps://api.nimbusvault.io/v3",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4918
+  },
+  {
+    "id": 58,
+    "question": "Which technology is used as the API Gateway?",
+    "expected_answer": "Kong.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "1. Introduction / architecture diagram"
+    },
+    "actual_answer": "The API Gateway uses Kong (a Kong-based API Gateway routes requests to the ingestion or query services).",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5987
+  },
+  {
+    "id": 59,
+    "question": "What prefixes do API keys have depending on the environment?",
+    "expected_answer": "nv_live_ for production and nv_test_ for sandbox.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "2. Authentication"
+    },
+    "actual_answer": "API keys use different prefixes depending on the environment:\n\nProduction: nv_live_\nTesting (sandbox): nv_test_",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4993
+  },
+  {
+    "id": 60,
+    "question": "How quickly does API key revocation take effect?",
+    "expected_answer": "In under 60 seconds.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "2. Authentication"
+    },
+    "actual_answer": "API key revocation takes effect in under 60 seconds after you revoke/rotate a compromised key from the panel.",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5993
+  },
+  {
+    "id": 61,
+    "question": "What scopes can API keys have?",
+    "expected_answer": "Read, write, and admin.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "2. Authentication"
+    },
+    "actual_answer": "API keys can be scoped for read, write, or admin access.\n\nread: e.g., GET /documents/{id}, POST /search\nwrite: e.g., POST /documents, DELETE /documents/{id}, POST /collections\nadmin: e.g., POST /webhooks",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5219
+  },
+  {
+    "id": 62,
+    "question": "How many requests per minute does the Pro plan allow?",
+    "expected_answer": "600 requests per minute.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "3. Rate limits (table)"
+    },
+    "actual_answer": "The Pro plan allows 600 requests per minute.",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4975
+  },
+  {
+    "id": 63,
+    "question": "What is the daily document ingestion limit of the Starter plan?",
+    "expected_answer": "1,000 documents per day.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "3. Rate limits (table)"
+    },
+    "actual_answer": "The Starter plan has a daily document ingestion limit of 1,000 documents per day.",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4934
+  },
+  {
+    "id": 64,
+    "question": "What HTTP code does the API return when rate limits are exceeded, and in which headers are the limits reported?",
+    "expected_answer": "It returns 429; limits are reported in X-RateLimit-Limit, X-RateLimit-Remaining, and X-RateLimit-Reset.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "3. Rate limits"
+    },
+    "actual_answer": "When the rate limit is exceeded, the API returns HTTP 429.\nThe limits are reported in these headers:\n\nX-RateLimit-Limit\nX-RateLimit-Remaining\nX-RateLimit-Reset",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5037
+  },
+  {
+    "id": 65,
+    "question": "What is the maximum file size accepted by POST /documents?",
+    "expected_answer": "150 MB.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "4.1 Document ingestion"
+    },
+    "actual_answer": "POST /documents accepts files up to 150 MB (for PDF, DOCX, PPTX, XLSX, HTML, Markdown, and plain text).",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5029
+  },
+  {
+    "id": 66,
+    "question": "Which states does a document pass through during processing?",
+    "expected_answer": "queued, processing, ready, or failed.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "4.1 Document ingestion"
+    },
+    "actual_answer": "During asynchronous processing, a document moves through these states: queued → processing → ready, or queued → processing → failed.",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 6132
+  },
+  {
+    "id": 67,
+    "question": "What is the default search mode of the POST /search endpoint?",
+    "expected_answer": "hybrid (the available modes are semantic, keyword, and hybrid).",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "4.2 Search"
+    },
+    "actual_answer": "The default search mode for POST /search is hybrid.",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4993
+  },
+  {
+    "id": 68,
+    "question": "What are the default and maximum values of the top_k parameter in searches?",
+    "expected_answer": "Default 10; maximum 100.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "4.2 Search"
+    },
+    "actual_answer": "In searches, top_k has a default value of 10 and a maximum allowed value of 100.",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4991
+  },
+  {
+    "id": 69,
+    "question": "Which embeddings model does the platform use, and how many dimensions does it have?",
+    "expected_answer": "The in-house nimbus-embed-2 model, with 1,024 dimensions.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "4.2 Search"
+    },
+    "actual_answer": "The platform uses the in-house nimbus-embed-2 embeddings model, and it has 1,024 dimensions.",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 7090
+  },
+  {
+    "id": 70,
+    "question": "For how long are idempotency keys remembered?",
+    "expected_answer": "For 24 hours.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "5. Idempotency and pagination"
+    },
+    "actual_answer": "Idempotency keys are remembered for 24 hours.",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4890
+  },
+  {
+    "id": 71,
+    "question": "Which internal code corresponds to an unsupported file format, and with which HTTP code is it returned?",
+    "expected_answer": "NV-1042, with HTTP 422.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "6. Error codes (table)"
+    },
+    "actual_answer": "An unsupported file format corresponds to internal code NV-1042, and it is returned with HTTP status code 422.",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5131
+  },
+  {
+    "id": 72,
+    "question": "How are webhook deliveries signed, and how many times are failed deliveries retried?",
+    "expected_answer": "With HMAC-SHA256 in the X-Nimbus-Signature header; they are retried up to 8 times with exponential backoff over a maximum of 24 hours.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "7. Webhooks"
+    },
+    "actual_answer": "Webhook deliveries are signed by computing an HMAC-SHA256 signature over the delivery payload using the webhook secret, and sending it in the X-Nimbus-Signature header.\nFailed deliveries are retried up to 8 times, using exponential backoff over a maximum of 24 hours.",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5061
+  },
+  {
+    "id": 73,
+    "question": "How far in advance are breaking changes to the API announced, at minimum?",
+    "expected_answer": "At least 90 days in advance.",
+    "source": {
+      "document": "api-documentation.docx",
+      "section": "8. Official SDKs"
+    },
+    "actual_answer": "Breaking changes to the API are announced at least 90 days in advance.",
+    "actual_sources": [
+      "api-documentation.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4920
+  },
+  {
+    "id": 74,
+    "question": "For how many weeks does the technical buddy accompany a new Engineering hire?",
+    "expected_answer": "For the first 6 weeks.",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "1. Welcome"
+    },
+    "actual_answer": "The technical buddy accompanies a new Engineering hire for the first 6 weeks.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4988
+  },
+  {
+    "id": 75,
+    "question": "What equipment does an Engineering hire receive on their first day?",
+    "expected_answer": "A MacBook Pro M4 with 32 GB of RAM, already enrolled in the MDM.",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "2. Day 1: access"
+    },
+    "actual_answer": "An Engineering hire receives a MacBook Pro M4 (32 GB RAM) on their first day, with it already enrolled in the MDM. They also get access via Okta to Slack, Google Workspace, GitHub (nimbus-data organization), Linear, Notion, and Grafana.\nThey do not get access to AWS and production environments on day 1—that’s enabled after completing security training.",
+    "actual_sources": [
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5176
+  },
+  {
+    "id": 76,
+    "question": "When is access to AWS and production environments enabled for a new hire?",
+    "expected_answer": "Upon completing the security training (it is not granted on day 1).",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "2. Day 1: access"
+    },
+    "actual_answer": "Access to AWS and production environments is enabled after completing security training—it is not granted on day 1.",
+    "actual_sources": [
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5499
+  },
+  {
+    "id": 77,
+    "question": "Which versions of Node.js and PostgreSQL does the stack use?",
+    "expected_answer": "Node.js 22 LTS and PostgreSQL 16 (on RDS).",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "3. Tech stack (table)"
+    },
+    "actual_answer": "The stack uses Node.js 22 LTS and PostgreSQL 16.",
+    "actual_sources": [
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4920
+  },
+  {
+    "id": 78,
+    "question": "Which tool is used for feature flags?",
+    "expected_answer": "LaunchDarkly.",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "3. Tech stack (table)"
+    },
+    "actual_answer": "The indexed sources I found don’t mention which feature-flag tool the stack uses.\nIf you can point me to the relevant doc (e.g., engineering setup, infrastructure/DevOps docs, or the feature-flag implementation notes), I can answer precisely.",
+    "actual_sources": [
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 7028
+  },
+  {
+    "id": 79,
+    "question": "What is the monorepo called, and which tools manage it?",
+    "expected_answer": "nimbus-core, managed with pnpm workspaces and Turborepo.",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "3. Tech stack"
+    },
+    "actual_answer": "The monorepo is called nimbus-core. It’s managed with pnpm workspaces and Turborepo.",
+    "actual_sources": [
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 6926
+  },
+  {
+    "id": 80,
+    "question": "Which script prepares the local environment, and at which URL does the platform run with pnpm dev?",
+    "expected_answer": "./scripts/bootstrap.sh; the platform runs at http://localhost:4200.",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "4.1 Local setup"
+    },
+    "actual_answer": "The local environment is prepared by running ./scripts/bootstrap.sh.\nWith pnpm dev, the platform runs at http://localhost:4200.",
+    "actual_sources": [
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5033
+  },
+  {
+    "id": 81,
+    "question": "What format do branch names follow?",
+    "expected_answer": "type/LIN-123-short-description, where LIN-123 is the Linear ticket.",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "4.2 Branch and commit conventions"
+    },
+    "actual_answer": "Branch names follow the format type/LIN-123-short-description, where LIN-123 is the Linear ticket.",
+    "actual_sources": [
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 6968
+  },
+  {
+    "id": 82,
+    "question": "How many approvals does each pull request require, and what minimum test coverage does the pipeline enforce?",
+    "expected_answer": "2 approvals plus sign-off from CODEOWNERS, and a minimum coverage of 80% on changed lines.",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "4.2 Branch and commit conventions"
+    },
+    "actual_answer": "Each pull request requires 2 approvals plus sign-off from the CODEOWNERS of the affected area.\nThe CI pipeline enforces a minimum test coverage of 80% on changed lines.",
+    "actual_sources": [
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4893
+  },
+  {
+    "id": 83,
+    "question": "On which days and until what time are production deployments allowed?",
+    "expected_answer": "Monday through Thursday until 16:00 ART; no Friday deployments except hotfixes approved by the on-call lead.",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "4.3 Continuous integration and deployment"
+    },
+    "actual_answer": "Production deployments are allowed Monday through Thursday, until 16:00 ART.\nThey are not allowed on Fridays, except for hotfixes approved by the on-call lead.",
+    "actual_sources": [
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5049
+  },
+  {
+    "id": 84,
+    "question": "How long are sprints, on which day do they start, and at what time is the daily standup?",
+    "expected_answer": "2-week sprints starting on Wednesdays; the daily is at 10:15 ART and lasts a maximum of 15 minutes.",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "5. Work rhythm"
+    },
+    "actual_answer": "Sprints are 2-week sprints that start on Wednesdays. The daily standup is at 10:15 ART and lasts up to 15 minutes.",
+    "actual_sources": [
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5822
+  },
+  {
+    "id": 85,
+    "question": "In which week should a new hire's first pull request be merged?",
+    "expected_answer": "During week 2, with a ticket labeled good-first-issue.",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "5. Work rhythm"
+    },
+    "actual_answer": "A new hire’s first pull request should be merged during week 2.",
+    "actual_sources": [
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4987
+  },
+  {
+    "id": 86,
+    "question": "What is the compensation per on-call week in Engineering?",
+    "expected_answer": "USD 250 per week, plus time off in lieu for overnight incidents.",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "6. On-call"
+    },
+    "actual_answer": "Engineering on-call compensation is USD 250 per on-call week, plus time off in lieu for overnight incidents.",
+    "actual_sources": [
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5255
+  },
+  {
+    "id": 87,
+    "question": "From what point does a new hire join the primary on-call rotation?",
+    "expected_answer": "Starting in the third month (the first month is spent as a shadow).",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "6. On-call"
+    },
+    "actual_answer": "A new hire joins the primary on-call rotation starting in their third month (after participating as a shadow during their first month).",
+    "actual_sources": [
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 11069
+  },
+  {
+    "id": 88,
+    "question": "When do the internal Nimbus Fridays demos take place?",
+    "expected_answer": "On the last Friday of each month at 15:00 ART.",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "7. Documentation and learning"
+    },
+    "actual_answer": "Internal Nimbus Fridays demos take place on the last Friday of each month at 15:00 ART.",
+    "actual_sources": [
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4944
+  },
+  {
+    "id": 89,
+    "question": "Where are architecture decisions (ADRs) recorded?",
+    "expected_answer": "In the repository, under docs/adr/.",
+    "source": {
+      "document": "engineering-onboarding-guide.docx",
+      "section": "7. Documentation and learning"
+    },
+    "actual_answer": "I couldn’t find any indexed documentation stating where Architecture Decision Records (ADRs) are recorded/stored.\nThe only relevant material returned was a security policy document, which doesn’t mention ADRs or an ADR repository. If you can point me to the engineering process docs (e.g., “architecture process”, “ADR guidelines”, or “engineering handbook”), or tell me what tool they use (GitHub, Notion, Confluence, etc.), I can search again more precisely.",
+    "actual_sources": [
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 7879
+  },
+  {
+    "id": 90,
+    "question": "What is the primary AWS region, and what is the disaster recovery (DR) region?",
+    "expected_answer": "Primary us-east-1 and DR sa-east-1 (São Paulo).",
+    "source": {
+      "document": "infrastructure-runbook.docx",
+      "section": "2. Production topology"
+    },
+    "actual_answer": "The primary AWS region is us-east-1, and the disaster recovery (DR) region is sa-east-1 (São Paulo).",
+    "actual_sources": [
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5228
+  },
+  {
+    "id": 91,
+    "question": "Which EKS version runs in production, and how is the Qdrant cluster composed?",
+    "expected_answer": "EKS 1.31; Qdrant runs on a 6-node cluster spread across 3 availability zones.",
+    "source": {
+      "document": "infrastructure-runbook.docx",
+      "section": "2. Production topology"
+    },
+    "actual_answer": "Production runs EKS 1.31.\nThe Qdrant setup is a 6-node cluster spread across 3 availability zones.",
+    "actual_sources": [
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 7054
+  },
+  {
+    "id": 92,
+    "question": "What is the availability SLA committed to customers, and where is the platform's public status communicated?",
+    "expected_answer": "99.9% monthly; the status is communicated at status.nimbusvault.io.",
+    "source": {
+      "document": "infrastructure-runbook.docx",
+      "section": "2. Production topology"
+    },
+    "actual_answer": "The availability SLA committed to customers is 99.9% monthly.\nThe platform’s public status is communicated at status.nimbusvault.io.",
+    "actual_sources": [
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "q1-2026-report.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4989
+  },
+  {
+    "id": 93,
+    "question": "What is the first-response time for a SEV1 incident?",
+    "expected_answer": "15 minutes, with a status page update within 30 minutes.",
+    "source": {
+      "document": "infrastructure-runbook.docx",
+      "section": "3. Severities and response times (table)"
+    },
+    "actual_answer": "The first-response time for a SEV1 incident is 15 minutes.",
+    "actual_sources": [
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4990
+  },
+  {
+    "id": 94,
+    "question": "How does a SEV1 incident escalate automatically if it is not acknowledged?",
+    "expected_answer": "It escalates to the Platform lead at 10 minutes and to the CTO at 20 minutes without acknowledgment.",
+    "source": {
+      "document": "infrastructure-runbook.docx",
+      "section": "3. Severities and response times"
+    },
+    "actual_answer": "A SEV1 incident escalates automatically via PagerDuty if it isn’t acknowledged:\n\nIf not acknowledged within 10 minutes, it escalates to the Platform lead.\nIf not acknowledged within 20 minutes, it escalates to the CTO.",
+    "actual_sources": [
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5169
+  },
+  {
+    "id": 95,
+    "question": "On what day and time does the weekly on-call rotation rotate, and when is the secondary paged?",
+    "expected_answer": "It rotates on Mondays at 14:00 UTC; the secondary is paged if the primary does not acknowledge within 5 minutes.",
+    "source": {
+      "document": "infrastructure-runbook.docx",
+      "section": "4. On-call"
+    },
+    "actual_answer": "The weekly on-call rotation rotates on Mondays at 14:00 UTC.\nThe secondary is paged if the primary does not acknowledge within 5 minutes.",
+    "actual_sources": [
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark",
+      "employee-handbook.pdf · RAG ENG Benchmark"
+    ],
+    "duration_ms": 4817
+  },
+  {
+    "id": 96,
+    "question": "What is the alert threshold for the API's p99 latency?",
+    "expected_answer": "Above 1,200 ms for 5 minutes.",
+    "source": {
+      "document": "infrastructure-runbook.docx",
+      "section": "5. Monitoring and alerts (table)"
+    },
+    "actual_answer": "The alert threshold for the API’s p99 latency is above 1,200 ms for 5 minutes.",
+    "actual_sources": [
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "api-documentation.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5129
+  },
+  {
+    "id": 97,
+    "question": "How long does a full deployment rollback from ArgoCD take?",
+    "expected_answer": "Less than 4 minutes.",
+    "source": {
+      "document": "infrastructure-runbook.docx",
+      "section": "6.1 Rolling back a deployment"
+    },
+    "actual_answer": "A full deployment rollback from ArgoCD takes less than 4 minutes.",
+    "actual_sources": [
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 5057
+  },
+  {
+    "id": 98,
+    "question": "When is the scheduled maintenance window, and how far in advance must impactful maintenance be announced?",
+    "expected_answer": "Saturdays from 03:00 to 05:00 UTC, announced on the status page at least 72 hours in advance.",
+    "source": {
+      "document": "infrastructure-runbook.docx",
+      "section": "6.3 Maintenance window"
+    },
+    "actual_answer": "The scheduled maintenance window is Saturdays from 03:00 to 05:00 UTC.\nAny maintenance with impact must be announced on the status page at least 72 hours in advance.",
+    "actual_sources": [
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "infrastructure-runbook.docx · RAG ENG Benchmark",
+      "security-policy.pdf · RAG ENG Benchmark",
+      "engineering-onboarding-guide.docx · RAG ENG Benchmark"
+    ],
+    "duration_ms": 11925
+  },
+  {
+    "id": 99,
+    "question": "Within what timeframe must the post-mortem of a SEV1 or SEV2 incident be published?",
+    "expected_answer": "Within 5 business days of resolution, in blameless format.",
+    "source": {
+      "document": "infrastructure-runbook.docx",
+      "section": "7. Post-incidents"
+    },
+    "actual_answer": "The post-mortem for a SEV1 or SEV2 incident must be published within 5 business days of resolution.",
+    "actual_sources": [],
+    "duration_ms": 4988
+  },
+  {
+    "id": 100,
+    "question": "How often are Qdrant snapshots taken, and how long did the latest disaster recovery drill take?",
+    "expected_answer": "Snapshots are taken every 6 hours; the DR drill on May 9, 2026 completed full recovery in 3 hours and 12 minutes.",
+    "source": {
+      "document": "infrastructure-runbook.docx",
+      "section": "8. Backup and recovery"
+    },
+    "actual_answer": "Qdrant snapshots are taken every 6 hours.\nThe latest disaster recovery drill (run May 9, 2026) took 3 hours and 12 minutes to complete full recovery.",
+    "actual_sources": [],
+    "duration_ms": 90292,
+    "note": "Answer arrived after the 90s scrape timeout; recovered from the chat afterwards. No sources chips were rendered for this answer."
+  }
+]
