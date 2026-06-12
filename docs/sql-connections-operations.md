@@ -121,7 +121,7 @@ A future ADR will add session-variable propagation for full RLS support.
 
 ## 4. Per-connection table allowlist
 
-In addition to the role's grants, each `sql_connection` row carries an optional `allowed_tables` JSONB column ([H1 of the PR review](../../docs/sql-connections-key-rotation.md)):
+In addition to the role's grants, each `sql_connection` row carries an optional `allowed_tables` JSONB column ([H1 of the PR review](./sql-connections-key-rotation.md)):
 
 - **`null`** → no allowlist; the sub-agent's `list_tables_sql_db` returns every table the role can see.
 - **Array of identifiers** → the SqlToolkit's introspection only sees these tables. Both unqualified (`"users"`) and schema-qualified (`"analytics.orders"`) entries are accepted. Postgres identifier-shape validation runs at create / update time.
