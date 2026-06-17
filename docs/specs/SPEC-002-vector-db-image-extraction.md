@@ -17,7 +17,7 @@ feature_paths:
   - src/shared/config/config.service.ts
 related_adrs: [ADR-017]
 related_specs: [SPEC-001]
-counterpart_spec: 'standalone'
+counterpart_spec: standalone
 coordination_doc: ''
 ---
 
