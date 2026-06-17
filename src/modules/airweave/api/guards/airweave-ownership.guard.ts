@@ -82,12 +82,12 @@ export class AirweaveOwnershipGuard implements CanActivate {
       );
     }
 
-    const collectionReadableId = rawValue.trim();
+    const airweaveCollectionReadableId = rawValue.trim();
 
     try {
       await this.authzService.assertOwnership(
         request.session,
-        collectionReadableId,
+        airweaveCollectionReadableId,
       );
       return true;
     } catch (error) {
@@ -108,7 +108,7 @@ export class AirweaveOwnershipGuard implements CanActivate {
           userId: request.session.user.id,
           userRole: getPlatformRole(request.session),
           orgId: getActiveOrganizationId(request.session),
-          collectionReadableId,
+          airweaveCollectionReadableId,
           route: request.originalUrl ?? request.url ?? null,
           method: request.method ?? null,
           source: source.source,

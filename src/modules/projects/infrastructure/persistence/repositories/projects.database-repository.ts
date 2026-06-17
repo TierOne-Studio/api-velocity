@@ -147,7 +147,7 @@ export class ProjectsDatabaseRepository implements IProjectsRepository {
   ): Promise<ProjectDataSourceRow> {
     const name =
       params.input.kind === 'airweave_collection'
-        ? (params.input.name ?? params.input.config.collectionName)
+        ? (params.input.name ?? params.input.config.airweaveCollectionName)
         : params.input.name;
 
     const rows = await this.db.query<ProjectDataSourceRow>(
@@ -200,7 +200,7 @@ export class ProjectsDatabaseRepository implements IProjectsRepository {
   }
 
   async findProjectsReferencingAirweaveCollection(
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
     organizationId: string,
   ): Promise<Array<{ id: string; name: string }>> {
     return this.db.query<{ id: string; name: string }>(
@@ -208,9 +208,9 @@ export class ProjectsDatabaseRepository implements IProjectsRepository {
          FROM project p
          JOIN project_data_source pds ON pds.project_id = p.id
         WHERE pds.kind = 'airweave_collection'
-          AND pds.config->>'collectionReadableId' = $1
+          AND pds.config->>'airweaveCollectionReadableId' = $1
           AND p.organization_id = $2`,
-      [collectionReadableId, organizationId],
+      [airweaveCollectionReadableId, organizationId],
     );
   }
 

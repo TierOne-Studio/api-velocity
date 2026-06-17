@@ -195,7 +195,7 @@ describe('AirweaveService', () => {
         id: 'source-1',
         name: 'TierOne Docs',
         shortName: 'confluence',
-        collectionReadableId: 'champion-velocity',
+        airweaveCollectionReadableId: 'champion-velocity',
         createdAt: '2026-04-01T00:00:00.000Z',
         updatedAt: '2026-04-02T00:00:00.000Z',
         isAuthenticated: true,
@@ -342,7 +342,7 @@ describe('AirweaveService', () => {
       id: 'source-1',
       name: 'TierOne Repo',
       shortName: 'github',
-      collectionReadableId: 'champion-velocity',
+      airweaveCollectionReadableId: 'champion-velocity',
       createdAt: '2026-04-01T00:00:00.000Z',
       updatedAt: '2026-04-02T00:00:00.000Z',
       isAuthenticated: true,
@@ -361,7 +361,7 @@ describe('AirweaveService', () => {
     } as never);
 
     const result = await service.createConnectSession({
-      readableCollectionId: 'champion-velocity',
+      readableAirweaveCollectionId: 'champion-velocity',
       endUserId: 'user-1',
     });
 
@@ -483,7 +483,7 @@ describe('AirweaveService', () => {
 
     await expect(
       service.createConnectSession({
-        readableCollectionId: 'champion-velocity',
+        readableAirweaveCollectionId: 'champion-velocity',
         endUserId: 'user-1',
       }),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
@@ -502,7 +502,7 @@ describe('AirweaveService', () => {
 
     await expect(
       serviceNoConfig.createConnectSession({
-        readableCollectionId: 'champion-velocity',
+        readableAirweaveCollectionId: 'champion-velocity',
         endUserId: 'user-1',
       }),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
@@ -551,7 +551,7 @@ describe('AirweaveService', () => {
 
     await expect(
       service.createConnectSession({
-        readableCollectionId: 'bad-collection',
+        readableAirweaveCollectionId: 'bad-collection',
         endUserId: 'user-1',
       }),
     ).rejects.toBeInstanceOf(BadGatewayException);
@@ -565,7 +565,7 @@ describe('AirweaveService', () => {
 
     await expect(
       service.createConnectSession({
-        readableCollectionId: 'champion-velocity',
+        readableAirweaveCollectionId: 'champion-velocity',
         endUserId: 'user-1',
       }),
     ).rejects.toBeInstanceOf(BadGatewayException);
@@ -576,7 +576,7 @@ describe('AirweaveService', () => {
 
     await expect(
       service.createConnectSession({
-        readableCollectionId: 'champion-velocity',
+        readableAirweaveCollectionId: 'champion-velocity',
         endUserId: 'user-1',
       }),
     ).rejects.toBeInstanceOf(BadGatewayException);
@@ -876,6 +876,17 @@ describe('AirweaveService', () => {
 
       const failure = service.deleteCollection('acme-foo-abcdef12', 'org-1');
       await expect(failure).rejects.toThrow(ConflictException);
+      // Non-vacuous: the 409 body carries the renamed wire field the SPA
+      // consumes (would fail if `airweaveCollectionReadableId` were misnamed).
+      await failure.catch((err) => {
+        expect((err as ConflictException).getResponse()).toMatchObject({
+          airweaveCollectionReadableId: 'acme-foo-abcdef12',
+          projects: [
+            { id: 'proj-1', name: 'General' },
+            { id: 'proj-2', name: 'Analytics' },
+          ],
+        });
+      });
       // Airweave + allowlist untouched.
       expect(client.collections.delete).not.toHaveBeenCalled();
       expect(
@@ -963,7 +974,7 @@ describe('AirweaveService', () => {
       client.sourceConnections.create.mockResolvedValue(sdkReturn);
 
       const result = await service.createSourceConnection({
-        collectionReadableId: 'acme-foo-abcdef12',
+        airweaveCollectionReadableId: 'acme-foo-abcdef12',
         name: 'Slack Workspace',
         shortName: 'slack',
         authentication: {
@@ -1003,7 +1014,7 @@ describe('AirweaveService', () => {
 
       await expect(
         service.createSourceConnection({
-          collectionReadableId: 'acme-foo-abcdef12',
+          airweaveCollectionReadableId: 'acme-foo-abcdef12',
           name: 'Slack Workspace',
           shortName: 'slack',
           authentication: { kind: 'direct', credentials: { token: 'bad' } },

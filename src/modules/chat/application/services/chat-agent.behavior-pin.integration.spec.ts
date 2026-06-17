@@ -58,8 +58,8 @@ function makeAirweaveSource(): ProjectDataSource {
     kind: 'airweave_collection',
     name: 'General',
     config: {
-      collectionReadableId: 'velocity-pin',
-      collectionName: 'General',
+      airweaveCollectionReadableId: 'velocity-pin',
+      airweaveCollectionName: 'General',
     },
     status: 'ready',
     statusDetail: null,

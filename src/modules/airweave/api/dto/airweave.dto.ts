@@ -47,7 +47,7 @@ export type CreateSourceConnectionBody = CreateSourceConnectionBodyDirect;
  * over the human-readable part of the id (useful for retries that need to
  * land on the same id, and for predictable URL shapes in the UI).
  */
-export interface CreateCollectionBody {
+export interface CreateAirweaveCollectionBody {
   /** Display name shown in the Airweave UI and surfaced to users. */
   name: string;
   /**

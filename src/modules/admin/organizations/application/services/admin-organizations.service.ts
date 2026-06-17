@@ -318,11 +318,11 @@ export class AdminOrganizationsService {
    */
   async addAirweaveCollectionToAllowlist(
     organizationId: string,
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
   ): Promise<void> {
     await this.orgRepo.addAirweaveCollectionToAllowlist(
       organizationId,
-      collectionReadableId,
+      airweaveCollectionReadableId,
     );
   }
 
@@ -332,11 +332,11 @@ export class AdminOrganizationsService {
    */
   async removeAirweaveCollectionFromAllowlist(
     organizationId: string,
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
   ): Promise<void> {
     await this.orgRepo.removeAirweaveCollectionFromAllowlist(
       organizationId,
-      collectionReadableId,
+      airweaveCollectionReadableId,
     );
   }
 
@@ -348,11 +348,11 @@ export class AdminOrganizationsService {
    */
   async isAirweaveCollectionInAllowlist(
     organizationId: string,
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
   ): Promise<boolean> {
     return this.orgRepo.isAirweaveCollectionInAllowlist(
       organizationId,
-      collectionReadableId,
+      airweaveCollectionReadableId,
     );
   }
 

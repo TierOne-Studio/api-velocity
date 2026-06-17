@@ -62,7 +62,7 @@ export interface IProjectsRepository {
    * leak even though the route already gates by ownership.
    */
   findProjectsReferencingAirweaveCollection(
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
     organizationId: string,
   ): Promise<Array<{ id: string; name: string }>>;
 

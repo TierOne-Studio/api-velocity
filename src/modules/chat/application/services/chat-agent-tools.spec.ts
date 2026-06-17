@@ -42,8 +42,8 @@ function makeAirweaveSource(
     kind: 'airweave_collection',
     name: 'Main collection',
     config: {
-      collectionReadableId: 'col-1',
-      collectionName: 'Main collection',
+      airweaveCollectionReadableId: 'col-1',
+      airweaveCollectionName: 'Main collection',
     },
     status: 'ready',
     statusDetail: null,
@@ -314,8 +314,8 @@ describe('createSearchKnowledgeBaseTool', () => {
       const secondSource = makeAirweaveSource({
         id: 'src-2',
         config: {
-          collectionReadableId: 'col-2',
-          collectionName: 'Second collection',
+          airweaveCollectionReadableId: 'col-2',
+          airweaveCollectionName: 'Second collection',
         },
       });
       sources = [makeAirweaveSource(), secondSource];

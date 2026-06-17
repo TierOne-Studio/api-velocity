@@ -123,7 +123,7 @@ export class ChatRouterService {
           return `- database: id=${s.config.connectionId} name="${s.config.connectionName || s.name}"`;
         }
         if (s.kind === 'airweave_collection') {
-          return `- airweave: name="${s.config.collectionName || s.name}"`;
+          return `- airweave: name="${s.config.airweaveCollectionName || s.name}"`;
         }
         return `- external: name="${s.name}"`;
       })

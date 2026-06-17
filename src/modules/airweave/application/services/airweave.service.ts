@@ -53,7 +53,7 @@ export type AirweaveSourceConnectionSummary = {
   id: string;
   name: string;
   shortName: string;
-  collectionReadableId: string;
+  airweaveCollectionReadableId: string;
   createdAt: string;
   updatedAt: string;
   isAuthenticated: boolean;
@@ -111,14 +111,14 @@ type AirweaveSourceConnectionLike = Pick<
 };
 
 export type AirweaveConnectSessionParams = {
-  readableCollectionId: string;
+  readableAirweaveCollectionId: string;
   endUserId: string;
 };
 
 export type CreateAirweaveSourceConnectionParams = {
   /** Parent collection's `readable_id` — caller is expected to have been
    *  gated by `AirweaveOwnershipGuard` already. */
-  collectionReadableId: string;
+  airweaveCollectionReadableId: string;
   name: string;
   shortName: string;
   /**
@@ -191,12 +191,12 @@ export class AirweaveService {
   }
 
   async getCollection(
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
   ): Promise<AirweaveCollectionDetail> {
     const client = this.requireClient();
 
     try {
-      const collection = await client.collections.get(collectionReadableId);
+      const collection = await client.collections.get(airweaveCollectionReadableId);
       return this.mapCollectionDetail(collection);
     } catch (error) {
       this.handleUpstreamError('get collection', error, 'Collection not found');
@@ -204,13 +204,13 @@ export class AirweaveService {
   }
 
   async listSourceConnections(
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
   ): Promise<AirweaveSourceConnectionSummary[]> {
     const client = this.requireClient();
 
     try {
       const sourceConnections = await client.sourceConnections.list({
-        collection: collectionReadableId,
+        collection: airweaveCollectionReadableId,
         limit: 100,
         skip: 0,
       });
@@ -263,7 +263,7 @@ export class AirweaveService {
           'X-API-Key': apiKey,
         },
         body: JSON.stringify({
-          readable_collection_id: params.readableCollectionId,
+          readable_collection_id: params.readableAirweaveCollectionId,
           mode: 'all',
           end_user_id: params.endUserId,
         }),
@@ -295,7 +295,7 @@ export class AirweaveService {
   }
 
   async searchCollection(
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
     params: SearchAirweaveCollectionParams,
   ): Promise<AirweaveSearchResponse> {
     const client = this.requireClient();
@@ -303,13 +303,13 @@ export class AirweaveService {
     try {
       const response =
         params.tier === 'instant'
-          ? await client.collections.search.instant(collectionReadableId, {
+          ? await client.collections.search.instant(airweaveCollectionReadableId, {
               query: params.query,
               retrieval_strategy: params.retrievalStrategy,
               limit: params.limit,
               offset: params.offset,
             })
-          : await client.collections.search.classic(collectionReadableId, {
+          : await client.collections.search.classic(airweaveCollectionReadableId, {
               query: params.query,
               limit: params.limit,
               offset: params.offset,
@@ -486,7 +486,7 @@ export class AirweaveService {
       throw new ConflictException({
         message:
           'Collection is in use by one or more projects. Detach the data sources before deleting.',
-        collectionReadableId: readableId,
+        airweaveCollectionReadableId: readableId,
         projects: referencingProjects,
       });
     }
@@ -543,7 +543,7 @@ export class AirweaveService {
         created = await client.sourceConnections.create({
           name: params.name,
           short_name: params.shortName,
-          readable_collection_id: params.collectionReadableId,
+          readable_collection_id: params.airweaveCollectionReadableId,
           sync_immediately: true,
           authentication: { credentials: params.authentication.credentials },
         });
@@ -552,7 +552,7 @@ export class AirweaveService {
       }
       this.logger.log(
         `airweave.source_connection.created ${JSON.stringify({
-          collectionReadableId: params.collectionReadableId,
+          airweaveCollectionReadableId: params.airweaveCollectionReadableId,
           sourceConnectionId: created.id,
           shortName: params.shortName,
           authMethod: 'direct',
@@ -632,7 +632,7 @@ export class AirweaveService {
     }
     this.logger.log(
       `airweave.source_connection.deleted ${JSON.stringify({
-        collectionReadableId: conn.readable_collection_id,
+        airweaveCollectionReadableId: conn.readable_collection_id,
         sourceConnectionId,
       })}`,
     );
@@ -676,7 +676,7 @@ export class AirweaveService {
     }
 
     const connectSession = await this.createConnectSession({
-      readableCollectionId: conn.readable_collection_id,
+      readableAirweaveCollectionId: conn.readable_collection_id,
       endUserId: session.user.id,
     });
     return { sessionToken: connectSession.sessionToken };
@@ -825,7 +825,7 @@ export class AirweaveService {
       id: sourceConnection.id,
       name: sourceConnection.name,
       shortName: sourceConnection.short_name,
-      collectionReadableId: sourceConnection.readable_collection_id,
+      airweaveCollectionReadableId: sourceConnection.readable_collection_id,
       createdAt: sourceConnection.created_at,
       updatedAt: sourceConnection.modified_at,
       isAuthenticated: sourceConnection.is_authenticated ?? false,

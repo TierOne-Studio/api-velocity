@@ -54,6 +54,10 @@ export class ProjectsMigrationService implements OnModuleInit {
         name: 'projects_004_extend_kind_vector_db',
         up: () => this.extendKindConstraintForVectorDb(),
       },
+      {
+        name: 'projects_005_rename_airweave_config_keys',
+        up: () => this.renameAirweaveConfigKeys(),
+      },
     ];
 
     let pendingCount = 0;
@@ -256,6 +260,36 @@ export class ProjectsMigrationService implements OnModuleInit {
          ADD CONSTRAINT project_data_source_kind_check
          CHECK (kind IN ('airweave_collection', 'database', 'external', 'vector_db'))`,
     );
+  }
+
+  async renameAirweaveConfigKeys(): Promise<void> {
+    // Airweave Collections rename: forward-migrate the persisted
+    // `project_data_source.config` JSON keys for airweave_collection rows —
+    // `collectionReadableId`/`collectionName` → `airweaveCollectionReadableId`/
+    // `airweaveCollectionName`. Single idempotent UPDATE (atomic on its own,
+    // so no explicit transaction is needed):
+    //   - strips the two old keys, then re-adds each under its new name ONLY if
+    //     it was present (the `config ? key` guard avoids injecting a jsonb null
+    //     for a key the row never had — e.g. legacy rows missing collectionName);
+    //   - the WHERE clause touches only airweave_collection rows that still hold
+    //     an old key, so non-airweave rows and already-migrated rows are skipped,
+    //     making a re-run a no-op.
+    // Historical migrations 002/003 intentionally keep writing the OLD keys
+    // (their idempotency reads depend on it); this 005 runs after them and
+    // renames forward — do not edit those.
+    await this.db.query(`
+      UPDATE project_data_source
+      SET config =
+        (config - 'collectionReadableId' - 'collectionName')
+        || (CASE WHEN config ? 'collectionReadableId'
+                 THEN jsonb_build_object('airweaveCollectionReadableId', config->'collectionReadableId')
+                 ELSE '{}'::jsonb END)
+        || (CASE WHEN config ? 'collectionName'
+                 THEN jsonb_build_object('airweaveCollectionName', config->'collectionName')
+                 ELSE '{}'::jsonb END)
+      WHERE kind = 'airweave_collection'
+        AND (config ? 'collectionReadableId' OR config ? 'collectionName')
+    `);
   }
 
   async seedAirweaveAllowlist(): Promise<void> {

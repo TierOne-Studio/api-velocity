@@ -12,7 +12,7 @@ describe('AirweaveCollectionProvider', () => {
     projectId: 'project-1',
     kind: 'airweave_collection',
     name: 'Docs',
-    config: { collectionReadableId: 'coll-1', collectionName: 'Docs' },
+    config: { airweaveCollectionReadableId: 'coll-1', airweaveCollectionName: 'Docs' },
     status: 'ready',
     statusDetail: null,
     createdAt: '2026-04-17T00:00:00.000Z',

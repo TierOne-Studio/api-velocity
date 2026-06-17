@@ -50,8 +50,8 @@ function makeAirweaveSource(
     kind: 'airweave_collection',
     name: 'General',
     config: {
-      collectionReadableId: 'collection-1',
-      collectionName: 'General',
+      airweaveCollectionReadableId: 'collection-1',
+      airweaveCollectionName: 'General',
     },
     status: 'ready',
     statusDetail: null,

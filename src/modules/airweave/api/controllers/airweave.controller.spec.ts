@@ -178,11 +178,11 @@ describe('AirweaveController', () => {
         user: { id: 'user-1', role: 'admin' },
         session: { activeOrganizationId: 'org-1' },
       } as never,
-      { collectionId: ' champion-velocity ' },
+      { airweaveCollectionId: ' champion-velocity ' },
     );
 
     expect(airweaveService.createConnectSession).toHaveBeenCalledWith({
-      readableCollectionId: 'champion-velocity',
+      readableAirweaveCollectionId: 'champion-velocity',
       endUserId: 'user-1',
     });
     expect(result).toEqual({ data: { sessionToken: 'session-token-1' } });
@@ -592,7 +592,7 @@ describe('AirweaveController', () => {
         'org-1',
       );
       expect(result).toEqual({
-        data: { deleted: true, collectionId: 'acme-foo-abc' },
+        data: { deleted: true, airweaveCollectionId: 'acme-foo-abc' },
       });
     });
 
@@ -631,7 +631,7 @@ describe('AirweaveController', () => {
       );
 
       expect(airweaveService.createSourceConnection).toHaveBeenCalledWith({
-        collectionReadableId: 'acme-foo-abc',
+        airweaveCollectionReadableId: 'acme-foo-abc',
         name: 'Slack Workspace',
         shortName: 'slack',
         authentication: { kind: 'direct', credentials: { token: 'xoxb-...' } },

@@ -30,7 +30,7 @@ export class AirweaveCollectionProvider implements DataSourceProvider {
     const tier: AirweaveSearchTier = options.tier ?? 'instant';
 
     return this.airweaveService.searchCollection(
-      source.config.collectionReadableId,
+      source.config.airweaveCollectionReadableId,
       {
         query,
         tier,

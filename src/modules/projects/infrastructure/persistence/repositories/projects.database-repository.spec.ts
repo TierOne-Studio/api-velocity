@@ -47,7 +47,7 @@ describe('ProjectsDatabaseRepository', () => {
 
       // Filter predicates — both load-bearing for the security gate.
       expect(sql).toContain("pds.kind = 'airweave_collection'");
-      expect(sql).toContain("pds.config->>'collectionReadableId' = $1");
+      expect(sql).toContain("pds.config->>'airweaveCollectionReadableId' = $1");
       // *** H1 fix invariant: must scope to caller's org. ***
       expect(sql).toContain('p.organization_id = $2');
 

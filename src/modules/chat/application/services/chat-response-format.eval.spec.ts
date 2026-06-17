@@ -282,8 +282,8 @@ function buildSource(
     kind: 'airweave_collection',
     name: 'docs',
     config: {
-      collectionReadableId: 'eval-collection',
-      collectionName: 'docs',
+      airweaveCollectionReadableId: 'eval-collection',
+      airweaveCollectionName: 'docs',
     },
     status: 'ready',
     statusDetail: null,

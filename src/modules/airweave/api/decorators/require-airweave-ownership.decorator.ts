@@ -2,11 +2,11 @@ import { SetMetadata } from '@nestjs/common';
 
 /**
  * Metadata key read by `AirweaveOwnershipGuard` to discover where the
- * `collectionReadableId` lives on the incoming request.
+ * Airweave collection's `readable_id` lives on the incoming request.
  *
  * Two variants exist because endpoints carry the id in different places:
  *   - Route param  →  `RequireAirweaveOwnership('collectionId')`
- *   - Request body →  `RequireAirweaveOwnershipFromBody('collectionId')`
+ *   - Request body →  `RequireAirweaveOwnershipFromBody('airweaveCollectionId')`
  *
  * Source-connection endpoints (where the parent collection id is only
  * discoverable via an Airweave SDK lookup) deliberately do NOT use a
@@ -46,8 +46,8 @@ export const RequireAirweaveOwnership = (routeParam: string) =>
  * @example
  *   @Post('connect/session')
  *   @RequirePermissions('airweave:read')
- *   @RequireAirweaveOwnershipFromBody('collectionId')
- *   async createConnectSession(@Body() body: { collectionId: string }) { ... }
+ *   @RequireAirweaveOwnershipFromBody('airweaveCollectionId')
+ *   async createConnectSession(@Body() body: { airweaveCollectionId: string }) { ... }
  */
 export const RequireAirweaveOwnershipFromBody = (bodyField: string) =>
   SetMetadata(AIRWEAVE_OWNERSHIP_KEY, {

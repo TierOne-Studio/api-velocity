@@ -34,8 +34,8 @@ function makeAirweaveSource(
     kind: 'airweave_collection',
     name: 'General',
     config: {
-      collectionReadableId: 'champion-velocity',
-      collectionName: 'General',
+      airweaveCollectionReadableId: 'champion-velocity',
+      airweaveCollectionName: 'General',
     },
     status: 'ready',
     statusDetail: null,

@@ -180,7 +180,7 @@ describe('AirweaveOwnershipGuard', () => {
   describe('request-body source', () => {
     const source: AirweaveOwnershipSource = {
       source: 'body',
-      name: 'collectionId',
+      name: 'airweaveCollectionId',
     };
 
     it('extracts the id from the named body field and delegates to assertOwnership', async () => {
@@ -190,7 +190,7 @@ describe('AirweaveOwnershipGuard', () => {
       const result = await guard.canActivate(
         makeContext({
           session: adminSession,
-          body: { collectionId: 'coll-from-body' },
+          body: { airweaveCollectionId: 'coll-from-body' },
         }),
       );
 
@@ -208,7 +208,7 @@ describe('AirweaveOwnershipGuard', () => {
         guard.canActivate(
           makeContext({
             session: adminSession,
-            body: { collectionId: 42 },
+            body: { airweaveCollectionId: 42 },
           }),
         ),
       ).rejects.toThrow(BadRequestException);
@@ -250,7 +250,7 @@ describe('AirweaveOwnershipGuard', () => {
       // Structured fields included.
       expect(logged).toContain('"userId":"user-admin"');
       expect(logged).toContain('"orgId":"org-1"');
-      expect(logged).toContain('"collectionReadableId":"legacy-coll"');
+      expect(logged).toContain('"airweaveCollectionReadableId":"legacy-coll"');
       expect(logged).toContain('"route":"/api/airweave/collections/legacy-coll"');
       loggerSpy.mockRestore();
     });

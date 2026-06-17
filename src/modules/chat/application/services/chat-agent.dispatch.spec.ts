@@ -65,7 +65,7 @@ function makeAirweaveSource(): ProjectDataSource {
     projectId: 'proj-1',
     kind: 'airweave_collection',
     name: 'General',
-    config: { collectionReadableId: 'velocity', collectionName: 'General' },
+    config: { airweaveCollectionReadableId: 'velocity', airweaveCollectionName: 'General' },
     status: 'ready',
     statusDetail: null,
     createdAt: '2026-01-01T00:00:00.000Z',

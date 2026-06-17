@@ -301,18 +301,18 @@ export class ProjectsService {
     }
 
     if (input.kind === 'airweave_collection') {
-      const collectionId = input.config.collectionReadableId?.trim();
-      if (!collectionId) {
-        throw new BadRequestException('collectionReadableId is required');
+      const airweaveCollectionId = input.config.airweaveCollectionReadableId?.trim();
+      if (!airweaveCollectionId) {
+        throw new BadRequestException('airweaveCollectionReadableId is required');
       }
 
       await this.validateAirweaveAccess(
         organizationId,
-        collectionId,
+        airweaveCollectionId,
         platformRole,
       );
 
-      const collection = await this.airweaveService.getCollection(collectionId);
+      const collection = await this.airweaveService.getCollection(airweaveCollectionId);
 
       return this.repository.createSource({
         id: randomUUID(),
@@ -321,8 +321,8 @@ export class ProjectsService {
           kind: 'airweave_collection',
           name: input.name?.trim() || collection.name,
           config: {
-            collectionReadableId: collection.readableId,
-            collectionName: collection.name,
+            airweaveCollectionReadableId: collection.readableId,
+            airweaveCollectionName: collection.name,
           },
         },
       });
@@ -333,7 +333,7 @@ export class ProjectsService {
 
   private async validateAirweaveAccess(
     organizationId: string,
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
     platformRole: PlatformRole,
   ): Promise<void> {
     if (platformRole === 'superadmin') return;
@@ -346,7 +346,7 @@ export class ProjectsService {
 
     const allowed = getAllowedAirweaveCollectionIds(organization.metadata);
 
-    if (!allowed.includes(collectionReadableId)) {
+    if (!allowed.includes(airweaveCollectionReadableId)) {
       throw new ForbiddenException(
         'This collection is not allowed for this organization',
       );

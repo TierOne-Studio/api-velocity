@@ -582,7 +582,7 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
    */
   async addAirweaveCollectionToAllowlist(
     organizationId: string,
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
   ): Promise<void> {
     // NOTE: `organization.metadata` is a TEXT column (better-auth stores
     // its serialized JSON as a string). Every jsonb operator below needs
@@ -608,7 +608,7 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
            true
          )::text
        WHERE id = $1`,
-      [organizationId, collectionReadableId],
+      [organizationId, airweaveCollectionReadableId],
     );
   }
 
@@ -619,7 +619,7 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
    */
   async removeAirweaveCollectionFromAllowlist(
     organizationId: string,
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
   ): Promise<void> {
     // See `addAirweaveCollectionToAllowlist` for the ::jsonb / ::text
     // casting rationale (TEXT column from better-auth).
@@ -642,7 +642,7 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
            true
          )::text
        WHERE id = $1`,
-      [organizationId, collectionReadableId],
+      [organizationId, airweaveCollectionReadableId],
     );
   }
 
@@ -653,7 +653,7 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
    */
   async isAirweaveCollectionInAllowlist(
     organizationId: string,
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
   ): Promise<boolean> {
     // See `addAirweaveCollectionToAllowlist` for the ::jsonb casting
     // rationale (TEXT column from better-auth). Read-only path —
@@ -668,7 +668,7 @@ export class AdminOrgDatabaseRepository implements IAdminOrgRepository {
        ) AS present
        FROM organization
        WHERE id = $1`,
-      [organizationId, collectionReadableId],
+      [organizationId, airweaveCollectionReadableId],
     );
     return row?.present === true;
   }

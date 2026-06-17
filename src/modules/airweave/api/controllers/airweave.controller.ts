@@ -29,11 +29,11 @@ import {
   type AirweaveSearchTier,
 } from '../../application/services/airweave.service';
 import type {
-  CreateCollectionBody,
+  CreateAirweaveCollectionBody,
   CreateSourceConnectionBody,
 } from '../dto/airweave.dto';
 
-type SearchCollectionBody = {
+type SearchAirweaveCollectionBody = {
   query?: string;
   tier?: string;
   limit?: number | string;
@@ -42,7 +42,7 @@ type SearchCollectionBody = {
 };
 
 type CreateConnectSessionBody = {
-  collectionId?: string;
+  airweaveCollectionId?: string;
 };
 
 const SEARCH_TIERS: AirweaveSearchTier[] = ['classic', 'instant'];
@@ -156,7 +156,7 @@ export class AirweaveController {
   @RequirePermissions('airweave:create')
   async createCollection(
     @Session() session: UserSession,
-    @Body() body: CreateCollectionBody,
+    @Body() body: CreateAirweaveCollectionBody,
   ) {
     const name = this.requireTrimmedString(body?.name ?? '', 'name');
     const slugHint = body?.slugHint
@@ -233,7 +233,7 @@ export class AirweaveController {
     @Param('collectionId') collectionId: string,
     @Body() body: CreateSourceConnectionBody,
   ) {
-    const collectionReadableId = this.requireTrimmedString(
+    const airweaveCollectionReadableId = this.requireTrimmedString(
       collectionId,
       'collectionId',
     );
@@ -281,7 +281,7 @@ export class AirweaveController {
     }
     return {
       data: await this.airweaveService.createSourceConnection({
-        collectionReadableId,
+        airweaveCollectionReadableId,
         name,
         shortName,
         authentication: { kind: 'direct', credentials: auth.credentials },
@@ -310,7 +310,7 @@ export class AirweaveController {
       this.requireTrimmedString(collectionId, 'collectionId'),
       organizationId,
     );
-    return { data: { deleted: true, collectionId } };
+    return { data: { deleted: true, airweaveCollectionId: collectionId } };
   }
 
   @Patch('source-connections/:id')
@@ -394,7 +394,7 @@ export class AirweaveController {
   @RequireAirweaveOwnership('collectionId')
   async searchCollection(
     @Param('collectionId') collectionId: string,
-    @Body() body: SearchCollectionBody,
+    @Body() body: SearchAirweaveCollectionBody,
   ) {
     const tier = this.parseTier(body?.tier);
     const retrievalStrategy = this.parseRetrievalStrategy(
@@ -449,16 +449,16 @@ export class AirweaveController {
    */
   @Post('connect/session')
   @RequirePermissions('airweave:manage-sources')
-  @RequireAirweaveOwnershipFromBody('collectionId')
+  @RequireAirweaveOwnershipFromBody('airweaveCollectionId')
   async createConnectSession(
     @Session() session: UserSession,
     @Body() body: CreateConnectSessionBody,
   ) {
     return {
       data: await this.airweaveService.createConnectSession({
-        readableCollectionId: this.requireTrimmedString(
-          body?.collectionId ?? '',
-          'collectionId',
+        readableAirweaveCollectionId: this.requireTrimmedString(
+          body?.airweaveCollectionId ?? '',
+          'airweaveCollectionId',
         ),
         endUserId: session.user.id,
       }),

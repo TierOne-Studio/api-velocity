@@ -254,7 +254,7 @@ describe('ProjectsService', () => {
         project_id: 'project-1',
         kind: 'airweave_collection',
         name: 'Docs',
-        config: { collectionReadableId: 'coll-1', collectionName: 'Docs' },
+        config: { airweaveCollectionReadableId: 'coll-1', airweaveCollectionName: 'Docs' },
         status: 'ready',
         status_detail: null,
         created_at: now,
@@ -269,8 +269,8 @@ describe('ProjectsService', () => {
             {
               kind: 'airweave_collection',
               config: {
-                collectionReadableId: 'coll-1',
-                collectionName: 'Docs',
+                airweaveCollectionReadableId: 'coll-1',
+                airweaveCollectionName: 'Docs',
               },
             },
           ],
@@ -301,8 +301,8 @@ describe('ProjectsService', () => {
               {
                 kind: 'airweave_collection',
                 config: {
-                  collectionReadableId: 'coll-blocked',
-                  collectionName: 'Blocked',
+                  airweaveCollectionReadableId: 'coll-blocked',
+                  airweaveCollectionName: 'Blocked',
                 },
               },
             ],
@@ -326,7 +326,7 @@ describe('ProjectsService', () => {
         project_id: 'project-1',
         kind: 'airweave_collection',
         name: 'Docs',
-        config: { collectionReadableId: 'coll-1', collectionName: 'Docs' },
+        config: { airweaveCollectionReadableId: 'coll-1', airweaveCollectionName: 'Docs' },
         status: 'ready',
         status_detail: null,
         created_at: now,
@@ -341,8 +341,8 @@ describe('ProjectsService', () => {
             {
               kind: 'airweave_collection',
               config: {
-                collectionReadableId: 'coll-1',
-                collectionName: 'Docs',
+                airweaveCollectionReadableId: 'coll-1',
+                airweaveCollectionName: 'Docs',
               },
             },
           ],
@@ -530,8 +530,8 @@ describe('ProjectsService', () => {
           {
             kind: 'airweave_collection',
             config: {
-              collectionReadableId: 'coll-1',
-              collectionName: 'Docs',
+              airweaveCollectionReadableId: 'coll-1',
+              airweaveCollectionName: 'Docs',
             },
           },
           adminScope,
@@ -547,7 +547,7 @@ describe('ProjectsService', () => {
           'project-1',
           {
             kind: 'airweave_collection',
-            config: { collectionReadableId: '   ', collectionName: '' },
+            config: { airweaveCollectionReadableId: '   ', airweaveCollectionName: '' },
           },
           adminScope,
         ),
@@ -596,7 +596,7 @@ describe('ProjectsService', () => {
           project_id: 'project-1',
           kind: 'airweave_collection',
           name: 'Docs',
-          config: { collectionReadableId: 'coll-1', collectionName: 'Docs' },
+          config: { airweaveCollectionReadableId: 'coll-1', airweaveCollectionName: 'Docs' },
           status: 'ready',
           status_detail: null,
           created_at: now,

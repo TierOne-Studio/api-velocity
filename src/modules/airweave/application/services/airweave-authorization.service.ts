@@ -80,7 +80,7 @@ export class AirweaveAuthorizationService {
    */
   async assertOwnership(
     session: UserSession,
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
   ): Promise<void> {
     if (getPlatformRole(session) === 'superadmin') return;
 
@@ -94,7 +94,7 @@ export class AirweaveAuthorizationService {
     const isOwned =
       await this.adminOrganizationsService.isAirweaveCollectionInAllowlist(
         activeOrgId,
-        collectionReadableId,
+        airweaveCollectionReadableId,
       );
 
     if (!isOwned) {

@@ -184,14 +184,14 @@ export interface IAdminOrgRepository {
   // full-overwrite of the JSON blob). All three methods are idempotent.
   addAirweaveCollectionToAllowlist(
     organizationId: string,
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
   ): Promise<void>;
   removeAirweaveCollectionFromAllowlist(
     organizationId: string,
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
   ): Promise<void>;
   isAirweaveCollectionInAllowlist(
     organizationId: string,
-    collectionReadableId: string,
+    airweaveCollectionReadableId: string,
   ): Promise<boolean>;
 }

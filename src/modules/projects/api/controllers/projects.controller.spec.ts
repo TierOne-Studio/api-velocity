@@ -142,8 +142,8 @@ describe('ProjectsController', () => {
     await controller.addSource(adminSession, 'project-1', {
       kind: 'airweave_collection',
       config: {
-        collectionReadableId: 'coll-1',
-        collectionName: 'Docs',
+        airweaveCollectionReadableId: 'coll-1',
+        airweaveCollectionName: 'Docs',
       },
     });
 

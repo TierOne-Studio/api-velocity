@@ -59,7 +59,7 @@ function makeAirweaveSource(): ProjectDataSource {
     projectId: 'p1',
     kind: 'airweave_collection',
     name: 'Wiki',
-    config: { collectionReadableId: 'wiki', collectionName: 'Wiki' },
+    config: { airweaveCollectionReadableId: 'wiki', airweaveCollectionName: 'Wiki' },
     status: 'ready',
     statusDetail: null,
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -118,6 +118,41 @@ describe('ChatRouterService', () => {
         confidence: 0.95,
         reasoning: 'count over users',
       });
+    });
+
+    it('embeds the airweave collection name (config.airweaveCollectionName) in the classifier prompt', async () => {
+      invokeMock.mockResolvedValue({
+        content: JSON.stringify({ route: 'rag', confidence: 0.9, reasoning: 'x' }),
+      });
+      const service = makeService();
+      const airweaveSource: ProjectDataSource = {
+        id: 'src-aw',
+        projectId: 'p1',
+        kind: 'airweave_collection',
+        name: 'fallback-src-name',
+        config: {
+          airweaveCollectionReadableId: 'kb-x',
+          airweaveCollectionName: 'Distinct-KB-Label',
+        },
+        status: 'ready',
+        statusDetail: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      };
+
+      await service.classify({
+        question: 'where is auth?',
+        apiKey: 'sk-1',
+        sources: [airweaveSource],
+      });
+
+      const messages = invokeMock.mock.calls[0][0] as Array<{ content: string }>;
+      const userMessage = messages[1].content;
+      // Non-vacuous: the name is read from config.airweaveCollectionName and is
+      // deliberately distinct from s.name, so the `|| s.name` fallback cannot
+      // mask a revert to the old `config.collectionName` key.
+      expect(userMessage).toContain('name="Distinct-KB-Label"');
+      expect(userMessage).not.toContain('fallback-src-name');
     });
 
     it('classifies a clear RAG question', async () => {
