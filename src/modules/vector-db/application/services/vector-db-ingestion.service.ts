@@ -31,8 +31,17 @@ import {
   DOCUMENT_EXTRACTOR,
   type IDocumentExtractor,
 } from '../../domain/document-extractor.port';
+import {
+  DOCUMENT_IMAGE_EXTRACTOR,
+  type IDocumentImageExtractor,
+  type ExtractedImage,
+} from '../../domain/document-image-extractor.port';
+import {
+  IMAGE_DESCRIBER,
+  type IImageDescriber,
+} from '../../domain/image-describer.port';
 import { NonRetryableIngestionError } from '../../domain/ingestion-errors';
-import { deterministicPointId } from '../../domain/point-id';
+import { deterministicImagePointId, deterministicPointId } from '../../domain/point-id';
 
 export const VECTOR_DB_INGESTION_QUEUE = 'vector-db-ingestion';
 
@@ -68,6 +77,10 @@ export class VectorDbIngestionService implements OnModuleInit, OnModuleDestroy {
     @Inject(TEXT_CHUNKER) private readonly chunker: ITextChunker,
     @Inject(DOCUMENT_EXTRACTOR)
     private readonly extractor: IDocumentExtractor,
+    @Inject(DOCUMENT_IMAGE_EXTRACTOR)
+    private readonly imageExtractor: IDocumentImageExtractor,
+    @Inject(IMAGE_DESCRIBER)
+    private readonly imageDescriber: IImageDescriber,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -190,6 +203,9 @@ export class VectorDbIngestionService implements OnModuleInit, OnModuleDestroy {
         await this.vectorStore.upsert(vdb.vector_store_ref, points);
       }
 
+      // Image pipeline (additive, runs after text chunks succeed).
+      await this.ingestImages(body, jobRow.content_type, vectorDbId, jobRow.s3_key, vdb.vector_store_ref);
+
       await this.repository.setJobStatus(jobId, 'done', null);
       await this.repository.setVectorDbReadyIfIdle(vectorDbId);
       this.logger.log('ingestion job completed', {
@@ -205,6 +221,66 @@ export class VectorDbIngestionService implements OnModuleInit, OnModuleDestroy {
         error,
       );
       if (!terminal) throw error; // let pg-boss reschedule with backoff
+    }
+  }
+
+  /**
+   * Extract images from the document, describe each via Claude Vision, and
+   * upsert the resulting description-chunks alongside the text chunks.
+   *
+   * - Uses Promise.allSettled so one bad image does not abort the whole job.
+   * - Empty or failed descriptions are silently skipped.
+   * - Image point IDs are namespaced via deterministicImagePointId to avoid
+   *   collisions with text chunks sharing the same (vectorDbId, s3Key, index).
+   */
+  private async ingestImages(
+    body: Buffer,
+    contentType: string,
+    vectorDbId: string,
+    s3Key: string,
+    vectorStoreRef: string,
+  ): Promise<void> {
+    const images: ExtractedImage[] = await this.imageExtractor.extract(body, contentType);
+    if (images.length === 0) return;
+
+    const describeResults = await Promise.allSettled(
+      images.map((img) => this.imageDescriber.describe(img.data, img.mimeType)),
+    );
+
+    const successfulPoints: Array<{
+      id: string;
+      vector: number[];
+      payload: Record<string, unknown>;
+    }> = [];
+
+    for (let i = 0; i < images.length; i++) {
+      const result = describeResults[i];
+      if (result.status === 'rejected') {
+        this.logger.warn('image description failed; skipping', {
+          imageIndex: images[i].index,
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        });
+        continue;
+      }
+      const description = result.value.trim();
+      if (!description) continue;
+
+      const [vector] = await this.embedder.embed([description]);
+      successfulPoints.push({
+        id: deterministicImagePointId(vectorDbId, s3Key, images[i].index),
+        vector,
+        payload: {
+          vectorDbId,
+          s3Key,
+          imageIndex: images[i].index,
+          text: description,
+        },
+      });
+    }
+
+    if (successfulPoints.length > 0) {
+      await this.vectorStore.ensureCollection(vectorStoreRef, this.embedder.dimensions());
+      await this.vectorStore.upsert(vectorStoreRef, successfulPoints);
     }
   }
 

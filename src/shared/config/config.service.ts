@@ -158,6 +158,35 @@ export class ConfigService {
     return process.env.OPENAI_API_KEY?.trim() || null;
   }
 
+  isImageExtractionEnabled(): boolean {
+    return (
+      process.env.IMAGE_EXTRACTION_ENABLED === 'true' &&
+      Boolean(process.env.ANTHROPIC_API_KEY?.trim())
+    );
+  }
+
+  getAnthropicApiKey(): string | null {
+    return process.env.ANTHROPIC_API_KEY?.trim() || null;
+  }
+
+  getImageExtractionModel(): string {
+    return process.env.IMAGE_EXTRACTION_MODEL?.trim() || 'claude-haiku-4-5';
+  }
+
+  getImageExtractionMaxImagesPerDoc(): number {
+    return this.boundedInt('IMAGE_EXTRACTION_MAX_IMAGES_PER_DOC', 20, {
+      min: 1,
+      max: 200,
+    });
+  }
+
+  getImageExtractionMinSizeBytes(): number {
+    return this.boundedInt('IMAGE_EXTRACTION_MIN_SIZE_BYTES', 4096, {
+      min: 0,
+      max: 10_485_760,
+    });
+  }
+
   getOpenAiModel(): string {
     return process.env.OPENAI_MODEL || 'gpt-5.4-nano';
   }

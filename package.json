@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@airweave/sdk": "^0.9.60",
+    "@anthropic-ai/sdk": "^0.104.2",
     "@aws-sdk/client-s3": "^3.1061.0",
     "@intellectronica/ruler": "0.3.40",
     "@langchain/classic": "1.0.27",
