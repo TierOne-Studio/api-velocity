@@ -139,6 +139,25 @@ function buildMocks() {
   };
 }
 
+type FakeImage = { data: Buffer; mimeType: string; index: number };
+
+// Arrange a claimable ingestion job whose document yields `images` from the
+// image extractor. `text` drives the text lane (default: no text chunks).
+function arrangeImageJob(
+  m: ReturnType<typeof buildMocks>,
+  images: FakeImage[],
+  opts: { body?: string; contentType?: string; text?: string } = {},
+) {
+  m.repository.findIngestionJobById.mockResolvedValue(jobRow());
+  m.repository.findById.mockResolvedValue(vdbRow());
+  m.files.get.mockResolvedValue({
+    body: Buffer.from(opts.body ?? 'PDF'),
+    contentType: opts.contentType ?? 'application/pdf',
+  });
+  m.extractor.extract.mockResolvedValue(opts.text ?? '');
+  m.imageExtractor.extract.mockResolvedValue(images);
+}
+
 describe('VectorDbIngestionService.ingest', () => {
   it('embeds and upserts chunks with deterministic ids, then marks the job done', async () => {
     const m = buildMocks();
@@ -417,11 +436,10 @@ describe('VectorDbIngestionService lifecycle', () => {
 describe('VectorDbIngestionService image pipeline', () => {
   it('with noop image extractor: existing text-only behavior is unchanged', async () => {
     const m = buildMocks();
-    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
-    m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({
-      body: Buffer.from('text doc'),
+    arrangeImageJob(m, [], {
+      body: 'text doc',
       contentType: 'text/plain',
+      text: 'text doc',
     });
     m.embedder.embed.mockResolvedValue([[0.1, 0.2]]);
 
@@ -439,16 +457,11 @@ describe('VectorDbIngestionService image pipeline', () => {
 
   it('embeds image descriptions and upserts with deterministicImagePointId', async () => {
     const m = buildMocks();
-    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
-    m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({
-      body: Buffer.from('PDF with diagram'),
-      contentType: 'application/pdf',
-    });
-    m.extractor.extract.mockResolvedValue('text content');
-    m.imageExtractor.extract.mockResolvedValue([
-      { data: Buffer.from('img1'), mimeType: 'image/png', index: 0 },
-    ]);
+    arrangeImageJob(
+      m,
+      [{ data: Buffer.from('img1'), mimeType: 'image/png', index: 0 }],
+      { body: 'PDF with diagram', text: 'text content' },
+    );
     m.imageDescriber.describe.mockResolvedValue(
       'A flowchart showing the CI pipeline.',
     );
@@ -476,15 +489,11 @@ describe('VectorDbIngestionService image pipeline', () => {
 
   it('skips images whose description is empty', async () => {
     const m = buildMocks();
-    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
-    m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({
-      body: Buffer.from('hi'),
-      contentType: 'text/plain',
-    });
-    m.imageExtractor.extract.mockResolvedValue([
-      { data: Buffer.from('tiny'), mimeType: 'image/png', index: 0 },
-    ]);
+    arrangeImageJob(
+      m,
+      [{ data: Buffer.from('tiny'), mimeType: 'image/png', index: 0 }],
+      { body: 'hi', contentType: 'text/plain', text: 'hi' },
+    );
     m.imageDescriber.describe.mockResolvedValue(''); // empty description
     m.embedder.embed.mockResolvedValue([[0.1]]);
 
@@ -496,17 +505,14 @@ describe('VectorDbIngestionService image pipeline', () => {
 
   it('a failed image description does not abort the job (allSettled behavior)', async () => {
     const m = buildMocks();
-    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
-    m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({
-      body: Buffer.from('PDF'),
-      contentType: 'application/pdf',
-    });
-    m.extractor.extract.mockResolvedValue('some text');
-    m.imageExtractor.extract.mockResolvedValue([
-      { data: Buffer.from('img1'), mimeType: 'image/jpeg', index: 0 },
-      { data: Buffer.from('img2'), mimeType: 'image/jpeg', index: 1 },
-    ]);
+    arrangeImageJob(
+      m,
+      [
+        { data: Buffer.from('img1'), mimeType: 'image/jpeg', index: 0 },
+        { data: Buffer.from('img2'), mimeType: 'image/jpeg', index: 1 },
+      ],
+      { text: 'some text' },
+    );
     m.imageDescriber.describe
       .mockRejectedValueOnce(new Error('rate_limit_error')) // first fails
       .mockResolvedValueOnce('A table of sales data.'); // second succeeds
@@ -532,17 +538,14 @@ describe('VectorDbIngestionService image pipeline', () => {
 
   it('a failed image embed does not abort the job; other image points still upsert', async () => {
     const m = buildMocks();
-    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
-    m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({
-      body: Buffer.from('PDF'),
-      contentType: 'application/pdf',
-    });
-    m.extractor.extract.mockResolvedValue('some text');
-    m.imageExtractor.extract.mockResolvedValue([
-      { data: Buffer.from('img1'), mimeType: 'image/jpeg', index: 0 },
-      { data: Buffer.from('img2'), mimeType: 'image/jpeg', index: 1 },
-    ]);
+    arrangeImageJob(
+      m,
+      [
+        { data: Buffer.from('img1'), mimeType: 'image/jpeg', index: 0 },
+        { data: Buffer.from('img2'), mimeType: 'image/jpeg', index: 1 },
+      ],
+      { text: 'some text' },
+    );
     // both images describe successfully...
     m.imageDescriber.describe
       .mockResolvedValueOnce('First image description.')
@@ -573,14 +576,7 @@ describe('VectorDbIngestionService image pipeline', () => {
   it('caps described images at IMAGE_EXTRACTION_MAX_IMAGES_PER_DOC', async () => {
     const m = buildMocks();
     m.config.getImageExtractionMaxImagesPerDoc.mockReturnValue(2);
-    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
-    m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({
-      body: Buffer.from('PDF'),
-      contentType: 'application/pdf',
-    });
-    m.extractor.extract.mockResolvedValue('');
-    m.imageExtractor.extract.mockResolvedValue([
+    arrangeImageJob(m, [
       { data: Buffer.from('img0'), mimeType: 'image/png', index: 0 },
       { data: Buffer.from('img1'), mimeType: 'image/png', index: 1 },
       { data: Buffer.from('img2'), mimeType: 'image/png', index: 2 },
@@ -597,14 +593,7 @@ describe('VectorDbIngestionService image pipeline', () => {
   it('skips images smaller than IMAGE_EXTRACTION_MIN_SIZE_BYTES before describing', async () => {
     const m = buildMocks();
     m.config.getImageExtractionMinSizeBytes.mockReturnValue(10);
-    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
-    m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({
-      body: Buffer.from('PDF'),
-      contentType: 'application/pdf',
-    });
-    m.extractor.extract.mockResolvedValue('');
-    m.imageExtractor.extract.mockResolvedValue([
+    arrangeImageJob(m, [
       { data: Buffer.from('tiny'), mimeType: 'image/png', index: 0 }, // 4 bytes < 10
       {
         data: Buffer.from('a sufficiently large image buffer'),
@@ -628,14 +617,7 @@ describe('VectorDbIngestionService image pipeline', () => {
   it('keeps an image whose size is exactly IMAGE_EXTRACTION_MIN_SIZE_BYTES (>= boundary)', async () => {
     const m = buildMocks();
     m.config.getImageExtractionMinSizeBytes.mockReturnValue(4);
-    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
-    m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({
-      body: Buffer.from('PDF'),
-      contentType: 'application/pdf',
-    });
-    m.extractor.extract.mockResolvedValue('');
-    m.imageExtractor.extract.mockResolvedValue([
+    arrangeImageJob(m, [
       { data: Buffer.from('abc'), mimeType: 'image/png', index: 0 }, // 3 bytes < 4 → dropped
       { data: Buffer.from('abcd'), mimeType: 'image/png', index: 1 }, // 4 bytes == 4 → kept
     ]);
@@ -654,14 +636,7 @@ describe('VectorDbIngestionService image pipeline', () => {
   it('describes all images when the count equals the cap exactly (no drop at boundary)', async () => {
     const m = buildMocks();
     m.config.getImageExtractionMaxImagesPerDoc.mockReturnValue(2);
-    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
-    m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({
-      body: Buffer.from('PDF'),
-      contentType: 'application/pdf',
-    });
-    m.extractor.extract.mockResolvedValue('');
-    m.imageExtractor.extract.mockResolvedValue([
+    arrangeImageJob(m, [
       { data: Buffer.from('img0'), mimeType: 'image/png', index: 0 },
       { data: Buffer.from('img1'), mimeType: 'image/png', index: 1 },
     ]);
@@ -676,14 +651,7 @@ describe('VectorDbIngestionService image pipeline', () => {
   it('describes nothing and upserts nothing when every image is below the min size', async () => {
     const m = buildMocks();
     m.config.getImageExtractionMinSizeBytes.mockReturnValue(100);
-    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
-    m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({
-      body: Buffer.from('PDF'),
-      contentType: 'application/pdf',
-    });
-    m.extractor.extract.mockResolvedValue('');
-    m.imageExtractor.extract.mockResolvedValue([
+    arrangeImageJob(m, [
       { data: Buffer.from('tiny0'), mimeType: 'image/png', index: 0 },
       { data: Buffer.from('tiny1'), mimeType: 'image/png', index: 1 },
     ]);
@@ -705,14 +673,7 @@ describe('VectorDbIngestionService image pipeline', () => {
     const warnSpy = jest
       .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => undefined);
-    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
-    m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({
-      body: Buffer.from('PDF'),
-      contentType: 'application/pdf',
-    });
-    m.extractor.extract.mockResolvedValue('');
-    m.imageExtractor.extract.mockResolvedValue([
+    arrangeImageJob(m, [
       { data: Buffer.from('img0'), mimeType: 'image/png', index: 0 },
     ]);
     m.imageDescriber.describe.mockRejectedValue(new Error('rate_limit_error'));
