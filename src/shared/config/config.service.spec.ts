@@ -88,9 +88,7 @@ describe('ConfigService', () => {
   describe('boundedInt SQL_AGENT_* knobs', () => {
     let warnSpy: jest.SpiedFunction<typeof console.warn>;
     beforeEach(() => {
-      warnSpy = jest
-        .spyOn(console, 'warn')
-        .mockImplementation(() => undefined);
+      warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     });
     afterEach(() => {
       warnSpy.mockRestore();
@@ -115,7 +113,9 @@ describe('ConfigService', () => {
       const cs = new ConfigService();
       expect(cs.getSqlAgentStatementTimeoutMs()).toBe(5000);
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringMatching(/SQL_AGENT_STATEMENT_TIMEOUT_MS.*not a positive integer/),
+        expect.stringMatching(
+          /SQL_AGENT_STATEMENT_TIMEOUT_MS.*not a positive integer/,
+        ),
       );
     });
 
@@ -124,7 +124,9 @@ describe('ConfigService', () => {
       const cs = new ConfigService();
       expect(cs.getSqlAgentStatementTimeoutMs()).toBe(5000);
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringMatching(/SQL_AGENT_STATEMENT_TIMEOUT_MS=0.*outside.*range/),
+        expect.stringMatching(
+          /SQL_AGENT_STATEMENT_TIMEOUT_MS=0.*outside.*range/,
+        ),
       );
     });
 
@@ -730,8 +732,8 @@ describe('ConfigService', () => {
   });
 
   describe('validateEnvironment', () => {
-      const validProjectSourceSecretKey =
-        'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=';
+    const validProjectSourceSecretKey =
+      'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=';
 
     beforeEach(() => {
       process.env.S3_BUCKET = 'test-bucket';
@@ -742,7 +744,7 @@ describe('ConfigService', () => {
     it('should not throw when all required env vars are present', () => {
       process.env.AUTH_SECRET = 'secret';
       process.env.DATABASE_URL = 'postgresql://localhost/db';
-        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+      process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).not.toThrow();
     });
@@ -772,7 +774,7 @@ describe('ConfigService', () => {
     it('should throw when AUTH_SECRET is missing', () => {
       delete process.env.AUTH_SECRET;
       process.env.DATABASE_URL = 'postgresql://localhost/db';
-        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+      process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).toThrow(
         'Missing required environment variables: AUTH_SECRET',
@@ -782,22 +784,22 @@ describe('ConfigService', () => {
     it('should throw when DATABASE_URL is missing', () => {
       process.env.AUTH_SECRET = 'secret';
       delete process.env.DATABASE_URL;
-        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+      process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).toThrow(
         'Missing required environment variables: DATABASE_URL',
       );
     });
 
-      it('should throw when PROJECT_SOURCE_SECRET_KEY is missing', () => {
-        process.env.AUTH_SECRET = 'secret';
-        process.env.DATABASE_URL = 'postgresql://localhost/db';
-        delete process.env.PROJECT_SOURCE_SECRET_KEY;
-        const configService = new ConfigService();
-        expect(() => configService.validateEnvironment()).toThrow(
-          'Missing required environment variables: PROJECT_SOURCE_SECRET_KEY',
-        );
-      });
+    it('should throw when PROJECT_SOURCE_SECRET_KEY is missing', () => {
+      process.env.AUTH_SECRET = 'secret';
+      process.env.DATABASE_URL = 'postgresql://localhost/db';
+      delete process.env.PROJECT_SOURCE_SECRET_KEY;
+      const configService = new ConfigService();
+      expect(() => configService.validateEnvironment()).toThrow(
+        'Missing required environment variables: PROJECT_SOURCE_SECRET_KEY',
+      );
+    });
 
     it('should throw when S3_BUCKET is missing', () => {
       process.env.AUTH_SECRET = 'secret';
@@ -813,51 +815,51 @@ describe('ConfigService', () => {
     it('should list all missing vars when multiple are absent', () => {
       delete process.env.AUTH_SECRET;
       delete process.env.DATABASE_URL;
-        delete process.env.PROJECT_SOURCE_SECRET_KEY;
+      delete process.env.PROJECT_SOURCE_SECRET_KEY;
       const configService = new ConfigService();
       expect(() => configService.validateEnvironment()).toThrow('AUTH_SECRET');
     });
 
-      it('should throw when PROJECT_SOURCE_SECRET_KEY is invalid base64', () => {
-        process.env.AUTH_SECRET = 'secret';
-        process.env.DATABASE_URL = 'postgresql://localhost/db';
-        process.env.PROJECT_SOURCE_SECRET_KEY = 'invalid-key';
-        const configService = new ConfigService();
-        expect(() => configService.validateEnvironment()).toThrow(
-          'Invalid PROJECT_SOURCE_SECRET_KEY',
-        );
-      });
+    it('should throw when PROJECT_SOURCE_SECRET_KEY is invalid base64', () => {
+      process.env.AUTH_SECRET = 'secret';
+      process.env.DATABASE_URL = 'postgresql://localhost/db';
+      process.env.PROJECT_SOURCE_SECRET_KEY = 'invalid-key';
+      const configService = new ConfigService();
+      expect(() => configService.validateEnvironment()).toThrow(
+        'Invalid PROJECT_SOURCE_SECRET_KEY',
+      );
+    });
 
-      // Previous-key validation during rotation window
-      it('passes validation when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is unset', () => {
-        process.env.AUTH_SECRET = 'secret';
-        process.env.DATABASE_URL = 'postgresql://localhost/db';
-        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
-        delete process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS;
-        const cs = new ConfigService();
-        expect(() => cs.validateEnvironment()).not.toThrow();
-      });
+    // Previous-key validation during rotation window
+    it('passes validation when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is unset', () => {
+      process.env.AUTH_SECRET = 'secret';
+      process.env.DATABASE_URL = 'postgresql://localhost/db';
+      process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+      delete process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS;
+      const cs = new ConfigService();
+      expect(() => cs.validateEnvironment()).not.toThrow();
+    });
 
-      it('passes validation when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is a valid base64 key', () => {
-        process.env.AUTH_SECRET = 'secret';
-        process.env.DATABASE_URL = 'postgresql://localhost/db';
-        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
-        process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS =
-          validProjectSourceSecretKey;
-        const cs = new ConfigService();
-        expect(() => cs.validateEnvironment()).not.toThrow();
-      });
+    it('passes validation when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is a valid base64 key', () => {
+      process.env.AUTH_SECRET = 'secret';
+      process.env.DATABASE_URL = 'postgresql://localhost/db';
+      process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+      process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS =
+        validProjectSourceSecretKey;
+      const cs = new ConfigService();
+      expect(() => cs.validateEnvironment()).not.toThrow();
+    });
 
-      it('throws when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is set but invalid', () => {
-        process.env.AUTH_SECRET = 'secret';
-        process.env.DATABASE_URL = 'postgresql://localhost/db';
-        process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
-        process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS = 'not-a-key';
-        const cs = new ConfigService();
-        expect(() => cs.validateEnvironment()).toThrow(
-          /Invalid PROJECT_SOURCE_SECRET_KEY_PREVIOUS/,
-        );
-      });
+    it('throws when PROJECT_SOURCE_SECRET_KEY_PREVIOUS is set but invalid', () => {
+      process.env.AUTH_SECRET = 'secret';
+      process.env.DATABASE_URL = 'postgresql://localhost/db';
+      process.env.PROJECT_SOURCE_SECRET_KEY = validProjectSourceSecretKey;
+      process.env.PROJECT_SOURCE_SECRET_KEY_PREVIOUS = 'not-a-key';
+      const cs = new ConfigService();
+      expect(() => cs.validateEnvironment()).toThrow(
+        /Invalid PROJECT_SOURCE_SECRET_KEY_PREVIOUS/,
+      );
+    });
   });
 
   describe('getProjectSourceSecretKeyPrevious', () => {
@@ -1119,12 +1121,16 @@ describe('ConfigService', () => {
 
     it('defaults to claude-haiku-4-5 when unset', () => {
       delete process.env.IMAGE_EXTRACTION_MODEL;
-      expect(new ConfigService().getImageExtractionModel()).toBe('claude-haiku-4-5');
+      expect(new ConfigService().getImageExtractionModel()).toBe(
+        'claude-haiku-4-5',
+      );
     });
 
     it('returns the configured model when IMAGE_EXTRACTION_MODEL is set', () => {
       process.env.IMAGE_EXTRACTION_MODEL = 'claude-opus-4-8';
-      expect(new ConfigService().getImageExtractionModel()).toBe('claude-opus-4-8');
+      expect(new ConfigService().getImageExtractionModel()).toBe(
+        'claude-opus-4-8',
+      );
     });
   });
 

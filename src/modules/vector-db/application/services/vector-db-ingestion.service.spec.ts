@@ -1,10 +1,14 @@
 import { jest } from '@jest/globals';
+import { Logger } from '@nestjs/common';
 import {
   VectorDbIngestionService,
   MAX_INGESTION_ATTEMPTS,
   type IngestionJobPayload,
 } from './vector-db-ingestion.service';
-import { deterministicPointId, deterministicImagePointId } from '../../domain/point-id';
+import {
+  deterministicPointId,
+  deterministicImagePointId,
+} from '../../domain/point-id';
 import { chunkText } from '../../infrastructure/textsplitter/chunker';
 import { NonRetryableIngestionError } from '../../domain/ingestion-errors';
 
@@ -100,6 +104,14 @@ function buildMocks() {
       .fn<(...a: unknown[]) => Promise<string>>()
       .mockResolvedValue(''),
   };
+  // Permissive defaults: no min-size filtering, generous cap — existing tests
+  // exercise image behavior without tripping the cost-control limits.
+  const config = {
+    getImageExtractionMinSizeBytes: jest.fn<() => number>().mockReturnValue(0),
+    getImageExtractionMaxImagesPerDoc: jest
+      .fn<() => number>()
+      .mockReturnValue(20),
+  };
   const service = new VectorDbIngestionService(
     queue as never,
     repository as never,
@@ -110,6 +122,7 @@ function buildMocks() {
     extractor as never,
     imageExtractor as never,
     imageDescriber as never,
+    config as never,
   );
   return {
     service,
@@ -122,6 +135,7 @@ function buildMocks() {
     queue,
     imageExtractor,
     imageDescriber,
+    config,
   };
 }
 
@@ -405,7 +419,10 @@ describe('VectorDbIngestionService image pipeline', () => {
     const m = buildMocks();
     m.repository.findIngestionJobById.mockResolvedValue(jobRow());
     m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({ body: Buffer.from('text doc'), contentType: 'text/plain' });
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('text doc'),
+      contentType: 'text/plain',
+    });
     m.embedder.embed.mockResolvedValue([[0.1, 0.2]]);
 
     await m.service.ingest(PAYLOAD);
@@ -424,15 +441,20 @@ describe('VectorDbIngestionService image pipeline', () => {
     const m = buildMocks();
     m.repository.findIngestionJobById.mockResolvedValue(jobRow());
     m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({ body: Buffer.from('PDF with diagram'), contentType: 'application/pdf' });
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('PDF with diagram'),
+      contentType: 'application/pdf',
+    });
     m.extractor.extract.mockResolvedValue('text content');
     m.imageExtractor.extract.mockResolvedValue([
       { data: Buffer.from('img1'), mimeType: 'image/png', index: 0 },
     ]);
-    m.imageDescriber.describe.mockResolvedValue('A flowchart showing the CI pipeline.');
+    m.imageDescriber.describe.mockResolvedValue(
+      'A flowchart showing the CI pipeline.',
+    );
     // embedder returns vectors: first call for text chunks, second for image
     m.embedder.embed
-      .mockResolvedValueOnce([[0.1, 0.2]])  // text chunk
+      .mockResolvedValueOnce([[0.1, 0.2]]) // text chunk
       .mockResolvedValueOnce([[0.5, 0.6]]); // image description
 
     await m.service.ingest(PAYLOAD);
@@ -456,7 +478,10 @@ describe('VectorDbIngestionService image pipeline', () => {
     const m = buildMocks();
     m.repository.findIngestionJobById.mockResolvedValue(jobRow());
     m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({ body: Buffer.from('hi'), contentType: 'text/plain' });
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('hi'),
+      contentType: 'text/plain',
+    });
     m.imageExtractor.extract.mockResolvedValue([
       { data: Buffer.from('tiny'), mimeType: 'image/png', index: 0 },
     ]);
@@ -473,7 +498,10 @@ describe('VectorDbIngestionService image pipeline', () => {
     const m = buildMocks();
     m.repository.findIngestionJobById.mockResolvedValue(jobRow());
     m.repository.findById.mockResolvedValue(vdbRow());
-    m.files.get.mockResolvedValue({ body: Buffer.from('PDF'), contentType: 'application/pdf' });
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('PDF'),
+      contentType: 'application/pdf',
+    });
     m.extractor.extract.mockResolvedValue('some text');
     m.imageExtractor.extract.mockResolvedValue([
       { data: Buffer.from('img1'), mimeType: 'image/jpeg', index: 0 },
@@ -481,21 +509,226 @@ describe('VectorDbIngestionService image pipeline', () => {
     ]);
     m.imageDescriber.describe
       .mockRejectedValueOnce(new Error('rate_limit_error')) // first fails
-      .mockResolvedValueOnce('A table of sales data.');  // second succeeds
+      .mockResolvedValueOnce('A table of sales data.'); // second succeeds
     m.embedder.embed
-      .mockResolvedValueOnce([[0.1]])  // text
+      .mockResolvedValueOnce([[0.1]]) // text
       .mockResolvedValueOnce([[0.9]]); // second image description
 
     await m.service.ingest(PAYLOAD);
 
     // job still completes despite one image failing
-    expect(m.repository.setJobStatus).toHaveBeenCalledWith('job-1', 'done', null);
+    expect(m.repository.setJobStatus).toHaveBeenCalledWith(
+      'job-1',
+      'done',
+      null,
+    );
     // the successful image description was still upserted
     expect(m.vectorStore.upsert).toHaveBeenCalledWith(REF, [
       expect.objectContaining({
         id: deterministicImagePointId('kb-1', S3_KEY, 1),
       }),
     ]);
+  });
+
+  it('a failed image embed does not abort the job; other image points still upsert', async () => {
+    const m = buildMocks();
+    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
+    m.repository.findById.mockResolvedValue(vdbRow());
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('PDF'),
+      contentType: 'application/pdf',
+    });
+    m.extractor.extract.mockResolvedValue('some text');
+    m.imageExtractor.extract.mockResolvedValue([
+      { data: Buffer.from('img1'), mimeType: 'image/jpeg', index: 0 },
+      { data: Buffer.from('img2'), mimeType: 'image/jpeg', index: 1 },
+    ]);
+    // both images describe successfully...
+    m.imageDescriber.describe
+      .mockResolvedValueOnce('First image description.')
+      .mockResolvedValueOnce('Second image description.');
+    // ...but the embed for the FIRST image rejects.
+    m.embedder.embed
+      .mockResolvedValueOnce([[0.1]]) // text chunk
+      .mockRejectedValueOnce(new Error('embedding service unavailable')) // image 0
+      .mockResolvedValueOnce([[0.9]]); // image 1
+
+    await m.service.ingest(PAYLOAD);
+
+    // the whole job still completes
+    expect(m.repository.setJobStatus).toHaveBeenCalledWith(
+      'job-1',
+      'done',
+      null,
+    );
+    // only the successfully-embedded image (index 1) is upserted
+    expect(m.vectorStore.upsert).toHaveBeenCalledWith(REF, [
+      expect.objectContaining({
+        id: deterministicImagePointId('kb-1', S3_KEY, 1),
+        vector: [0.9],
+      }),
+    ]);
+  });
+
+  it('caps described images at IMAGE_EXTRACTION_MAX_IMAGES_PER_DOC', async () => {
+    const m = buildMocks();
+    m.config.getImageExtractionMaxImagesPerDoc.mockReturnValue(2);
+    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
+    m.repository.findById.mockResolvedValue(vdbRow());
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('PDF'),
+      contentType: 'application/pdf',
+    });
+    m.extractor.extract.mockResolvedValue('');
+    m.imageExtractor.extract.mockResolvedValue([
+      { data: Buffer.from('img0'), mimeType: 'image/png', index: 0 },
+      { data: Buffer.from('img1'), mimeType: 'image/png', index: 1 },
+      { data: Buffer.from('img2'), mimeType: 'image/png', index: 2 },
+    ]);
+    m.imageDescriber.describe.mockResolvedValue('desc');
+    m.embedder.embed.mockResolvedValue([[0.5]]);
+
+    await m.service.ingest(PAYLOAD);
+
+    // only the first 2 of 3 extracted images are described (cost control)
+    expect(m.imageDescriber.describe).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips images smaller than IMAGE_EXTRACTION_MIN_SIZE_BYTES before describing', async () => {
+    const m = buildMocks();
+    m.config.getImageExtractionMinSizeBytes.mockReturnValue(10);
+    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
+    m.repository.findById.mockResolvedValue(vdbRow());
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('PDF'),
+      contentType: 'application/pdf',
+    });
+    m.extractor.extract.mockResolvedValue('');
+    m.imageExtractor.extract.mockResolvedValue([
+      { data: Buffer.from('tiny'), mimeType: 'image/png', index: 0 }, // 4 bytes < 10
+      {
+        data: Buffer.from('a sufficiently large image buffer'),
+        mimeType: 'image/png',
+        index: 1,
+      },
+    ]);
+    m.imageDescriber.describe.mockResolvedValue('desc');
+    m.embedder.embed.mockResolvedValue([[0.5]]);
+
+    await m.service.ingest(PAYLOAD);
+
+    // only the large image is described
+    expect(m.imageDescriber.describe).toHaveBeenCalledTimes(1);
+    expect(m.imageDescriber.describe).toHaveBeenCalledWith(
+      Buffer.from('a sufficiently large image buffer'),
+      'image/png',
+    );
+  });
+
+  it('keeps an image whose size is exactly IMAGE_EXTRACTION_MIN_SIZE_BYTES (>= boundary)', async () => {
+    const m = buildMocks();
+    m.config.getImageExtractionMinSizeBytes.mockReturnValue(4);
+    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
+    m.repository.findById.mockResolvedValue(vdbRow());
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('PDF'),
+      contentType: 'application/pdf',
+    });
+    m.extractor.extract.mockResolvedValue('');
+    m.imageExtractor.extract.mockResolvedValue([
+      { data: Buffer.from('abc'), mimeType: 'image/png', index: 0 }, // 3 bytes < 4 → dropped
+      { data: Buffer.from('abcd'), mimeType: 'image/png', index: 1 }, // 4 bytes == 4 → kept
+    ]);
+    m.imageDescriber.describe.mockResolvedValue('desc');
+    m.embedder.embed.mockResolvedValue([[0.5]]);
+
+    await m.service.ingest(PAYLOAD);
+
+    expect(m.imageDescriber.describe).toHaveBeenCalledTimes(1);
+    expect(m.imageDescriber.describe).toHaveBeenCalledWith(
+      Buffer.from('abcd'),
+      'image/png',
+    );
+  });
+
+  it('describes all images when the count equals the cap exactly (no drop at boundary)', async () => {
+    const m = buildMocks();
+    m.config.getImageExtractionMaxImagesPerDoc.mockReturnValue(2);
+    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
+    m.repository.findById.mockResolvedValue(vdbRow());
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('PDF'),
+      contentType: 'application/pdf',
+    });
+    m.extractor.extract.mockResolvedValue('');
+    m.imageExtractor.extract.mockResolvedValue([
+      { data: Buffer.from('img0'), mimeType: 'image/png', index: 0 },
+      { data: Buffer.from('img1'), mimeType: 'image/png', index: 1 },
+    ]);
+    m.imageDescriber.describe.mockResolvedValue('desc');
+    m.embedder.embed.mockResolvedValue([[0.5]]);
+
+    await m.service.ingest(PAYLOAD);
+
+    expect(m.imageDescriber.describe).toHaveBeenCalledTimes(2);
+  });
+
+  it('describes nothing and upserts nothing when every image is below the min size', async () => {
+    const m = buildMocks();
+    m.config.getImageExtractionMinSizeBytes.mockReturnValue(100);
+    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
+    m.repository.findById.mockResolvedValue(vdbRow());
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('PDF'),
+      contentType: 'application/pdf',
+    });
+    m.extractor.extract.mockResolvedValue('');
+    m.imageExtractor.extract.mockResolvedValue([
+      { data: Buffer.from('tiny0'), mimeType: 'image/png', index: 0 },
+      { data: Buffer.from('tiny1'), mimeType: 'image/png', index: 1 },
+    ]);
+    m.imageDescriber.describe.mockResolvedValue('desc');
+
+    await m.service.ingest(PAYLOAD);
+
+    expect(m.imageDescriber.describe).not.toHaveBeenCalled();
+    expect(m.vectorStore.upsert).not.toHaveBeenCalled();
+    expect(m.repository.setJobStatus).toHaveBeenCalledWith(
+      'job-1',
+      'done',
+      null,
+    );
+  });
+
+  it('logs job-level context when an image fails', async () => {
+    const m = buildMocks();
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    m.repository.findIngestionJobById.mockResolvedValue(jobRow());
+    m.repository.findById.mockResolvedValue(vdbRow());
+    m.files.get.mockResolvedValue({
+      body: Buffer.from('PDF'),
+      contentType: 'application/pdf',
+    });
+    m.extractor.extract.mockResolvedValue('');
+    m.imageExtractor.extract.mockResolvedValue([
+      { data: Buffer.from('img0'), mimeType: 'image/png', index: 0 },
+    ]);
+    m.imageDescriber.describe.mockRejectedValue(new Error('rate_limit_error'));
+
+    await m.service.ingest(PAYLOAD);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      'image description failed; skipping',
+      expect.objectContaining({
+        jobId: 'job-1',
+        vectorDbId: 'kb-1',
+        s3Key: S3_KEY,
+        imageIndex: 0,
+      }),
+    );
+    warnSpy.mockRestore();
   });
 });
 

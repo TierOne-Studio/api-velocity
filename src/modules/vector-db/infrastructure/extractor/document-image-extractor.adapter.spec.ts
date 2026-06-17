@@ -1,17 +1,22 @@
 import { jest } from '@jest/globals';
 
+// This repo runs Jest in ESM mode (`useESM: true` + `--experimental-vm-modules`).
+// `jest.mock(factory)` does NOT hoist here — the real module resolves first.
+// Use `jest.unstable_mockModule` + dynamic import of the SUT.
+
 const mockGetDocumentProxy = jest.fn<(...a: unknown[]) => Promise<unknown>>();
 const mockExtractImages = jest.fn<(...a: unknown[]) => Promise<unknown>>();
 
-jest.mock('unpdf', () => ({
+jest.unstable_mockModule('unpdf', () => ({
   __esModule: true,
   getDocumentProxy: mockGetDocumentProxy,
   extractImages: mockExtractImages,
 }));
 
-const mockMammothConvertToHtml = jest.fn<(...a: unknown[]) => Promise<unknown>>();
+const mockMammothConvertToHtml =
+  jest.fn<(...a: unknown[]) => Promise<unknown>>();
 
-jest.mock('mammoth', () => ({
+jest.unstable_mockModule('mammoth', () => ({
   __esModule: true,
   default: {
     convertToHtml: mockMammothConvertToHtml,
@@ -21,7 +26,9 @@ jest.mock('mammoth', () => ({
   },
 }));
 
-import { DocumentImageExtractorAdapter } from './document-image-extractor.adapter';
+const { DocumentImageExtractorAdapter } = await import(
+  './document-image-extractor.adapter'
+);
 
 const PDF_CT = 'application/pdf';
 const DOCX_CT =
@@ -44,7 +51,10 @@ describe('DocumentImageExtractorAdapter', () => {
     });
 
     it('returns [] for application/json', async () => {
-      const result = await adapter.extract(Buffer.from('{}'), 'application/json');
+      const result = await adapter.extract(
+        Buffer.from('{}'),
+        'application/json',
+      );
       expect(result).toEqual([]);
     });
 
@@ -72,7 +82,9 @@ describe('DocumentImageExtractorAdapter', () => {
       const fakePdf = { numPages: 1 };
       mockGetDocumentProxy.mockResolvedValue(fakePdf);
       // 2x2 pixel RGBA image
-      const rawPixels = new Uint8ClampedArray([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255]);
+      const rawPixels = new Uint8ClampedArray([
+        255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255,
+      ]);
       mockExtractImages.mockResolvedValue([
         { data: rawPixels, width: 2, height: 2, channels: 4, key: 'img0' },
       ]);
@@ -101,7 +113,10 @@ describe('DocumentImageExtractorAdapter', () => {
 
   describe('DOCX extraction', () => {
     it('returns [] when the DOCX has no embedded images', async () => {
-      mockMammothConvertToHtml.mockResolvedValue({ value: '<p>text only</p>', messages: [] });
+      mockMammothConvertToHtml.mockResolvedValue({
+        value: '<p>text only</p>',
+        messages: [],
+      });
 
       const result = await adapter.extract(Buffer.from('PK'), DOCX_CT);
 
@@ -114,6 +129,42 @@ describe('DocumentImageExtractorAdapter', () => {
       const result = await adapter.extract(Buffer.from('garbage'), DOCX_CT);
 
       expect(result).toEqual([]);
+    });
+
+    it('extracts embedded images from a DOCX, tagged with sequential index', async () => {
+      const img0 = {
+        read: () => Promise.resolve(Buffer.from('png-bytes-0')),
+        contentType: 'image/png',
+      };
+      const img1 = {
+        read: () => Promise.resolve(Buffer.from('jpeg-bytes-1')),
+        contentType: 'image/jpeg',
+      };
+      // mammoth invokes the convertImage handler once per embedded image.
+      mockMammothConvertToHtml.mockImplementation(
+        async (
+          _input: unknown,
+          options: { convertImage: (img: unknown) => Promise<unknown> },
+        ) => {
+          await options.convertImage(img0);
+          await options.convertImage(img1);
+          return { value: '<p>doc</p>', messages: [] };
+        },
+      );
+
+      const result = await adapter.extract(Buffer.from('PK'), DOCX_CT);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatchObject({
+        data: Buffer.from('png-bytes-0'),
+        mimeType: 'image/png',
+        index: 0,
+      });
+      expect(result[1]).toMatchObject({
+        data: Buffer.from('jpeg-bytes-1'),
+        mimeType: 'image/jpeg',
+        index: 1,
+      });
     });
   });
 });

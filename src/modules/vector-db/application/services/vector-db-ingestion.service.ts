@@ -41,7 +41,11 @@ import {
   type IImageDescriber,
 } from '../../domain/image-describer.port';
 import { NonRetryableIngestionError } from '../../domain/ingestion-errors';
-import { deterministicImagePointId, deterministicPointId } from '../../domain/point-id';
+import {
+  deterministicImagePointId,
+  deterministicPointId,
+} from '../../domain/point-id';
+import { ConfigService } from '../../../../shared/config/config.service';
 
 export const VECTOR_DB_INGESTION_QUEUE = 'vector-db-ingestion';
 
@@ -81,6 +85,7 @@ export class VectorDbIngestionService implements OnModuleInit, OnModuleDestroy {
     private readonly imageExtractor: IDocumentImageExtractor,
     @Inject(IMAGE_DESCRIBER)
     private readonly imageDescriber: IImageDescriber,
+    private readonly config: ConfigService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -204,7 +209,14 @@ export class VectorDbIngestionService implements OnModuleInit, OnModuleDestroy {
       }
 
       // Image pipeline (additive, runs after text chunks succeed).
-      await this.ingestImages(body, jobRow.content_type, vectorDbId, jobRow.s3_key, vdb.vector_store_ref);
+      await this.ingestImages(
+        body,
+        jobRow.content_type,
+        vectorDbId,
+        jobRow.s3_key,
+        vdb.vector_store_ref,
+        jobId,
+      );
 
       await this.repository.setJobStatus(jobId, 'done', null);
       await this.repository.setVectorDbReadyIfIdle(vectorDbId);
@@ -228,8 +240,14 @@ export class VectorDbIngestionService implements OnModuleInit, OnModuleDestroy {
    * Extract images from the document, describe each via Claude Vision, and
    * upsert the resulting description-chunks alongside the text chunks.
    *
-   * - Uses Promise.allSettled so one bad image does not abort the whole job.
-   * - Empty or failed descriptions are silently skipped.
+   * Cost control (ADR-017): images below IMAGE_EXTRACTION_MIN_SIZE_BYTES are
+   * dropped before describing, and at most IMAGE_EXTRACTION_MAX_IMAGES_PER_DOC
+   * images are described per document.
+   *
+   * - describe + embed run per-image under Promise.allSettled, so one bad image
+   *   (description OR embedding failure) never aborts the whole job.
+   * - Empty or failed descriptions are skipped; failures are logged with job
+   *   context.
    * - Image point IDs are namespaced via deterministicImagePointId to avoid
    *   collisions with text chunks sharing the same (vectorDbId, s3Key, index).
    */
@@ -239,12 +257,43 @@ export class VectorDbIngestionService implements OnModuleInit, OnModuleDestroy {
     vectorDbId: string,
     s3Key: string,
     vectorStoreRef: string,
+    jobId: string,
   ): Promise<void> {
-    const images: ExtractedImage[] = await this.imageExtractor.extract(body, contentType);
+    const extracted: ExtractedImage[] = await this.imageExtractor.extract(
+      body,
+      contentType,
+    );
+    if (extracted.length === 0) return;
+
+    // Cost control: drop tiny images, then cap the number described per doc.
+    const minSizeBytes = this.config.getImageExtractionMinSizeBytes();
+    const maxImages = this.config.getImageExtractionMaxImagesPerDoc();
+    const images = extracted
+      .filter((img) => img.data.length >= minSizeBytes)
+      .slice(0, maxImages);
     if (images.length === 0) return;
 
-    const describeResults = await Promise.allSettled(
-      images.map((img) => this.imageDescriber.describe(img.data, img.mimeType)),
+    // describe + embed are settled together per image: a rejection in either
+    // step isolates to that image instead of failing the additive lane.
+    const results = await Promise.allSettled(
+      images.map(async (img) => {
+        const description = (
+          await this.imageDescriber.describe(img.data, img.mimeType)
+        ).trim();
+        if (!description) return null;
+
+        const [vector] = await this.embedder.embed([description]);
+        return {
+          id: deterministicImagePointId(vectorDbId, s3Key, img.index),
+          vector,
+          payload: {
+            vectorDbId,
+            s3Key,
+            imageIndex: img.index,
+            text: description,
+          },
+        };
+      }),
     );
 
     const successfulPoints: Array<{
@@ -254,32 +303,28 @@ export class VectorDbIngestionService implements OnModuleInit, OnModuleDestroy {
     }> = [];
 
     for (let i = 0; i < images.length; i++) {
-      const result = describeResults[i];
+      const result = results[i];
       if (result.status === 'rejected') {
         this.logger.warn('image description failed; skipping', {
-          imageIndex: images[i].index,
-          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-        });
-        continue;
-      }
-      const description = result.value.trim();
-      if (!description) continue;
-
-      const [vector] = await this.embedder.embed([description]);
-      successfulPoints.push({
-        id: deterministicImagePointId(vectorDbId, s3Key, images[i].index),
-        vector,
-        payload: {
+          jobId,
           vectorDbId,
           s3Key,
           imageIndex: images[i].index,
-          text: description,
-        },
-      });
+          error:
+            result.reason instanceof Error
+              ? result.reason.message
+              : String(result.reason),
+        });
+        continue;
+      }
+      if (result.value) successfulPoints.push(result.value);
     }
 
     if (successfulPoints.length > 0) {
-      await this.vectorStore.ensureCollection(vectorStoreRef, this.embedder.dimensions());
+      await this.vectorStore.ensureCollection(
+        vectorStoreRef,
+        this.embedder.dimensions(),
+      );
       await this.vectorStore.upsert(vectorStoreRef, successfulPoints);
     }
   }

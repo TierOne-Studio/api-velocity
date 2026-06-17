@@ -1,18 +1,24 @@
 import { jest } from '@jest/globals';
+import type { ConfigService } from '../../../../shared/config/config.service';
 
-jest.mock('@anthropic-ai/sdk', () => ({
+// This repo runs Jest in ESM mode (`useESM: true` + `--experimental-vm-modules`).
+// `jest.mock(factory)` does NOT hoist here — the real module resolves first.
+// Use `jest.unstable_mockModule` + dynamic import of the SUT.
+
+const MockAnthropic = jest.fn();
+
+jest.unstable_mockModule('@anthropic-ai/sdk', () => ({
   __esModule: true,
-  default: jest.fn(),
+  default: MockAnthropic,
 }));
 
-import Anthropic from '@anthropic-ai/sdk';
-import { ClaudeImageDescriberAdapter } from './claude-image-describer.adapter';
-import { ConfigService } from '../../../../shared/config/config.service';
+const { ClaudeImageDescriberAdapter } = await import(
+  './claude-image-describer.adapter'
+);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const MockAnthropic = Anthropic as any;
-
-function makeConfig(overrides: Partial<Record<string, unknown>> = {}): ConfigService {
+function makeConfig(
+  overrides: Partial<Record<string, unknown>> = {},
+): ConfigService {
   return {
     getAnthropicApiKey: () => 'sk-ant-test',
     getImageExtractionModel: () => 'claude-haiku-4-5',
@@ -25,9 +31,9 @@ describe('ClaudeImageDescriberAdapter', () => {
 
   beforeEach(() => {
     mockCreate = jest.fn<(...a: unknown[]) => Promise<unknown>>();
-    MockAnthropic.mockImplementation(
-      () => ({ messages: { create: mockCreate } }),
-    );
+    MockAnthropic.mockImplementation(() => ({
+      messages: { create: mockCreate },
+    }));
   });
 
   afterEach(() => {
@@ -43,10 +49,15 @@ describe('ClaudeImageDescriberAdapter', () => {
 
   it('returns the text block from the Claude response', async () => {
     mockCreate.mockResolvedValue({
-      content: [{ type: 'text', text: 'A bar chart showing quarterly revenue.' }],
+      content: [
+        { type: 'text', text: 'A bar chart showing quarterly revenue.' },
+      ],
     });
     const adapter = new ClaudeImageDescriberAdapter(makeConfig());
-    const result = await adapter.describe(Buffer.from('fake-image'), 'image/jpeg');
+    const result = await adapter.describe(
+      Buffer.from('fake-image'),
+      'image/jpeg',
+    );
     expect(result).toBe('A bar chart showing quarterly revenue.');
   });
 

@@ -23,13 +23,18 @@ function crc32(data: Buffer): number {
   for (let i = 0; i < data.length; i++) {
     crc = (CRC_TABLE[(crc ^ data[i]) & 0xff] ^ (crc >>> 8)) >>> 0;
   }
-  return (~crc) >>> 0;
+  return ~crc >>> 0;
 }
 
 function pngChunk(type: string, data: Buffer): Buffer {
   const typeBytes = Buffer.from(type, 'ascii');
   const crcInput = Buffer.concat([typeBytes, data]);
-  return Buffer.concat([uint32be(data.length), typeBytes, data, uint32be(crc32(crcInput))]);
+  return Buffer.concat([
+    uint32be(data.length),
+    typeBytes,
+    data,
+    uint32be(crc32(crcInput)),
+  ]);
 }
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -46,6 +51,23 @@ export function rawPixelsToPng(
   height: number,
   channels: 1 | 3 | 4,
 ): Buffer {
+  if (
+    !Number.isInteger(width) ||
+    !Number.isInteger(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    throw new Error(
+      `rawPixelsToPng: invalid image dimensions ${width}x${height}`,
+    );
+  }
+  const expectedLength = width * height * channels;
+  if (pixels.length !== expectedLength) {
+    throw new Error(
+      `rawPixelsToPng: pixel buffer length ${pixels.length} does not match ${width}x${height}x${channels} (expected ${expectedLength})`,
+    );
+  }
+
   const colorType = channels === 1 ? 0 : channels === 3 ? 2 : 6;
   const ihdrData = Buffer.concat([
     uint32be(width),
