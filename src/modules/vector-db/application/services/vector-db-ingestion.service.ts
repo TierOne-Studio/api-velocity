@@ -305,7 +305,7 @@ export class VectorDbIngestionService implements OnModuleInit, OnModuleDestroy {
     for (let i = 0; i < images.length; i++) {
       const result = results[i];
       if (result.status === 'rejected') {
-        this.logger.warn('image description failed; skipping', {
+        this.logger.warn('image processing failed; skipping', {
           jobId,
           vectorDbId,
           s3Key,

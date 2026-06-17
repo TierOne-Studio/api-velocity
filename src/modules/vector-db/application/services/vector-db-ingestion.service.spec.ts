@@ -717,18 +717,21 @@ describe('VectorDbIngestionService image pipeline', () => {
     ]);
     m.imageDescriber.describe.mockRejectedValue(new Error('rate_limit_error'));
 
-    await m.service.ingest(PAYLOAD);
+    try {
+      await m.service.ingest(PAYLOAD);
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      'image description failed; skipping',
-      expect.objectContaining({
-        jobId: 'job-1',
-        vectorDbId: 'kb-1',
-        s3Key: S3_KEY,
-        imageIndex: 0,
-      }),
-    );
-    warnSpy.mockRestore();
+      expect(warnSpy).toHaveBeenCalledWith(
+        'image processing failed; skipping',
+        expect.objectContaining({
+          jobId: 'job-1',
+          vectorDbId: 'kb-1',
+          s3Key: S3_KEY,
+          imageIndex: 0,
+        }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 

@@ -41,4 +41,15 @@ describe('rawPixelsToPng', () => {
 
     expect([png[0], png[1], png[2], png[3]]).toEqual([0x89, 0x50, 0x4e, 0x47]);
   });
+
+  it('encodes a valid RGB (3-channel) buffer', () => {
+    // 2x2 RGB = 12 bytes
+    const pixels = new Uint8ClampedArray([
+      255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0,
+    ]);
+
+    const png = rawPixelsToPng(pixels, 2, 2, 3);
+
+    expect([png[0], png[1], png[2], png[3]]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+  });
 });
