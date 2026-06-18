@@ -1,8 +1,19 @@
 # ADR-013: Specification-first documentation workflow
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-06-17: paired documentation widened to ADRs)
 - **Date:** 2026-06-04
 - **Deciders:** Mariano Ravinale (with architect-reviewer)
+
+> **Amendment 1 (2026-06-17) — paired documentation widened from SPEC-only to SPEC-or-ADR.** The
+> `spec-gate` originally accepted only a `docs/specs/**` SPEC as the documentation paired with a
+> behavioral `src/**` change. It now also accepts a `docs/decisions/**` **ADR** (new or amended): a
+> change documented via a decision record — common for bug fixes and decision changes — satisfies the
+> gate without a separate SPEC. SPECs remain the preferred artifact (intended behavior + acceptance
+> criteria → tests); ADRs capture decisions/rationale. Unrelated docs (README, coordination plans) do
+> NOT count, and the three `[skip-spec: type-only|config-no-behavior|non-code]` waivers are unchanged.
+> Residual risk — pairing a behavioral change with an unrelated/trivial ADR edit — is a code-review
+> concern; the gate is deliberately a coarse net. Implemented in `scripts/spec-gate.sh` (fixture AC2b
+> in `scripts/__tests__/spec-gate.test.sh`) and recorded in `SPEC-000`. Mirrored in `spa-velocity`.
 
 ## Context
 

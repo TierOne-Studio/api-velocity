@@ -1,7 +1,7 @@
 name: spec-gate
 
 # Specification-first hard gate (SPEC-000 / ADR-013).
-# A behavioral src/**/*.ts change must ship with a docs/specs/** update (or a [skip-spec:…] waiver).
+# A behavioral src/**/*.ts change must ship with a docs/specs/** (SPEC) or docs/decisions/** (ADR) update (or a [skip-spec:…] waiver).
 # Plus deterministic spec lints (completeness + cross-links).
 
 on:

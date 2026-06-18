@@ -5,7 +5,7 @@ status: Draft
 layer: contract
 owner: Mariano Ravinale
 created: 2026-06-04
-updated: 2026-06-04
+updated: 2026-06-17
 feature_paths:
   - .ruler/skills/spec-workflow
   - .ruler/agents/spec-steward.md
@@ -25,9 +25,11 @@ coordination_doc: "docs/spec-first-workflow-proposal.md"
 
 ## 1. Summary (intended behavior)
 
-Every **behavioral** code change in api-velocity must create/update a Markdown SPEC (this folder,
-layer `contract`) before implementation, and reconcile it with what shipped after — enforced by a
-hard CI `spec-gate`, deterministic lints, and the `spec-steward` agent.
+Every **behavioral** code change in api-velocity must ship with a paired **documentation** update —
+preferably a Markdown SPEC (this folder, layer `contract`) authored before implementation and
+reconciled with what shipped after, but a `docs/decisions/**` **ADR** (decision/rationale, common
+for bug fixes) also satisfies the pairing. Enforced by a hard CI `spec-gate`, deterministic lints,
+and the `spec-steward` agent.
 
 ## 2. Context & problem
 
@@ -65,8 +67,9 @@ raised to 3850 (pre-existing CLAUDE.md overage + spec-first headroom).
 
 | # | Criterion (observable behavior) | Proving test |
 |---|---|---|
-| AC1 | Behavioral `src/**/*.ts` change without a `docs/specs/**` change fails the gate | `scripts/spec-gate.sh` fixture (negative) |
+| AC1 | Behavioral `src/**/*.ts` change without a `docs/specs/**` OR `docs/decisions/**` change fails the gate | `scripts/spec-gate.sh` fixture (negative) |
 | AC2 | Same diff + a spec change passes | `scripts/spec-gate.sh` fixture (positive) |
+| AC2b | Same diff + an ADR (`docs/decisions/**`) change passes; an unrelated doc (e.g. `docs/README.md`) still fails | `scripts/spec-gate.sh` fixture (ADR-pairing + negative) |
 | AC3 | `[skip-spec: type-only]` waiver passes | `scripts/spec-gate.sh` fixture (waiver) |
 | AC4 | Placeholder/empty-section spec fails completeness | `scripts/spec-complete-check.sh` fixture |
 | AC5 | Unresolved `counterpart_spec`/`related_specs` fails links | `scripts/spec-links-check.sh` fixture |
@@ -97,4 +100,11 @@ None open (assumption #2/#4 resolved by inspection + user decision).
 
 ## Change Log
 
+- 2026-06-17 · PR (pending, chore/spec-gate-accept-adrs) · Widened the spec-gate's accepted paired
+  documentation from `docs/specs/**` only to `docs/specs/**` (SPEC) OR `docs/decisions/**` (ADR), so a
+  behavioral change documented via an ADR — common for bug fixes / decision changes — satisfies the
+  gate without a separate SPEC. Unrelated docs (README, etc.) still don't count, and the three
+  `[skip-spec:…]` waivers are unchanged. AC2b added; `spec-gate.sh` + fixtures + ADR-013 updated. ·
+  Why: documentation is broader than specs; an ADR is a first-class, reviewed doc type. · No
+  assumption corrections.
 - 2026-06-04 · PR (pending) · api install of the spec-first workflow (layer contract); T13 raised 3350→3850 · mirrors spa-velocity#SPEC-000.
