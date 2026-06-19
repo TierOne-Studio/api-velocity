@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { DatabaseModule } from '../../shared/infrastructure/database/database.module';
 import { ProjectsModule } from '../projects/projects.module';
+import { ConfigService } from '../../shared/config/config.service';
 import { VectorDbController } from './api/controllers/vector-db.controller';
 import { VectorDbService } from './application/services/vector-db.service';
 import { VectorDbIngestionService } from './application/services/vector-db-ingestion.service';
@@ -13,6 +14,10 @@ import { OpenAiEmbedderAdapter } from './infrastructure/openai/openai-embedder.a
 import { PgBossIngestionQueueAdapter } from './infrastructure/queue/pg-boss-ingestion-queue.adapter';
 import { RecursiveTextChunker } from './infrastructure/textsplitter/recursive-text-chunker.adapter';
 import { DocumentExtractorAdapter } from './infrastructure/extractor/document-extractor.adapter';
+import { ClaudeImageDescriberAdapter } from './infrastructure/anthropic/claude-image-describer.adapter';
+import { NoopImageDescriberAdapter } from './infrastructure/anthropic/noop-image-describer.adapter';
+import { DocumentImageExtractorAdapter } from './infrastructure/extractor/document-image-extractor.adapter';
+import { NoopDocumentImageExtractorAdapter } from './infrastructure/extractor/noop-document-image-extractor.adapter';
 import { VECTOR_DB_REPOSITORY } from './domain/vector-db.repository';
 import { VECTOR_DB_FILE_UPLOADER } from './domain/vector-db-file-uploader.port';
 import { VECTOR_STORE } from './domain/vector-store.port';
@@ -20,6 +25,8 @@ import { EMBEDDER } from './domain/embedder.port';
 import { INGESTION_QUEUE } from './domain/ingestion-queue.port';
 import { TEXT_CHUNKER } from './domain/text-chunker.port';
 import { DOCUMENT_EXTRACTOR } from './domain/document-extractor.port';
+import { IMAGE_DESCRIBER } from './domain/image-describer.port';
+import { DOCUMENT_IMAGE_EXTRACTOR } from './domain/document-image-extractor.port';
 
 @Module({
   // forwardRef: VectorDbService injects PROJECTS_REPOSITORY for delete-time
@@ -60,6 +67,22 @@ import { DOCUMENT_EXTRACTOR } from './domain/document-extractor.port';
     {
       provide: DOCUMENT_EXTRACTOR,
       useClass: DocumentExtractorAdapter,
+    },
+    {
+      provide: IMAGE_DESCRIBER,
+      useFactory: (config: ConfigService) =>
+        config.isImageExtractionEnabled()
+          ? new ClaudeImageDescriberAdapter(config)
+          : new NoopImageDescriberAdapter(),
+      inject: [ConfigService],
+    },
+    {
+      provide: DOCUMENT_IMAGE_EXTRACTOR,
+      useFactory: (config: ConfigService) =>
+        config.isImageExtractionEnabled()
+          ? new DocumentImageExtractorAdapter()
+          : new NoopDocumentImageExtractorAdapter(),
+      inject: [ConfigService],
     },
   ],
   exports: [

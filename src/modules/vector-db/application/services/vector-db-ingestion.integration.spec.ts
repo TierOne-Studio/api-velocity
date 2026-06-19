@@ -23,6 +23,8 @@ import { VectorDbFileUploaderService } from '../../infrastructure/s3/vector-db-f
 import { PgBossIngestionQueueAdapter } from '../../infrastructure/queue/pg-boss-ingestion-queue.adapter';
 import { RecursiveTextChunker } from '../../infrastructure/textsplitter/recursive-text-chunker.adapter';
 import { DocumentExtractorAdapter } from '../../infrastructure/extractor/document-extractor.adapter';
+import { NoopDocumentImageExtractorAdapter } from '../../infrastructure/extractor/noop-document-image-extractor.adapter';
+import { NoopImageDescriberAdapter } from '../../infrastructure/anthropic/noop-image-describer.adapter';
 import { VectorDbService } from './vector-db.service';
 import {
   VectorDbIngestionService,
@@ -98,6 +100,9 @@ describeIfLive('Vector DB ingestion pipeline (live integration)', () => {
       files,
       new RecursiveTextChunker(),
       new DocumentExtractorAdapter(),
+      new NoopDocumentImageExtractorAdapter(),
+      new NoopImageDescriberAdapter(),
+      config,
     );
     vectorDbService = new VectorDbService(repository, files, service);
     await queue.start();

@@ -30,3 +30,28 @@ export function deterministicPointId(
   const s = hex.join('');
   return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20, 32)}`;
 }
+
+/**
+ * Deterministic, idempotent Qdrant point ID for a single image chunk.
+ *
+ * Distinct from `deterministicPointId` by the "img:" prefix in the digest
+ * input — same (vectorDbId, s3Key, index) triple can never collide between
+ * a text chunk and an image chunk, preserving idempotency for both on retry.
+ */
+export function deterministicImagePointId(
+  vectorDbId: string,
+  s3Key: string,
+  imageIndex: number,
+): string {
+  const hex = createHash('sha256')
+    .update(`img:${vectorDbId}:${s3Key}:${imageIndex}`)
+    .digest('hex')
+    .slice(0, 32)
+    .split('');
+
+  hex[12] = '5';
+  hex[16] = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
+
+  const s = hex.join('');
+  return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20, 32)}`;
+}
