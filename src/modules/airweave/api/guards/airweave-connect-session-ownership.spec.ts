@@ -5,8 +5,16 @@ import { jest } from '@jest/globals';
 jest.mock('@thallesp/nestjs-better-auth', () => ({
   Session: () => () => {},
   AllowAnonymous: () => () => {},
-  BetterAuthGuard: class { /* mock guard stub */ },
-  BetterAuthModule: { forRoot: jest.fn(() => ({ module: class { /* mock module stub */ } })) },
+  BetterAuthGuard: class {
+    /* mock guard stub */
+  },
+  BetterAuthModule: {
+    forRoot: jest.fn(() => ({
+      module: class {
+        /* mock module stub */
+      },
+    })),
+  },
 }));
 
 import {
