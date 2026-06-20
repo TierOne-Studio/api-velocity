@@ -35,7 +35,7 @@ describe('projects_005 rename airweave config keys (e2e, real Postgres)', () => 
       `SELECT config FROM project_data_source WHERE id = $1`,
       [id],
     );
-    return row!.config;
+    return row.config;
   };
 
   beforeAll(async () => {
@@ -61,7 +61,7 @@ describe('projects_005 rename airweave config keys (e2e, real Postgres)', () => 
        VALUES ($1, $2, $3) RETURNING id`,
       [orgId, 'E2E AW Cfg Project', userId],
     );
-    projectId = project!.id;
+    projectId = project.id;
 
     const seed = async (
       kind: string,
@@ -72,7 +72,7 @@ describe('projects_005 rename airweave config keys (e2e, real Postgres)', () => 
          VALUES ($1, $2, $3, $4::jsonb) RETURNING id`,
         [projectId, kind, 'seed', JSON.stringify(config)],
       );
-      return row!.id;
+      return row.id;
     };
 
     ids.both = await seed('airweave_collection', {

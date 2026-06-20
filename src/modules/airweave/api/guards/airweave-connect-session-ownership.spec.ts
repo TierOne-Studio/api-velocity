@@ -5,8 +5,8 @@ import { jest } from '@jest/globals';
 jest.mock('@thallesp/nestjs-better-auth', () => ({
   Session: () => () => {},
   AllowAnonymous: () => () => {},
-  BetterAuthGuard: class {},
-  BetterAuthModule: { forRoot: jest.fn(() => ({ module: class {} })) },
+  BetterAuthGuard: class { /* mock guard stub */ },
+  BetterAuthModule: { forRoot: jest.fn(() => ({ module: class { /* mock module stub */ } })) },
 }));
 
 import {
@@ -77,7 +77,7 @@ describe('connect/session ownership coupling (airweaveCollectionId body field)',
   });
 
   it('guard reads body.airweaveCollectionId and authorizes when owned', async () => {
-    (authz.assertOwnership as jest.Mock).mockResolvedValue(undefined as never);
+    authz.assertOwnership.mockResolvedValue(undefined as never);
 
     await expect(
       guard.canActivate(makeContext({ airweaveCollectionId: 'kb-owned' })),
@@ -94,7 +94,7 @@ describe('connect/session ownership coupling (airweaveCollectionId body field)',
   });
 
   it('propagates a 403 when the caller does not own the collection', async () => {
-    (authz.assertOwnership as jest.Mock).mockRejectedValue(
+    authz.assertOwnership.mockRejectedValue(
       new ForbiddenException('not owned') as never,
     );
 
