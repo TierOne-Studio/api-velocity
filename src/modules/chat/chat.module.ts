@@ -42,6 +42,11 @@ import { ChatMigrationService } from './chat.migration';
     ChatMigrationService,
     { provide: CHAT_REPOSITORY, useClass: ChatDatabaseRepository },
   ],
-  exports: [ChatService],
+  // ChatAgentService is exported so the public web-chat channel (PublicChatModule,
+  // SPEC-003) can reuse the stateless agent core. A dedicated `chat-agent`
+  // sub-module would be cleaner for SoC, but physically relocating the service
+  // would churn ~8 co-located spec files + chat.service; deferred as a follow-up
+  // (P3.5 — structural refactor, repo wins for this PR).
+  exports: [ChatService, ChatAgentService],
 })
 export class ChatModule {}

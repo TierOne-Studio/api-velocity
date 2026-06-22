@@ -702,6 +702,66 @@ export class ConfigService {
    *
    * @internal exposed for unit testing via getter call sites.
    */
+  /**
+   * Express `trust proxy` setting. Controls how `request.ip` is derived behind a
+   * reverse proxy / load balancer — load-bearing for the public per-IP rate
+   * limiter (SPEC-003 §6). Set `TRUST_PROXY` to the number of trusted proxy hops
+   * (e.g. `1`) in production so `request.ip` is the real client and
+   * `X-Forwarded-For` spoofing is bounded. Unset → `false` (no proxy trusted),
+   * which is safe for direct/local deployments but collapses all clients into
+   * one IP bucket behind a proxy.
+   */
+  getTrustProxy(): boolean | number | string {
+    const raw = process.env.TRUST_PROXY?.trim();
+    if (raw === undefined || raw.length === 0) return false;
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+    const asNumber = Number(raw);
+    return Number.isInteger(asNumber) && asNumber >= 0 ? asNumber : raw;
+  }
+
+  // --- Public embed chat channel (SPEC-003) ---
+
+  /** Per-IP burst window, in seconds, for the public ask endpoint. */
+  getEmbedPublicRateLimitTtlSeconds(): number {
+    return this.boundedInt('EMBED_PUBLIC_RATE_LIMIT_TTL_SECONDS', 60, {
+      min: 1,
+      max: 3600,
+    });
+  }
+
+  /** Max public ask requests per IP per window. */
+  getEmbedPublicRateLimitPerIp(): number {
+    return this.boundedInt('EMBED_PUBLIC_RATE_LIMIT_PER_IP', 10, {
+      min: 1,
+      max: 100000,
+    });
+  }
+
+  /** Max public ask requests per embed key per window. */
+  getEmbedPublicRateLimitPerKey(): number {
+    return this.boundedInt('EMBED_PUBLIC_RATE_LIMIT_PER_KEY', 60, {
+      min: 1,
+      max: 100000,
+    });
+  }
+
+  /** Non-optional org-level monthly request cap — the durable spend backstop. */
+  getEmbedPublicMonthlyCap(): number {
+    return this.boundedInt('EMBED_PUBLIC_MONTHLY_CAP', 10000, {
+      min: 1,
+      max: 100000000,
+    });
+  }
+
+  /** Max length of an anonymous public question. */
+  getEmbedPublicMaxQuestionLength(): number {
+    return this.boundedInt('EMBED_PUBLIC_MAX_QUESTION_LENGTH', 2000, {
+      min: 1,
+      max: 100000,
+    });
+  }
+
   private boundedInt(
     envName: string,
     fallback: number,

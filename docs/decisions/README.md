@@ -51,6 +51,8 @@ This keeps skill files focused on *how* and the ADR file as the canonical *why*.
 | [014](./ADR-014-vector-db-persistence-lifecycle.md)         | Vector DB module — persistence, provider abstraction, and lifecycle                        | Accepted | 2026-06-02 |
 | [015](./ADR-015-vector-db-ingestion-queue.md)               | Vector DB ingestion — durable queue, idempotent indexing, and crash recovery               | Accepted | 2026-06-04 |
 | [016](./ADR-016-document-text-extraction.md)                | Document text extraction — PDF/DOCX via a domain port, with non-retryable failure handling | Accepted | 2026-06-04 |
+| [018](./ADR-018-anonymous-public-chat-channel-auth.md)      | Anonymous public chat channel authenticates as a site, not a user                          | Proposed | 2026-06-19 |
+| [019](./ADR-019-per-request-origin-allowlist-cors.md)       | Per-request origin-allowlist CORS for the public chat channel                               | Proposed | 2026-06-19 |
 
 ## Adding a new ADR
 
