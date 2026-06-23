@@ -606,7 +606,7 @@ Key points:
 | Reused core / wiring | **`ChatAgentService.generateReplyStreaming`** (stateless). **Shipped:** exported from `ChatModule`, imported by `PublicChatModule`; extraction into a dedicated shared **`chat-agent` sub-module** deferred as a Future follow-up (P3.5; see §10.4). Anonymous `userId` sentinel = `'anonymous'`. |
 | Theming | **`data-*` attributes + server `GET /config`**, `data-*` overrides. Theme applied as shadow-DOM CSS custom properties only (trust boundary). |
 | Stream schema | **Reuse the existing chat stream events.** |
-| Answer rendering (widget v1) | **Plain text** (`textContent`, whitespace-preserved) — no markdown renderer in the bundle, so LLM output cannot inject markup (XSS-safe by construction). Rich markdown rendering → Future. Shipped in Slice 3; build target = esbuild, browser test = Playwright (ADR-020). |
+| Answer rendering (widget v1) | **Markdown**, rendered to DOM via `createElement`/`textContent` only (never `innerHTML`); links get an `href` only when `isSafeUrl` (http/https). Subset: headings, bold/italic, inline + fenced code, ordered/unordered lists, links, GFM tables — matching the platform chat. LLM output still cannot inject markup (§10.4 trust boundary holds by construction). Shipped in Slice 3; build = esbuild, browser test = Playwright (ADR-020). |
 | Question max length | **2000 characters.** |
 | Key format | **`X-Velocity-Embed-Key`** header; value `wgt_pub_` + ≥128-bit CSPRNG (identifier, not secret). |
 | Origin matching | **Exact match on normalized origin** (lowercased scheme+host, default port elided, no trailing slash); normalized on admin write + request. |

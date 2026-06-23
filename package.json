@@ -135,7 +135,8 @@
       "!**/permissions.ts",
       "!**/public-chat/widget/ui.ts",
       "!**/public-chat/widget/stream-transport.ts",
-      "!**/public-chat/widget/widget.entry.ts"
+      "!**/public-chat/widget/widget.entry.ts",
+      "!**/public-chat/widget/markdown-render.ts"
     ],
     "coverageReporters": [
       "text",

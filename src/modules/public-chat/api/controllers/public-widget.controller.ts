@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
 import { readFile } from 'fs/promises';
 import { ConfigService } from '../../../../shared/config';
 
@@ -29,10 +30,15 @@ export class PublicWidgetController {
   constructor(private readonly config: ConfigService) {}
 
   @Get('v1/widget.js')
+  @AllowAnonymous()
   async serveBundle(@Res() response: Response): Promise<void> {
     const bundle = await this.load();
     response.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-    response.setHeader('Cache-Control', 'public, max-age=3600');
+    // `no-cache` = the browser may cache but MUST revalidate each load, so a
+    // redeployed bundle (the path is major-pinned at /v1/ but its content
+    // changes on release) reaches embedded pages immediately instead of being
+    // stuck behind a long max-age.
+    response.setHeader('Cache-Control', 'no-cache');
     response.send(bundle);
   }
 
@@ -55,3 +61,4 @@ export class PublicWidgetController {
     }
   }
 }
+

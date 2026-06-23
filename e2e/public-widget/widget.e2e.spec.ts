@@ -48,6 +48,29 @@ test.describe('public web-chat widget', () => {
     await expect(chip).toHaveAttribute('href', 'https://example.com/pricing');
   });
 
+  test('renders the streamed answer as formatted markdown (heading + list + bold)', async ({
+    page,
+  }) => {
+    await page.goto(ALLOWED);
+    await page.locator(launcher).click();
+    await page.locator(input).fill('Give me the MARKDOWN summary');
+    await page.locator(input).press('Enter');
+
+    // Markdown is rendered to real DOM nodes (createElement), not printed raw.
+    await expect(page.locator(`${answer} h2`)).toHaveText('Quarterly results');
+    await expect(page.locator(`${answer} li`)).toHaveCount(2);
+    await expect(page.locator(`${answer} li strong`).first()).toHaveText('Revenue:');
+    // The raw markdown markers must NOT leak through as literal text.
+    await expect(page.locator(answer)).not.toContainText('##');
+    await expect(page.locator(answer)).not.toContainText('**');
+
+    // Trust boundary: a safe http(s) link renders as an anchor; an unsafe
+    // javascript: link renders as plain text with NO anchor (no XSS sink).
+    await expect(page.locator(`${answer} a[href="https://example.com/r"]`)).toHaveText('report');
+    await expect(page.locator(`${answer} a`)).toHaveCount(1);
+    await expect(page.locator(`${answer}`)).toContainText('evil');
+  });
+
   test('shows the partial answer then a connection-closed error when the stream drops before done', async ({
     page,
   }) => {

@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
 import { ConfigService } from '../../../../shared/config';
 import { PublicChatService } from '../../application/public-chat.service';
 import type { RequestWithEmbedScope } from '../../application/embed-scope';
@@ -69,6 +70,7 @@ export class PublicChatController {
    * + per-request CORS) so it can't be a cheap key-enumeration oracle (§4).
    */
   @Get('config')
+  @AllowAnonymous()
   async getConfig(
     @Req() request: Request & RequestWithEmbedScope,
   ): Promise<{ theme: Record<string, unknown> | null }> {
@@ -80,6 +82,7 @@ export class PublicChatController {
   }
 
   @Post('ask/stream')
+  @AllowAnonymous()
   async askStream(
     @Req() request: Request & RequestWithEmbedScope,
     @Body() body: PublicAskBody,

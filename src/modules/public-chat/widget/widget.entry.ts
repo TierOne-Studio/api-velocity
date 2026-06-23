@@ -23,18 +23,32 @@ import { mountWidget } from './ui';
   if (!embedKey) {
     // No key → nothing to authenticate as. Fail loud in the console; render
     // nothing (the host page is misconfigured).
-    console.error('[velocity-widget] missing required data-embed-key attribute');
+    console.error(
+      '[velocity-widget] missing required data-embed-key attribute',
+    );
     return;
   }
 
   const apiBase = script.dataset.apiBase ?? new URL(script.src).origin;
+  // `document.currentScript` is only valid during this synchronous execution,
+  // so capture the script's dataset NOW; the actual mount is deferred below.
   const dataset: Record<string, string> = { ...script.dataset };
 
-  const host = document.createElement('div');
-  host.setAttribute('data-velocity-widget', '');
-  document.body.appendChild(host);
+  const mount = (): void => {
+    const host = document.createElement('div');
+    host.setAttribute('data-velocity-widget', '');
+    document.body.appendChild(host);
+    void boot(embedKey, apiBase, dataset, host);
+  };
 
-  void boot(embedKey, apiBase, dataset, host);
+  // The snippet may be pasted in <head> (or anywhere before </body>), where
+  // `document.body` is still null at script-execution time. Defer the mount
+  // until the DOM is ready so placement doesn't matter.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', mount, { once: true });
+  } else {
+    mount();
+  }
 })();
 
 async function boot(

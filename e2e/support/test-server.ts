@@ -55,6 +55,14 @@ const repo = {
 const agent = {
   generateReplyStreaming: async function* (params: { question?: string }) {
     yield { type: 'searching', query: 'pricing' };
+    if (params?.question?.includes('MARKDOWN')) {
+      const md =
+        '## Quarterly results\n\n- **Revenue:** up 12%\n- **Churn:** down 3%\n\n' +
+        'See [report](https://example.com/r) and [evil](javascript:alert(1)).';
+      yield { type: 'chunk', content: md };
+      yield { type: 'done', reply: { content: md, metadata: { sources: [] } } };
+      return;
+    }
     yield { type: 'chunk', content: 'The answer is 42.' };
     if (params?.question?.includes('DROP')) {
       // Simulate a transport drop: end the stream WITHOUT a terminal `done`
@@ -120,13 +128,16 @@ class WidgetE2EHarnessModule implements NestModule {
 }
 
 function hostPage(): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>host</title></head>
-<body><h1>Host page</h1>
+  // The <script> is intentionally placed in <head> (where document.body is null
+  // at execution time) so the e2e exercises the DOMContentLoaded-deferred mount
+  // — the widget must still render. Customer snippets are commonly in <head>.
+  return `<!doctype html><html><head><meta charset="utf-8"><title>host</title>
 <script src="http://localhost:${API_PORT}/api/public/widget/v1/widget.js"
         data-embed-key="wgt_pub_ok"
         data-api-base="http://localhost:${API_PORT}"
         data-launcher-label="Ask"></script>
-</body></html>`;
+</head>
+<body><h1>Host page</h1></body></html>`;
 }
 
 function startStatic(port: number): Promise<void> {

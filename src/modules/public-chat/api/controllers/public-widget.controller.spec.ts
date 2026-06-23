@@ -51,12 +51,14 @@ describe('PublicWidgetController — GET /api/public/widget/v1/widget.js', () =>
     expect(res.text).toBe(BUNDLE_BODY);
   });
 
-  it('serves a public, uncredentialed, cacheable response', async () => {
+  it('serves a revalidated (no-cache), uncredentialed response', async () => {
     app = await makeApp(bundlePath);
     const res = await request(app.getHttpServer()).get(
       '/api/public/widget/v1/widget.js',
     );
-    expect(res.headers['cache-control']).toMatch(/public/);
+    // no-cache → the browser must revalidate each load, so a redeployed bundle
+    // reaches embedded pages immediately (not stuck behind a long max-age).
+    expect(res.headers['cache-control']).toMatch(/no-cache/);
     expect(res.headers['access-control-allow-credentials']).toBeUndefined();
   });
 
