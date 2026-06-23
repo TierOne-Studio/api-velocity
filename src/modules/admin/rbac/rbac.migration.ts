@@ -49,6 +49,11 @@ const ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS = [
   { resource: 'vector-db', action: 'update' },
   { resource: 'vector-db', action: 'delete' },
   { resource: 'vector-db', action: 'upload' },
+  // embed-site:* per SPEC-003 Slice 2 — admin holds the full CRUD set.
+  { resource: 'embed-site', action: 'read' },
+  { resource: 'embed-site', action: 'create' },
+  { resource: 'embed-site', action: 'update' },
+  { resource: 'embed-site', action: 'delete' },
 ] as const;
 
 const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
@@ -90,6 +95,12 @@ const ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS = [
   { resource: 'vector-db', action: 'create' },
   { resource: 'vector-db', action: 'update' },
   { resource: 'vector-db', action: 'upload' },
+  // embed-site: manager gets read/create/update but NOT delete. Tearing down a
+  // public-facing widget is admin-only — mirrors the airweave/vector-db delete
+  // asymmetry (ADR-011, rbac_023). SPEC-003 §9.5 defers the matrix to impl.
+  { resource: 'embed-site', action: 'read' },
+  { resource: 'embed-site', action: 'create' },
+  { resource: 'embed-site', action: 'update' },
 ] as const;
 
 const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
@@ -102,6 +113,8 @@ const ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS = [
   // sql-connection:* per ADR-012 — member inherits read only from organization:read.
   { resource: 'sql-connection', action: 'read' },
   { resource: 'vector-db', action: 'read' },
+  // embed-site: member is read-only (inherits from organization:read).
+  { resource: 'embed-site', action: 'read' },
 ] as const;
 
 /**
@@ -209,6 +222,10 @@ export class RbacMigrationService implements OnModuleInit {
       {
         name: 'rbac_024_add_vector_db_upload_permission',
         up: () => this.addVectorDbUploadPermission(),
+      },
+      {
+        name: 'rbac_025_add_embed_site_permissions',
+        up: () => this.addEmbedSitePermissions(),
       },
     ];
 
@@ -2144,6 +2161,157 @@ export class RbacMigrationService implements OnModuleInit {
 
     console.log(
       '✅ vector-db:upload permission added and granted to admin + manager (custom roles inherit from organization:update)',
+    );
+  }
+
+  /**
+   * Add embed-site:* permissions for the SPEC-003 public web-chat widget admin
+   * surface (Slice 2). Resource `embed-site` with four actions
+   * (read/create/update/delete).
+   *
+   * Distribution mirrors the vector-db precedent (rbac_022 + rbac_023):
+   *  - admin: full CRUD.
+   *  - manager: read/create/update but NOT delete — tearing down a public-facing
+   *    widget is admin-only (the airweave/vector-db delete asymmetry, ADR-011).
+   *  - member: read only.
+   * Custom roles inherit additively: create/update from organization:update,
+   * read from organization:read. delete is NOT inheritable — it flows only to
+   * admin/superadmin via the default-role sync, so a custom role holding
+   * organization:update never silently gains the ability to destroy embed sites.
+   *
+   * NOT wrapped in db.transaction — syncRolePermissions does its own
+   * DELETE-then-INSERT against this.db; a wrapper would be false atomicity.
+   * Mirrors the addVectorDb/addSqlConnection precedent; converges on re-run via
+   * hasMigrationRun + ON CONFLICT DO NOTHING + the allowlist re-sync.
+   */
+  async addEmbedSitePermissions(): Promise<void> {
+    const embedSitePermissions = [
+      ['embed-site', 'read', 'View embed sites (public web-chat widgets)'],
+      ['embed-site', 'create', 'Create embed sites'],
+      ['embed-site', 'update', 'Update embed sites, including rotating the key'],
+      ['embed-site', 'delete', 'Delete embed sites'],
+    ] as const;
+
+    // 1. Register the 4 permissions in the catalog.
+    for (const [resource, action, description] of embedSitePermissions) {
+      await this.db.query(
+        `INSERT INTO permissions (resource, action, description)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (resource, action) DO NOTHING`,
+        [resource, action, description],
+      );
+    }
+
+    // 2. Grant all embed-site permissions to the global superadmin role
+    //    (redundant per PermissionsGuard bypass, matches the established
+    //    repo pattern — see addVectorDbPermissions precedent).
+    const superadminRole = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM roles WHERE name = 'superadmin' AND organization_id IS NULL`,
+    );
+    if (superadminRole) {
+      await this.db.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT $1, p.id
+         FROM permissions p
+         WHERE p.resource = 'embed-site'
+         ON CONFLICT DO NOTHING`,
+        [superadminRole.id],
+      );
+    }
+
+    // 3. Re-sync global admin/manager/member roles from updated constants.
+    const globalRoles = await this.db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM roles
+       WHERE organization_id IS NULL
+         AND name IN ('admin', 'manager', 'member')`,
+    );
+    for (const role of globalRoles) {
+      if (role.name === 'admin') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      } else if (role.name === 'manager') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      } else if (role.name === 'member') {
+        await this.syncRolePermissions(
+          role.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    // 4. Re-sync org-scoped default roles across every organization.
+    const organizations = await this.db.query<{ id: string }>(
+      `SELECT id FROM organization`,
+    );
+    for (const organization of organizations) {
+      const adminRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'admin'`,
+        [organization.id],
+      );
+      if (adminRole) {
+        await this.syncRolePermissions(
+          adminRole.id,
+          ORGANIZATION_ADMIN_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const managerRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'manager'`,
+        [organization.id],
+      );
+      if (managerRole) {
+        await this.syncRolePermissions(
+          managerRole.id,
+          ORGANIZATION_MANAGER_DEFAULT_PERMISSIONS,
+        );
+      }
+
+      const memberRole = await this.db.queryOne<{ id: string }>(
+        `SELECT id FROM roles WHERE organization_id = $1 AND name = 'member'`,
+        [organization.id],
+      );
+      if (memberRole) {
+        await this.syncRolePermissions(
+          memberRole.id,
+          ORGANIZATION_MEMBER_DEFAULT_PERMISSIONS,
+        );
+      }
+    }
+
+    // 5. Additive grant for CUSTOM roles. create/update inherit from
+    //    organization:update; read inherits from organization:read. delete is
+    //    deliberately EXCLUDED from inheritance — disposal is admin-only, so a
+    //    custom role holding organization:update never gains embed-site:delete.
+    await this.db.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT DISTINCT rp.role_id, p_new.id
+       FROM role_permissions rp
+       INNER JOIN permissions p_old ON p_old.id = rp.permission_id
+         AND p_old.resource = 'organization' AND p_old.action = 'update'
+       CROSS JOIN permissions p_new
+       WHERE p_new.resource = 'embed-site'
+         AND p_new.action IN ('create', 'update')
+       ON CONFLICT DO NOTHING`,
+    );
+    await this.db.query(
+      `INSERT INTO role_permissions (role_id, permission_id)
+       SELECT DISTINCT rp.role_id, p_new.id
+       FROM role_permissions rp
+       INNER JOIN permissions p_old ON p_old.id = rp.permission_id
+         AND p_old.resource = 'organization' AND p_old.action = 'read'
+       CROSS JOIN permissions p_new
+       WHERE p_new.resource = 'embed-site'
+         AND p_new.action = 'read'
+       ON CONFLICT DO NOTHING`,
+    );
+
+    console.log(
+      '✅ embed-site permissions added and assigned to default roles (superadmin/admin; manager read/create/update; member read); custom roles inherit create/update from organization:update and read from organization:read (delete admin-only)',
     );
   }
 }

@@ -295,6 +295,17 @@ export class EmbedSitesMigrationService implements OnModuleInit {
 
 ### 9.3 TypeORM entity + domain type + repository port
 
+> **As shipped (Slices 1–2):** the entity sketch below is illustrative; the
+> module persists via a **raw-SQL `DatabaseService` adapter**
+> (`EmbedSiteDatabaseRepository`), the ADR-001 fallback — justified by the atomic
+> `INSERT … ON CONFLICT … RETURNING` usage-counter increment (§9.6) and reuse of
+> the raw-SQL testcontainers harness shared with the sibling chat/projects
+> modules. The clean-architecture port (`EMBED_SITE_REPOSITORY` Symbol token) is
+> preserved exactly as below; only the adapter is raw-SQL rather than TypeORM.
+> The port ships the two public-channel methods (Slice 1) plus the org-scoped
+> admin CRUD (`findById`/`listByOrg`/`create`/`update`/`rotateKey`/`delete`,
+> Slice 2).
+
 ```ts
 // infrastructure/persistence/entities/embed-site.typeorm-entity.ts  (sketch)
 @Entity('embed_site')
@@ -381,9 +392,16 @@ export interface PublicWidgetConfig {
 ### 9.5 RBAC scopes (added to the role matrix migration)
 
 New permissions `embed-site:{read,create,update,delete}` registered in the RBAC
-migration's permission catalog and mapped across the role matrix (admin/manager
-get write; viewer read — exact matrix is a §7.8/implementation decision).
-The public endpoints carry **no** RBAC scope (auth is the key + origin allowlist).
+migration's permission catalog (`rbac_025_add_embed_site_permissions`, mirroring
+the `addVectorDbPermissions` precedent). **Implemented role matrix** (decided per
+the §7.8 deferral, following the airweave/vector-db delete-is-admin-only
+precedent): **admin** = full CRUD; **manager** = read/create/update (**not**
+delete — disposing of a public widget is admin-only); **member** = read.
+Custom roles inherit additively: create/update from `organization:update`, read
+from `organization:read`; **delete is NOT inheritable** (flows only to
+admin/superadmin). `rotate-key` is gated on `embed-site:update` (no separate
+action). The public endpoints carry **no** RBAC scope (auth is the key + origin
+allowlist).
 
 ### 9.6 Table: `embed_usage_counter` (durable monthly cap)
 

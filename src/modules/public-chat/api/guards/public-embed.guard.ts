@@ -9,7 +9,7 @@ import {
 import type { Request, Response } from 'express';
 import { EMBED_SITE_REPOSITORY } from '../../../embed-sites/domain/repositories/embed-site.repository.interface';
 import type { EmbedSiteRepositoryPort } from '../../../embed-sites/domain/repositories/embed-site.repository.interface';
-import { normalizeOrigin } from '../../application/normalize-origin';
+import { normalizeOrigin } from '../../../../shared/utils/normalize-origin';
 import type { RequestWithEmbedScope } from '../../application/embed-scope';
 
 export const EMBED_KEY_HEADER = 'x-velocity-embed-key';

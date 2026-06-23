@@ -12,6 +12,10 @@ import type { DatabaseService } from '../../shared/infrastructure/database/datab
 import type { ProjectsMigrationService } from '../projects/projects.migration';
 import { EmbedSitesMigrationService } from './embed-sites.migration';
 import { EmbedSiteDatabaseRepository } from './infrastructure/persistence/repositories/embed-site.database-repository';
+import {
+  EmbedSiteProjectConflictError,
+  EmbedSitePublicKeyCollisionError,
+} from './domain/repositories/embed-site.repository.interface';
 
 function makeDb(pool: Pool): DatabaseService {
   return {
@@ -191,6 +195,246 @@ describe('EmbedSite persistence — real Postgres', () => {
       await repo.incrementMonthlyUsage(orgA);
       await repo.incrementMonthlyUsage(orgA);
       await expect(repo.incrementMonthlyUsage(orgB)).resolves.toBe(1);
+    });
+  });
+
+  // --- Admin CRUD (Slice 2) ---
+
+  // Create an org + project WITHOUT an embed site, so create() can be exercised.
+  async function seedOrgProject(
+    label: string,
+  ): Promise<{ orgId: string; projectId: string }> {
+    const orgId = `org-${label}`;
+    const projectId = randomUUID();
+    await pool.query(
+      `INSERT INTO organization (id) VALUES ($1) ON CONFLICT DO NOTHING`,
+      [orgId],
+    );
+    await pool.query(
+      `INSERT INTO project (id, organization_id) VALUES ($1, $2)`,
+      [projectId, orgId],
+    );
+    return { orgId, projectId };
+  }
+
+  describe('create', () => {
+    it('persists a new embed site with generated key + normalized origins', async () => {
+      const { orgId, projectId } = await seedOrgProject('crt1');
+      const site = await repo.create({
+        id: randomUUID(),
+        organizationId: orgId,
+        projectId,
+        name: 'My Widget',
+        publicKey: 'wgt_pub_crt1',
+        allowedOrigins: ['https://customer.com'],
+        theme: { color: 'blue' },
+      });
+      expect(site).toMatchObject({
+        organizationId: orgId,
+        projectId,
+        name: 'My Widget',
+        publicKey: 'wgt_pub_crt1',
+        allowedOrigins: ['https://customer.com'],
+        enabled: true,
+        theme: { color: 'blue' },
+      });
+      // Round-trips via the public hot path.
+      const viaKey = await repo.findByPublicKey('wgt_pub_crt1');
+      expect(viaKey?.id).toBe(site.id);
+    });
+
+    it('throws EmbedSiteProjectConflictError when the project already has a site', async () => {
+      const { orgId, projectId } = await seedOrgProject('crt2');
+      await repo.create({
+        id: randomUUID(),
+        organizationId: orgId,
+        projectId,
+        name: 'First',
+        publicKey: 'wgt_pub_crt2a',
+        allowedOrigins: [],
+        theme: null,
+      });
+      await expect(
+        repo.create({
+          id: randomUUID(),
+          organizationId: orgId,
+          projectId,
+          name: 'Second',
+          publicKey: 'wgt_pub_crt2b',
+          allowedOrigins: [],
+          theme: null,
+        }),
+      ).rejects.toBeInstanceOf(EmbedSiteProjectConflictError);
+    });
+
+    it('throws EmbedSitePublicKeyCollisionError on a duplicate public key', async () => {
+      const a = await seedOrgProject('crt3a');
+      const b = await seedOrgProject('crt3b');
+      await repo.create({
+        id: randomUUID(),
+        organizationId: a.orgId,
+        projectId: a.projectId,
+        name: 'A',
+        publicKey: 'wgt_pub_shared',
+        allowedOrigins: [],
+        theme: null,
+      });
+      await expect(
+        repo.create({
+          id: randomUUID(),
+          organizationId: b.orgId,
+          projectId: b.projectId,
+          name: 'B',
+          publicKey: 'wgt_pub_shared',
+          allowedOrigins: [],
+          theme: null,
+        }),
+      ).rejects.toBeInstanceOf(EmbedSitePublicKeyCollisionError);
+    });
+
+    it('lets exactly one of two concurrent creates on the same project win', async () => {
+      const { orgId, projectId } = await seedOrgProject('crt4');
+      const results = await Promise.allSettled([
+        repo.create({
+          id: randomUUID(),
+          organizationId: orgId,
+          projectId,
+          name: 'one',
+          publicKey: 'wgt_pub_crt4a',
+          allowedOrigins: [],
+          theme: null,
+        }),
+        repo.create({
+          id: randomUUID(),
+          organizationId: orgId,
+          projectId,
+          name: 'two',
+          publicKey: 'wgt_pub_crt4b',
+          allowedOrigins: [],
+          theme: null,
+        }),
+      ]);
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(
+        (rejected[0] as PromiseRejectedResult).reason,
+      ).toBeInstanceOf(EmbedSiteProjectConflictError);
+    });
+  });
+
+  describe('findById / listByOrg (org-scoped)', () => {
+    it('returns a site by id within its org, null for another org', async () => {
+      const seeded = await seedEmbedSite('fid1');
+      await expect(
+        repo.findById(seeded.siteId, seeded.orgId),
+      ).resolves.toMatchObject({ id: seeded.siteId });
+      // Cross-org lookup is invisible (→ null → service 404).
+      await expect(
+        repo.findById(seeded.siteId, 'org-someone-else'),
+      ).resolves.toBeNull();
+    });
+
+    it('lists only the calling org sites', async () => {
+      const a = await seedEmbedSite('lst-a');
+      await seedEmbedSite('lst-b'); // different org
+      const list = await repo.listByOrg(a.orgId);
+      expect(list).toHaveLength(1);
+      expect(list[0].id).toBe(a.siteId);
+    });
+  });
+
+  describe('update (org-scoped)', () => {
+    it('patches fields and bumps updated_at', async () => {
+      const seeded = await seedEmbedSite('upd1');
+      const updated = await repo.update(seeded.siteId, seeded.orgId, {
+        name: 'Renamed',
+        enabled: false,
+        allowedOrigins: ['https://new.example.com'],
+        theme: { color: 'red' },
+      });
+      expect(updated).toMatchObject({
+        name: 'Renamed',
+        enabled: false,
+        allowedOrigins: ['https://new.example.com'],
+        theme: { color: 'red' },
+      });
+    });
+
+    it('returns null when the site belongs to another org (no cross-org write)', async () => {
+      const seeded = await seedEmbedSite('upd2');
+      await expect(
+        repo.update(seeded.siteId, 'org-other', { name: 'hijack' }),
+      ).resolves.toBeNull();
+      // Original is untouched.
+      const original = await repo.findById(seeded.siteId, seeded.orgId);
+      expect(original?.name).toBe('Site upd2');
+    });
+
+    // SPEC-003 §7.8: admin allowedOrigins/enabled edits "take effect on the next
+    // public request". There is no cache — the public guard reads the live row
+    // via findByPublicKey — so an admin disable is visible immediately on the
+    // public hot path (the guard's 401 input). Proven at the write→read seam.
+    it('propagates an admin enabled:false / origin edit to the public key lookup', async () => {
+      const seeded = await seedEmbedSite('upd3');
+      await repo.update(seeded.siteId, seeded.orgId, {
+        enabled: false,
+        allowedOrigins: ['https://only-this.example.com'],
+      });
+      const viaPublic = await repo.findByPublicKey(seeded.publicKey);
+      expect(viaPublic?.enabled).toBe(false);
+      expect(viaPublic?.allowedOrigins).toEqual([
+        'https://only-this.example.com',
+      ]);
+    });
+  });
+
+  describe('rotateKey (org-scoped)', () => {
+    it('replaces the key and invalidates the old one on the public channel', async () => {
+      const seeded = await seedEmbedSite('rot1');
+      const rotated = await repo.rotateKey(
+        seeded.siteId,
+        seeded.orgId,
+        'wgt_pub_rotated1',
+      );
+      expect(rotated?.publicKey).toBe('wgt_pub_rotated1');
+      // Old key no longer resolves; new key does.
+      await expect(repo.findByPublicKey(seeded.publicKey)).resolves.toBeNull();
+      await expect(
+        repo.findByPublicKey('wgt_pub_rotated1'),
+      ).resolves.toMatchObject({ id: seeded.siteId });
+    });
+
+    it('returns null for another org (no cross-org rotation)', async () => {
+      const seeded = await seedEmbedSite('rot2');
+      await expect(
+        repo.rotateKey(seeded.siteId, 'org-other', 'wgt_pub_x'),
+      ).resolves.toBeNull();
+    });
+
+    it('throws on a colliding new key', async () => {
+      const existing = await seedEmbedSite('rot3a');
+      const target = await seedEmbedSite('rot3b');
+      await expect(
+        repo.rotateKey(target.siteId, target.orgId, existing.publicKey),
+      ).rejects.toBeInstanceOf(EmbedSitePublicKeyCollisionError);
+    });
+  });
+
+  describe('delete (org-scoped)', () => {
+    it('removes a site within its org and reports success', async () => {
+      const seeded = await seedEmbedSite('del1');
+      await expect(repo.delete(seeded.siteId, seeded.orgId)).resolves.toBe(true);
+      await expect(repo.findByPublicKey(seeded.publicKey)).resolves.toBeNull();
+    });
+
+    it('does not delete a site from another org (returns false)', async () => {
+      const seeded = await seedEmbedSite('del2');
+      await expect(repo.delete(seeded.siteId, 'org-other')).resolves.toBe(false);
+      await expect(
+        repo.findById(seeded.siteId, seeded.orgId),
+      ).resolves.not.toBeNull();
     });
   });
 });

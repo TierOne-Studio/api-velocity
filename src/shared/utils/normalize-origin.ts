@@ -5,7 +5,8 @@
  * dropped. Returns `null` for a missing or unparseable origin.
  *
  * Exact match on the normalized value only — never suffix/substring matching,
- * which is a classic CORS-bypass footgun.
+ * which is a classic CORS-bypass footgun. Shared between the public-chat embed
+ * guard (request-time) and the embed-sites admin write path (store-normalized).
  */
 export function normalizeOrigin(
   origin: string | null | undefined,

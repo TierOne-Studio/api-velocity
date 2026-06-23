@@ -57,8 +57,10 @@ async function makeApp(
   streamImpl: () => AsyncGenerator<ChatStreamEvent> = happyStream,
   rateLimits: { perIp?: number; perKey?: number } = {},
 ): Promise<INestApplication> {
-  const repo: EmbedSiteRepositoryPort = {
-    async findByPublicKey(key) {
+  // Only the two public-path methods are exercised here; the admin CRUD methods
+  // on the port (Slice 2) are never hit on this channel.
+  const repo = {
+    async findByPublicKey(key: string) {
       if (key === OK_KEY) return site();
       if (key === DISABLED_KEY) return site({ enabled: false });
       return null;
@@ -66,7 +68,7 @@ async function makeApp(
     async incrementMonthlyUsage() {
       return 1;
     },
-  };
+  } as unknown as EmbedSiteRepositoryPort;
 
   const agent = {
     generateReplyStreaming: () => streamImpl(),
