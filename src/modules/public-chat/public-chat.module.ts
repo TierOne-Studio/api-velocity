@@ -9,6 +9,7 @@ import { ChatModule } from '../chat/chat.module';
 import { EmbedSitesModule } from '../embed-sites/embed-sites.module';
 import { ProjectsModule } from '../projects';
 import { PublicChatController } from './api/controllers/public-chat.controller';
+import { PublicWidgetController } from './api/controllers/public-widget.controller';
 import { PublicCorsMiddleware } from './api/middleware/public-cors.middleware';
 import { PublicEmbedGuard } from './api/guards/public-embed.guard';
 import { PublicRateLimitGuard } from './api/guards/public-rate-limit.guard';
@@ -22,7 +23,7 @@ import { PublicChatService } from './application/public-chat.service';
  */
 @Module({
   imports: [EmbedSitesModule, ProjectsModule, AdminModule, ChatModule],
-  controllers: [PublicChatController],
+  controllers: [PublicChatController, PublicWidgetController],
   providers: [PublicChatService, PublicEmbedGuard, PublicRateLimitGuard],
 })
 export class PublicChatModule implements NestModule {

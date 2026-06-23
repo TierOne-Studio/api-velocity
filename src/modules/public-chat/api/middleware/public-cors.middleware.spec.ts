@@ -70,12 +70,14 @@ describe('PublicCorsMiddleware', () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  it('does not advertise GET in the preflight (only POST is served)', () => {
+  it('advertises GET, POST, OPTIONS in the preflight (GET serves /config, POST serves /ask)', () => {
     const res = makeRes();
     const next = jest.fn() as unknown as NextFunction;
 
     middleware.use(makeReq('OPTIONS', 'https://customer.com'), res, next);
 
-    expect(res.headers['Access-Control-Allow-Methods']).toBe('POST, OPTIONS');
+    expect(res.headers['Access-Control-Allow-Methods']).toBe(
+      'GET, POST, OPTIONS',
+    );
   });
 });

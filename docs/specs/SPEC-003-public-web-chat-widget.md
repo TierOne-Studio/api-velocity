@@ -606,6 +606,7 @@ Key points:
 | Reused core / wiring | **`ChatAgentService.generateReplyStreaming`** (stateless). **Shipped:** exported from `ChatModule`, imported by `PublicChatModule`; extraction into a dedicated shared **`chat-agent` sub-module** deferred as a Future follow-up (P3.5; see §10.4). Anonymous `userId` sentinel = `'anonymous'`. |
 | Theming | **`data-*` attributes + server `GET /config`**, `data-*` overrides. Theme applied as shadow-DOM CSS custom properties only (trust boundary). |
 | Stream schema | **Reuse the existing chat stream events.** |
+| Answer rendering (widget v1) | **Plain text** (`textContent`, whitespace-preserved) — no markdown renderer in the bundle, so LLM output cannot inject markup (XSS-safe by construction). Rich markdown rendering → Future. Shipped in Slice 3; build target = esbuild, browser test = Playwright (ADR-020). |
 | Question max length | **2000 characters.** |
 | Key format | **`X-Velocity-Embed-Key`** header; value `wgt_pub_` + ≥128-bit CSPRNG (identifier, not secret). |
 | Origin matching | **Exact match on normalized origin** (lowercased scheme+host, default port elided, no trailing slash); normalized on admin write + request. |
@@ -614,10 +615,16 @@ Key points:
 
 - Exact rate-limit numeric defaults (per-IP/min, per-key ceiling, monthly cap) —
   tune during implementation/hardening.
-- Whether `GET /config` is a real endpoint or inlined into the bundle to save a
-  round-trip.
-- The CORS mechanism on the public prefix — scoped middleware/guard vs controller-
-  level handler (ADR-019 "Follow-ups"); decided at implementation.
+- ~~Whether `GET /config` is a real endpoint or inlined into the bundle to save a
+  round-trip.~~ **Resolved (Slice 3):** shipped as a **real endpoint**
+  (`GET /api/public/chat/config`) on the public-chat controller, behind the same
+  per-key throttler + embed guard + per-request CORS as `ask`, so an admin theme
+  change takes effect without re-issuing the bundle. See §4, ADR-020.
+- ~~The CORS mechanism on the public prefix — scoped middleware/guard vs
+  controller-level handler.~~ **Resolved (Slice 1/3):** Express-style
+  `PublicCorsMiddleware` on the `api/public/*` prefix for the keyless preflight
+  (now advertising `GET, POST, OPTIONS`), with the actual-request `ACAO` emitted by
+  `PublicEmbedGuard` only after the origin matches (ADR-019).
 
 ## 13. Implementation plan (sliced, risk-first)
 

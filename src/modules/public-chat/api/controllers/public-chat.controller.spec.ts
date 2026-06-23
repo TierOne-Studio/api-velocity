@@ -65,6 +65,12 @@ async function makeApp(
       if (key === DISABLED_KEY) return site({ enabled: false });
       return null;
     },
+    async findById(id: string, organizationId: string) {
+      if (id === 'site-1' && organizationId === 'org-1') {
+        return site({ theme: { primaryColor: '#0a7d55' } });
+      }
+      return null;
+    },
     async incrementMonthlyUsage() {
       return 1;
     },
@@ -239,5 +245,46 @@ describe('PublicChatController (HTTP) — POST /api/public/chat/ask/stream', () 
     expect(response.text).toContain('Failed to stream message');
     // The internal Error detail must NOT reach the anonymous client.
     expect(response.text).not.toContain('secret detail');
+  });
+});
+
+describe('PublicChatController (HTTP) — GET /api/public/chat/config', () => {
+  let app: INestApplication;
+
+  afterEach(async () => {
+    if (app) await app.close();
+  });
+
+  const get = () => request(app.getHttpServer()).get('/api/public/chat/config');
+
+  it('returns the embed site theme for a valid key from an allowlisted origin', async () => {
+    app = await makeApp();
+    const response = await get()
+      .set('x-velocity-embed-key', OK_KEY)
+      .set('origin', ORIGIN)
+      .expect(200);
+
+    expect(response.body).toEqual({ theme: { primaryColor: '#0a7d55' } });
+  });
+
+  it('401 when the embed key header is missing (no enumeration oracle)', async () => {
+    app = await makeApp();
+    await get().set('origin', ORIGIN).expect(401);
+  });
+
+  it('403 for a valid key from a non-allowlisted origin', async () => {
+    app = await makeApp();
+    await get()
+      .set('x-velocity-embed-key', OK_KEY)
+      .set('origin', 'https://evil.com')
+      .expect(403);
+  });
+
+  it('is subject to the same per-key throttler as ask', async () => {
+    app = await makeApp(10000, happyStream, { perKey: 1, perIp: 1000 });
+    const fire = () =>
+      get().set('x-velocity-embed-key', OK_KEY).set('origin', ORIGIN);
+    await fire().expect(200);
+    await fire().expect(429);
   });
 });

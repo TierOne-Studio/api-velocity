@@ -762,6 +762,19 @@ export class ConfigService {
     });
   }
 
+  /**
+   * Absolute path to the built public widget bundle served at
+   * `/api/public/widget/v1/widget.js` (SPEC-003 Slice 3). Single source of
+   * truth so dev/prod/test each point it deliberately; produced by
+   * `npm run build:widget`. Overridable via env for non-standard layouts.
+   */
+  getWidgetBundlePath(): string {
+    return (
+      process.env.PUBLIC_WIDGET_BUNDLE_PATH ||
+      resolve(process.cwd(), 'dist', 'public-widget', 'widget.js')
+    );
+  }
+
   private boundedInt(
     envName: string,
     fallback: number,

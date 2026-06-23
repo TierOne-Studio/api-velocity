@@ -425,3 +425,7 @@ cookies.txt
 .claude/worktrees/
 .claude/settings.local.json
 CLAUDE.md.pre-refactor.bak
+
+# Playwright
+test-results/
+playwright-report/

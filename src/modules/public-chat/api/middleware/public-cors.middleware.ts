@@ -28,7 +28,10 @@ export class PublicCorsMiddleware implements NestMiddleware {
     }
 
     const origin = request.header('origin');
-    response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    // GET serves the public `/config` read; POST serves `/ask/stream`. Both
+    // carry the custom X-Velocity-Embed-Key header, so both trigger a preflight
+    // the browser gates on this method list (SPEC-003 §10.3).
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     response.setHeader(
       'Access-Control-Allow-Headers',
       'Content-Type, X-Velocity-Embed-Key',

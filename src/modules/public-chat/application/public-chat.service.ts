@@ -38,6 +38,26 @@ export class PublicChatService {
   ) {}
 
   /**
+   * Public widget config (SPEC-003 §4): the resolved embed site's theming, for
+   * the widget to self-render. The guard already authenticated the key + origin
+   * and put `embedSiteId`/`organizationId` on the scope — we re-fetch the site
+   * (org-scoped, defense in depth) rather than widen the minimal request scope
+   * to carry the theme. Returns only what the anonymous widget needs.
+   */
+  async getPublicConfig(
+    scope: EmbedScope,
+  ): Promise<{ theme: Record<string, unknown> | null }> {
+    const site = await this.embedSites.findById(
+      scope.embedSiteId,
+      scope.organizationId,
+    );
+    if (!site) {
+      throw new NotFoundException('Embed site not found');
+    }
+    return { theme: site.theme };
+  }
+
+  /**
    * Resolve scope, enforce the monthly cap, and return the answer stream. All
    * the failure modes that should surface as a clean HTTP status (404 unknown
    * project/org, 429 over cap) are raised HERE — before the caller flushes SSE

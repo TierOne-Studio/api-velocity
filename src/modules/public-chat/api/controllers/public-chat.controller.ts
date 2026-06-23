@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   HttpException,
   HttpStatus,
   Post,
@@ -61,6 +62,21 @@ export class PublicChatController {
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       message: genericMessage,
     };
+  }
+
+  /**
+   * Public widget theming. Same guards as `ask` (per-key throttle + embed auth
+   * + per-request CORS) so it can't be a cheap key-enumeration oracle (§4).
+   */
+  @Get('config')
+  async getConfig(
+    @Req() request: Request & RequestWithEmbedScope,
+  ): Promise<{ theme: Record<string, unknown> | null }> {
+    const scope = request.embedScope;
+    if (!scope) {
+      throw new UnauthorizedException('Embed scope missing');
+    }
+    return this.publicChatService.getPublicConfig(scope);
   }
 
   @Post('ask/stream')
