@@ -135,7 +135,8 @@ function hostPage(): string {
 <script src="http://localhost:${API_PORT}/api/public/widget/v1/widget.js"
         data-embed-key="wgt_pub_ok"
         data-api-base="http://localhost:${API_PORT}"
-        data-launcher-label="Ask"></script>
+        data-launcher-label="Ask"
+        data-theme="obsidian"></script>
 </head>
 <body><h1>Host page</h1></body></html>`;
 }

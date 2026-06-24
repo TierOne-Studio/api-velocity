@@ -85,10 +85,12 @@ scoping, and abuse controls. See the proposal for the full rationale table.
 - **Per-request CORS** for the `api/public/*` prefix, allowlist-driven,
   `credentials: false`, independent of `trustedOrigins`.
 - **Embed script**: standalone widget bundle served by the API at a
-  version-pinned URL (`/api/public/widget/v1/widget.js`); shadow-DOM UI;
-  streaming client; source chips (SPEC-002 dedupe semantics); theming via
-  `data-*` attributes on the script tag overriding server defaults from
-  `GET /config`.
+  version-pinned URL (`/api/public/widget/v1/widget.js`); shadow-DOM UI branded
+  as **"AI Agent"** with a robot icon and a "Powered by Velocity" footer;
+  streaming client; source chips (SPEC-002 dedupe semantics); theming via a
+  named **preset** (`data-theme` — one of `cloud | obsidian | neo-brutalism |
+  mono-chrome`, default `default`) plus fine-grained `data-*` attribute and
+  `GET /config` overrides.
 
 **Out of scope (v1) → Future:**
 
@@ -119,9 +121,10 @@ scoping, and abuse controls. See the proposal for the full rationale table.
     per-key throttler** as `ask` — otherwise it is a cheap key-enumeration oracle
     (a valid key resolves a site; an invalid one 401s). The `401` message must not
     distinguish unknown vs disabled (§10.2).
-  - Returns the public theming/config (color, position, greeting, …) for the
-    widget to self-render. `data-*` attributes on the host `<script>` override
-    these values client-side.
+  - Returns the public theming/config (color, position, greeting, optional
+    `preset` id, …) for the widget to self-render. `data-*` attributes on the
+    host `<script>` override these values client-side; `data-theme` (preset id)
+    takes precedence over a server-supplied `preset`.
 - **Key format & generation:** `public_key` is `wgt_pub_` + ≥128 bits of CSPRNG
   entropy, base62-encoded. Generated server-side on create/rotate; on the rare
   `UNIQUE(public_key)` collision, regenerate and retry. High entropy is what makes
@@ -592,6 +595,14 @@ Key points:
   it only as **CSS custom properties inside the shadow DOM** — never interpolate a
   theme value into HTML or JS. Stated so the implementer treats theme as
   semi-trusted display config, not arbitrary markup.
+- **Preset trust boundary:** the `preset` id (from `data-theme` or server
+  `theme.preset`) is the **lowest-trust** input. It is consumed only via
+  `resolvePreset()`, which validates it against a fixed allowlist and returns a
+  code-defined palette — an unknown/missing id falls back to `default`
+  (fail-closed). The id is **never** interpolated into markup; the palette's
+  values reach the page solely as `--vw-*` custom properties. The robot icon is
+  static SVG built with `createElementNS` (no `innerHTML`). Boundary preserved by
+  construction.
 
 ## 11. Resolved decisions (v1)
 
@@ -604,7 +615,7 @@ Key points:
 | Rate limits | **Per-key + per-IP** (public module's own `ThrottlerModule` + custom `getTracker` on the key), fixed defaults. Admin-configurable limits → Future. |
 | Cost ceiling | **Org monthly request cap is non-optional in v1**, backed by a durable `embed_usage_counter` (§9.6, atomic increment) (`429` on exhaustion). Concurrent-stream limiting → Future. |
 | Reused core / wiring | **`ChatAgentService.generateReplyStreaming`** (stateless). **Shipped:** exported from `ChatModule`, imported by `PublicChatModule`; extraction into a dedicated shared **`chat-agent` sub-module** deferred as a Future follow-up (P3.5; see §10.4). Anonymous `userId` sentinel = `'anonymous'`. |
-| Theming | **`data-*` attributes + server `GET /config`**, `data-*` overrides. Theme applied as shadow-DOM CSS custom properties only (trust boundary). |
+| Theming | **Named presets + `data-*` attributes + server `GET /config`.** Four selectable presets (`cloud`, `obsidian`, `neo-brutalism`, `mono-chrome`) plus a backward-compatible `default`, selected by `data-theme` (precedence over server `theme.preset`); fine-grained `data-*` colors still override. Theme applied as shadow-DOM CSS custom properties only (trust boundary, §10.4). Widget branded "AI Agent" + robot icon + "Powered by Velocity" footer. The SPA embed-code modal surfaces the four presets with a live preview and writes `data-theme` into the snippet (snippet-only; not persisted to `embed_site.theme`). |
 | Stream schema | **Reuse the existing chat stream events.** |
 | Answer rendering (widget v1) | **Markdown**, rendered to DOM via `createElement`/`textContent` only (never `innerHTML`); links get an `href` only when `isSafeUrl` (http/https). Subset: headings, bold/italic, inline + fenced code, ordered/unordered lists, links, GFM tables — matching the platform chat. LLM output still cannot inject markup (§10.4 trust boundary holds by construction). Shipped in Slice 3; build = esbuild, browser test = Playwright (ADR-020). |
 | Question max length | **2000 characters.** |

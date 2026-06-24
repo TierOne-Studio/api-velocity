@@ -19,7 +19,7 @@ test.describe('public web-chat widget', () => {
     await page.goto(ALLOWED);
 
     // The widget mounts after fetching /config. data-launcher-label="Ask"
-    // overrides the default ("Chat") — proves the data-* override path.
+    // overrides the default ("AI Agent") — proves the data-* override path.
     await expect(page.locator(launcher)).toHaveText('Ask');
 
     // Server theme from GET /config reaches the shadow host as a CSS custom
@@ -31,10 +31,22 @@ test.describe('public web-chat widget', () => {
       );
     expect(primary).toBe('rgb(10, 125, 85)');
 
+    // The rebrand: a robot icon renders in the launcher (alongside the label)
+    // and again in the panel header — without disturbing the label text above.
+    await expect(page.locator(`${launcher} svg`)).toHaveCount(1);
+
     await page.locator(launcher).click();
     await expect(page.locator(panel)).toBeVisible();
     // Header title comes from the server theme.
     await expect(page.locator(panel)).toContainText('E2E Assistant');
+    await expect(page.locator(`${panel} .header svg`)).toHaveCount(1);
+    // "Powered by Velocity" footer with the brand emphasized.
+    await expect(page.locator('[data-testid="vw-powered"]')).toContainText(
+      'Powered by',
+    );
+    await expect(page.locator('[data-testid="vw-powered"] strong')).toHaveText(
+      'Velocity',
+    );
 
     await page.locator(input).fill('What is the answer?');
     await page.locator(input).press('Enter');
@@ -46,6 +58,32 @@ test.describe('public web-chat widget', () => {
     const chip = page.locator(`${sources} a`);
     await expect(chip).toHaveText('Pricing Guide · Confluence');
     await expect(chip).toHaveAttribute('href', 'https://example.com/pricing');
+  });
+
+  test('applies the data-theme preset palette as CSS custom properties (merged under server overrides)', async ({
+    page,
+  }) => {
+    await page.goto(ALLOWED);
+
+    // data-theme="obsidian" seeds the full palette; values reach the page only
+    // as --vw-* custom properties on the shadow host. --vw-header-bg is a
+    // preset-only key (the server theme doesn't set it), so it proves the
+    // preset palette was applied.
+    const headerBg = await page
+      .locator('[data-velocity-widget]')
+      .evaluate((el) =>
+        getComputedStyle(el as HTMLElement).getPropertyValue('--vw-header-bg').trim(),
+      );
+    expect(headerBg).toBe('#0a0a0a');
+
+    // The server theme's primaryColor still overrides the preset's primary —
+    // preset < server precedence holds.
+    const primary = await page
+      .locator('[data-velocity-widget]')
+      .evaluate((el) =>
+        getComputedStyle(el as HTMLElement).getPropertyValue('--vw-primary').trim(),
+      );
+    expect(primary).toBe('rgb(10, 125, 85)');
   });
 
   test('renders the streamed answer as formatted markdown (heading + list + bold)', async ({
