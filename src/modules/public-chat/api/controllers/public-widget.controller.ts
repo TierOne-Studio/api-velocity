@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
-import { readFile } from 'fs/promises';
+import { readFile } from 'node:fs/promises';
 import { ConfigService } from '../../../../shared/config';
 
 /**

@@ -36,7 +36,7 @@ import { mountWidget } from './ui';
 
   const mount = (): void => {
     const host = document.createElement('div');
-    host.setAttribute('data-velocity-widget', '');
+    host.dataset.velocityWidget = '';
     document.body.appendChild(host);
     void boot(embedKey, apiBase, dataset, host);
   };

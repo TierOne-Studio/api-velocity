@@ -4,7 +4,7 @@
 // `.ts` sources at runtime (the same job jest's moduleNameMapper does).
 require('ts-node').register({ transpileOnly: true, project: 'tsconfig.json' });
 
-const Module = require('module');
+const Module = require('node:module');
 const originalResolve = Module._resolveFilename;
 Module._resolveFilename = function (request, ...rest) {
   if (/^\.{1,2}\/.*\.js$/.test(request)) {
@@ -13,7 +13,7 @@ Module._resolveFilename = function (request, ...rest) {
     } catch (error) {
       // Only fall back to the `.ts` specifier on a genuine resolution miss —
       // re-throw any other loader error so real failures aren't masked.
-      if (!error || error.code !== 'MODULE_NOT_FOUND') {
+      if (error?.code !== 'MODULE_NOT_FOUND') {
         throw error;
       }
       return originalResolve.call(this, request.replace(/\.js$/, ''), ...rest);

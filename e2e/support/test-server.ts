@@ -13,8 +13,8 @@
  */
 import { Module, type MiddlewareConsumer, type NestModule, RequestMethod } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { createServer } from 'http';
-import { resolve } from 'path';
+import { createServer } from 'node:http';
+import { resolve } from 'node:path';
 import { ConfigService } from '../../src/shared/config';
 import { AdminOrganizationsService } from '../../src/modules/admin/organizations/application/services/admin-organizations.service';
 import { ChatAgentService } from '../../src/modules/chat/application/services/chat-agent.service';

@@ -26,7 +26,7 @@ export type BlockNode =
 
 const LIST_ITEM = /^\s*([-*+]|\d+\.)\s+(.*)$/;
 const HEADING = /^(#{1,6})\s+(.*)$/;
-const TABLE_SEPARATOR = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/;
+const TABLE_CELL_SEPARATOR = /^:?-+:?$/;
 
 /** Parse inline markup (bold/italic/code/links) within a single text span. */
 export function parseInline(text: string): InlineNode[] {
@@ -117,13 +117,27 @@ function splitTableRow(line: string): string[] {
   return s.split('|').map((cell) => cell.trim());
 }
 
+/**
+ * A GFM table delimiter row: ≥2 cells, each `:?-+:?` (optional alignment colons).
+ * Validated by splitting on `|` and testing each cell — rather than one
+ * backtracking-prone mega-regex (the prior single-regex form had super-linear
+ * runtime; Sonar S8786). This form is linear in the line length.
+ */
+function isTableSeparator(line: string): boolean {
+  if (!line.includes('|')) return false;
+  const cells = splitTableRow(line);
+  return (
+    cells.length >= 2 && cells.every((cell) => TABLE_CELL_SEPARATOR.test(cell))
+  );
+}
+
 function isBlockStart(line: string): boolean {
-  return HEADING.test(line) || /^```/.test(line) || LIST_ITEM.test(line);
+  return HEADING.test(line) || line.startsWith('```') || LIST_ITEM.test(line);
 }
 
 /** Parse a Markdown document into a flat list of block nodes. */
 export function parseMarkdown(md: string): BlockNode[] {
-  const lines = md.replace(/\r\n/g, '\n').split('\n');
+  const lines = md.replaceAll('\r\n', '\n').split('\n');
   const blocks: BlockNode[] = [];
   let i = 0;
 
@@ -135,10 +149,10 @@ export function parseMarkdown(md: string): BlockNode[] {
       continue;
     }
 
-    if (/^```/.test(line)) {
+    if (line.startsWith('```')) {
       const code: string[] = [];
       i++;
-      while (i < lines.length && !/^```/.test(lines[i])) {
+      while (i < lines.length && !lines[i].startsWith('```')) {
         code.push(lines[i]);
         i++;
       }
@@ -161,7 +175,7 @@ export function parseMarkdown(md: string): BlockNode[] {
     if (
       line.includes('|') &&
       i + 1 < lines.length &&
-      TABLE_SEPARATOR.test(lines[i + 1])
+      isTableSeparator(lines[i + 1])
     ) {
       const header = splitTableRow(line).map(parseInline);
       i += 2;

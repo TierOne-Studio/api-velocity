@@ -266,8 +266,9 @@ export class EmbedSitesService {
         throw err;
       }
     }
+    const reason = lastError instanceof Error ? lastError.message : 'unknown';
     throw new InternalServerErrorException(
-      `embed-site key generation failed after ${KEY_GENERATION_ATTEMPTS} attempts: ${String(lastError)}`,
+      `embed-site key generation failed after ${KEY_GENERATION_ATTEMPTS} attempts: ${reason}`,
     );
   }
 }

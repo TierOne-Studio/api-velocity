@@ -148,7 +148,7 @@ export function mountWidget(host: HTMLElement, theme: ResolvedTheme): WidgetUi {
 
   const launcher = document.createElement('button');
   launcher.className = 'launcher';
-  launcher.setAttribute('data-testid', 'vw-launcher');
+  launcher.dataset.testid = 'vw-launcher';
   launcher.style.cssText = side;
   const launcherLabel = document.createElement('span');
   launcherLabel.textContent = theme.launcherLabel;
@@ -156,7 +156,7 @@ export function mountWidget(host: HTMLElement, theme: ResolvedTheme): WidgetUi {
 
   const panel = document.createElement('div');
   panel.className = 'panel';
-  panel.setAttribute('data-testid', 'vw-panel');
+  panel.dataset.testid = 'vw-panel';
   panel.style.cssText = side;
 
   const header = document.createElement('div');
@@ -172,13 +172,13 @@ export function mountWidget(host: HTMLElement, theme: ResolvedTheme): WidgetUi {
   greeting.textContent = theme.greeting;
   const status = document.createElement('div');
   status.className = 'status';
-  status.setAttribute('data-testid', 'vw-status');
+  status.dataset.testid = 'vw-status';
   const answer = document.createElement('div');
   answer.className = 'answer';
-  answer.setAttribute('data-testid', 'vw-answer');
+  answer.dataset.testid = 'vw-answer';
   const sources = document.createElement('div');
   sources.className = 'sources';
-  sources.setAttribute('data-testid', 'vw-sources');
+  sources.dataset.testid = 'vw-sources';
   body.append(greeting, status, answer, sources);
 
   const footer = document.createElement('form');
@@ -186,16 +186,16 @@ export function mountWidget(host: HTMLElement, theme: ResolvedTheme): WidgetUi {
   const input = document.createElement('input');
   input.type = 'text';
   input.placeholder = 'Ask a question…';
-  input.setAttribute('data-testid', 'vw-input');
+  input.dataset.testid = 'vw-input';
   const send = document.createElement('button');
   send.type = 'submit';
   send.textContent = 'Send';
-  send.setAttribute('data-testid', 'vw-send');
+  send.dataset.testid = 'vw-send';
   footer.append(input, send);
 
   const powered = document.createElement('div');
   powered.className = 'powered';
-  powered.setAttribute('data-testid', 'vw-powered');
+  powered.dataset.testid = 'vw-powered';
   const poweredBrand = document.createElement('strong');
   poweredBrand.textContent = 'Velocity';
   powered.append(document.createTextNode('Powered by '), poweredBrand);
@@ -266,7 +266,7 @@ export function mountWidget(host: HTMLElement, theme: ResolvedTheme): WidgetUi {
     showError: (message) => {
       const el = document.createElement('div');
       el.className = 'error';
-      el.setAttribute('data-testid', 'vw-error');
+      el.dataset.testid = 'vw-error';
       el.textContent = message;
       body.appendChild(el);
     },

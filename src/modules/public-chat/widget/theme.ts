@@ -190,10 +190,7 @@ const STRING_KEYS: ReadonlyArray<
  * `THEME_PRESETS` — never interpolated into markup.
  */
 export function resolvePreset(value: unknown): ThemePreset {
-  if (
-    typeof value === 'string' &&
-    Object.prototype.hasOwnProperty.call(THEME_PRESETS, value)
-  ) {
+  if (typeof value === 'string' && Object.hasOwn(THEME_PRESETS, value)) {
     return value as ThemePreset;
   }
   return 'default';

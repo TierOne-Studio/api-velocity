@@ -50,7 +50,7 @@ function toEvent(frame: RawFrame): WidgetStreamEvent | null {
     const value = payload[key];
     if (value == null) return fallback;
     if (typeof value !== 'string') {
-      throw new Error(
+      throw new TypeError(
         `SSE protocol violation: "${frame.event}" payload.${key} must be a string`,
       );
     }
