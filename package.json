@@ -5,8 +5,9 @@
   "description": "Nest TypeScript starter repository",
   "license": "MIT",
   "scripts": {
-    "build": "nest build && npm run copy:assets && npm run build:widget",
+    "build": "nest build && npm run copy:assets && npm run build:widget && npm run verify:build",
     "build:widget": "node scripts/build-widget.mjs",
+    "verify:build": "node scripts/verify-build.mjs",
     "typecheck:widget": "tsc --noEmit -p tsconfig.widget.json",
     "test:e2e:widget": "playwright test --config e2e/playwright.config.ts",
     "copy:assets": "node -e \"const{mkdirSync,readdirSync,copyFileSync}=require('fs');const{join}=require('path');const src='src/modules/chat/prompts',dst='dist/modules/chat/prompts';mkdirSync(dst,{recursive:true});for(const f of readdirSync(src))if(f.endsWith('.md'))copyFileSync(join(src,f),join(dst,f));console.log('[copy:assets] copied chat prompts to '+dst);\"",
