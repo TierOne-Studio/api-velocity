@@ -84,7 +84,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_021 already run
         .mockResolvedValueOnce(true) // rbac_022 already run
         .mockResolvedValueOnce(true) // rbac_023 already run
-        .mockResolvedValueOnce(true); // rbac_024 already run
+        .mockResolvedValueOnce(true) // rbac_024 already run
+        .mockResolvedValueOnce(true); // rbac_025 already run
 
       const consoleSpy = jest
         .spyOn(console, 'log')
@@ -123,7 +124,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_021 already run
         .mockResolvedValueOnce(true) // rbac_022 already run
         .mockResolvedValueOnce(true) // rbac_023 already run
-        .mockResolvedValueOnce(true); // rbac_024 already run
+        .mockResolvedValueOnce(true) // rbac_024 already run
+        .mockResolvedValueOnce(true); // rbac_025 already run
 
       // rbac_013 calls seedDefaultOrganization → UPSERT returns new org id.
       // Use mockImplementation so it isn't consumed by earlier migrations that also call queryOne.
@@ -469,6 +471,11 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce({ id: 'perm-vector-db-create' })
         .mockResolvedValueOnce({ id: 'perm-vector-db-update' })
         .mockResolvedValueOnce({ id: 'perm-vector-db-upload' })
+        // rbac_025 — manager gains embed-site read/create/update (no delete:
+        // disposal is admin-only, mirrors the vector-db asymmetry).
+        .mockResolvedValueOnce({ id: 'perm-embed-site-read' })
+        .mockResolvedValueOnce({ id: 'perm-embed-site-create' })
+        .mockResolvedValueOnce({ id: 'perm-embed-site-update' })
         .mockResolvedValueOnce({ id: 'member-role-1' })
         .mockResolvedValueOnce({ id: 'perm-member-org-read' })
         .mockResolvedValueOnce({ id: 'perm-member-chat-read' })
@@ -480,7 +487,9 @@ describe('RbacMigrationService', () => {
         // rbac_021 — member gains sql-connection:read only per ADR-012.
         .mockResolvedValueOnce({ id: 'perm-member-sql-connection-read' })
         // rbac_022 — member gains vector-db:read only.
-        .mockResolvedValueOnce({ id: 'perm-member-vector-db-read' });
+        .mockResolvedValueOnce({ id: 'perm-member-vector-db-read' })
+        // rbac_025 — member gains embed-site:read only.
+        .mockResolvedValueOnce({ id: 'perm-member-embed-site-read' });
 
       await service.normalizeOrganizationDefaultRolePermissions();
 
@@ -550,6 +559,13 @@ describe('RbacMigrationService', () => {
           'update',
           'vector-db',
           'upload',
+          // rbac_025 — manager embed-site read/create/update (no delete).
+          'embed-site',
+          'read',
+          'embed-site',
+          'create',
+          'embed-site',
+          'update',
         ],
       );
       expect(dbService.query).toHaveBeenCalledWith(
@@ -574,6 +590,9 @@ describe('RbacMigrationService', () => {
           'read',
           // rbac_022 — member vector-db (read only).
           'vector-db',
+          'read',
+          // rbac_025 — member embed-site (read only).
+          'embed-site',
           'read',
         ],
       );
@@ -1125,7 +1144,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_021 already run
         .mockResolvedValueOnce(true) // rbac_022 already run
         .mockResolvedValueOnce(true) // rbac_023 already run
-        .mockResolvedValueOnce(true); // rbac_024 already run
+        .mockResolvedValueOnce(true) // rbac_024 already run
+        .mockResolvedValueOnce(true); // rbac_025 already run
 
       // Needed by backfillRolePermissions and assignAllPermissionsToAdmin
       dbService.queryOne.mockResolvedValue(null);
@@ -1556,7 +1576,8 @@ describe('RbacMigrationService', () => {
         .mockResolvedValueOnce(true) // rbac_021 already run
         .mockResolvedValueOnce(true) // rbac_022 already run
         .mockResolvedValueOnce(true) // rbac_023 already run
-        .mockResolvedValueOnce(true); // rbac_024 already run
+        .mockResolvedValueOnce(true) // rbac_024 already run
+        .mockResolvedValueOnce(true); // rbac_025 already run
 
       dbService.query.mockImplementation(async (sql: string) => {
         if (sql.includes('SELECT id FROM organization')) return [];

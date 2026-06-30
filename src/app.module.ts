@@ -16,6 +16,8 @@ import { SqlConnectionsModule } from './modules/sql-connections/sql-connections.
 import { VectorDbModule } from './modules/vector-db/vector-db.module';
 import { ProjectsModule } from './modules/projects';
 import { ChatModule } from './modules/chat';
+import { EmbedSitesModule } from './modules/embed-sites/embed-sites.module';
+import { PublicChatModule } from './modules/public-chat/public-chat.module';
 
 @Module({
   imports: [
@@ -41,6 +43,12 @@ import { ChatModule } from './modules/chat';
     // exist before conversation.project_id is backfilled.
     ProjectsModule,
     ChatModule,
+    // EmbedSitesModule MUST be imported after ProjectsModule — its migration
+    // cross-injects ProjectsMigrationService and embed_site FKs project(id).
+    EmbedSitesModule,
+    // PublicChatModule (SPEC-003) reuses ChatModule's ChatAgentService + the
+    // embed-sites repo; import after both.
+    PublicChatModule,
     AuthModule.forRoot({ auth }),
   ],
   controllers: [AppController],
