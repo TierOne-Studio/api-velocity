@@ -177,9 +177,7 @@ describe('EmbedSite persistence — real Postgres', () => {
       const burst = 50;
 
       const counts = await Promise.all(
-        Array.from({ length: burst }, () =>
-          repo.incrementMonthlyUsage(orgId),
-        ),
+        Array.from({ length: burst }, () => repo.incrementMonthlyUsage(orgId)),
       );
 
       // Atomic increment ⇒ each concurrent call returns a distinct value and the
@@ -318,9 +316,7 @@ describe('EmbedSite persistence — real Postgres', () => {
       const rejected = results.filter((r) => r.status === 'rejected');
       expect(fulfilled).toHaveLength(1);
       expect(rejected).toHaveLength(1);
-      expect(
-        (rejected[0] as PromiseRejectedResult).reason,
-      ).toBeInstanceOf(EmbedSiteProjectConflictError);
+      expect(rejected[0].reason).toBeInstanceOf(EmbedSiteProjectConflictError);
     });
   });
 
@@ -425,13 +421,17 @@ describe('EmbedSite persistence — real Postgres', () => {
   describe('delete (org-scoped)', () => {
     it('removes a site within its org and reports success', async () => {
       const seeded = await seedEmbedSite('del1');
-      await expect(repo.delete(seeded.siteId, seeded.orgId)).resolves.toBe(true);
+      await expect(repo.delete(seeded.siteId, seeded.orgId)).resolves.toBe(
+        true,
+      );
       await expect(repo.findByPublicKey(seeded.publicKey)).resolves.toBeNull();
     });
 
     it('does not delete a site from another org (returns false)', async () => {
       const seeded = await seedEmbedSite('del2');
-      await expect(repo.delete(seeded.siteId, 'org-other')).resolves.toBe(false);
+      await expect(repo.delete(seeded.siteId, 'org-other')).resolves.toBe(
+        false,
+      );
       await expect(
         repo.findById(seeded.siteId, seeded.orgId),
       ).resolves.not.toBeNull();

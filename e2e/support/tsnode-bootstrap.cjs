@@ -10,7 +10,12 @@ Module._resolveFilename = function (request, ...rest) {
   if (/^\.{1,2}\/.*\.js$/.test(request)) {
     try {
       return originalResolve.call(this, request, ...rest);
-    } catch {
+    } catch (error) {
+      // Only fall back to the `.ts` specifier on a genuine resolution miss —
+      // re-throw any other loader error so real failures aren't masked.
+      if (!error || error.code !== 'MODULE_NOT_FOUND') {
+        throw error;
+      }
       return originalResolve.call(this, request.replace(/\.js$/, ''), ...rest);
     }
   }

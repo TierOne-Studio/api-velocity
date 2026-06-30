@@ -39,6 +39,14 @@ describe('dedupeSources (SPEC-002 semantics)', () => {
   it('returns an empty array for empty input', () => {
     expect(dedupeSources([])).toEqual([]);
   });
+
+  it('does not collapse distinct tuples when fields contain "|" characters', () => {
+    const result = dedupeSources([
+      src({ name: 'a|b', sourceName: 'c', webUrl: 'https://example.com/x' }),
+      src({ name: 'a', sourceName: 'b|c', webUrl: 'https://example.com/x' }),
+    ]);
+    expect(result).toHaveLength(2);
+  });
 });
 
 describe('isSafeUrl', () => {

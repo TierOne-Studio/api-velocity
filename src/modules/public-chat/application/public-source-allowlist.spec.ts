@@ -18,9 +18,7 @@ describe('filterPublicSources (fail-closed public source allowlist)', () => {
   });
 
   it('excludes external sources', () => {
-    const result = filterPublicSources(
-      sourcesOfKinds('vector_db', 'external'),
-    );
+    const result = filterPublicSources(sourcesOfKinds('vector_db', 'external'));
     expect(result.map((s) => s.kind)).toEqual(['vector_db']);
   });
 

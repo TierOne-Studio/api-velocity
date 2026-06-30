@@ -54,7 +54,9 @@ function renderInline(nodes: InlineNode[], parent: Node): void {
 function renderBlock(block: BlockNode): HTMLElement {
   switch (block.type) {
     case 'heading': {
-      const el = document.createElement(`h${Math.min(Math.max(block.level, 1), 6)}`);
+      const el = document.createElement(
+        `h${Math.min(Math.max(block.level, 1), 6)}`,
+      );
       renderInline(block.children, el);
       return el;
     }

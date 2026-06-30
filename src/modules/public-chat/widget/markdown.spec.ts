@@ -16,7 +16,11 @@ describe('parseInline', () => {
   it('parses links with their href and label', () => {
     expect(parseInline('see [docs](https://x.com/a)')).toEqual([
       { type: 'text', value: 'see ' },
-      { type: 'link', href: 'https://x.com/a', children: [{ type: 'text', value: 'docs' }] },
+      {
+        type: 'link',
+        href: 'https://x.com/a',
+        children: [{ type: 'text', value: 'docs' }],
+      },
     ]);
   });
 
@@ -93,7 +97,9 @@ describe('parseMarkdown', () => {
   });
 
   it('parses a GFM pipe table with header and rows', () => {
-    const [block] = parseMarkdown('| Region | Pct |\n| --- | --- |\n| NA | 49.8% |\n| EU | 15.3% |');
+    const [block] = parseMarkdown(
+      '| Region | Pct |\n| --- | --- |\n| NA | 49.8% |\n| EU | 15.3% |',
+    );
     expect(block.type).toBe('table');
     if (block.type === 'table') {
       expect(block.header.map((c) => c[0])).toEqual([

@@ -44,20 +44,34 @@ function splitFrames(buffer: string): { raw: RawFrame[]; remainder: string } {
 
 function toEvent(frame: RawFrame): WidgetStreamEvent | null {
   const payload = JSON.parse(frame.data) as Record<string, unknown>;
+  // Read a string field, failing fast on a present-but-non-string value instead
+  // of coercing (`String({})` → "[object Object]") and masking a protocol bug.
+  const readString = (key: string, fallback = ''): string => {
+    const value = payload[key];
+    if (value == null) return fallback;
+    if (typeof value !== 'string') {
+      throw new Error(
+        `SSE protocol violation: "${frame.event}" payload.${key} must be a string`,
+      );
+    }
+    return value;
+  };
   switch (frame.event) {
     case 'thinking':
       return { type: 'thinking' };
     case 'searching':
-      return { type: 'searching', query: String(payload.query ?? '') };
+      return { type: 'searching', query: readString('query') };
     case 'chunk':
-      return { type: 'chunk', content: String(payload.content ?? '') };
+      return { type: 'chunk', content: readString('content') };
     case 'done': {
-      const reply = payload.reply as { metadata?: { sources?: WidgetSource[] } } | undefined;
+      const reply = payload.reply as
+        | { metadata?: { sources?: WidgetSource[] } }
+        | undefined;
       const sources = reply?.metadata?.sources ?? [];
       return { type: 'done', sources: dedupeSources(sources) };
     }
     case 'error':
-      return { type: 'error', message: String(payload.message ?? 'Stream failed') };
+      return { type: 'error', message: readString('message', 'Stream failed') };
     default:
       // Unknown/`sql_*` events are ignored — additive contract.
       return null;

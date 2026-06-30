@@ -54,7 +54,10 @@ export function parseInline(text: string): InlineNode[] {
       const end = text.indexOf('**', i + 2);
       if (end > i + 1) {
         flush();
-        nodes.push({ type: 'bold', children: parseInline(text.slice(i + 2, end)) });
+        nodes.push({
+          type: 'bold',
+          children: parseInline(text.slice(i + 2, end)),
+        });
         i = end + 2;
         continue;
       }
@@ -71,10 +74,14 @@ export function parseInline(text: string): InlineNode[] {
       const prevOk = marker === '*' || !/\w/.test(text[i - 1] ?? ' ');
       if (prevOk) {
         const end = text.indexOf(marker, i + 1);
-        const nextOk = end > i && (marker === '*' || !/\w/.test(text[end + 1] ?? ' '));
+        const nextOk =
+          end > i && (marker === '*' || !/\w/.test(text[end + 1] ?? ' '));
         if (end > i && nextOk) {
           flush();
-          nodes.push({ type: 'italic', children: parseInline(text.slice(i + 1, end)) });
+          nodes.push({
+            type: 'italic',
+            children: parseInline(text.slice(i + 1, end)),
+          });
           i = end + 1;
           continue;
         }
@@ -111,9 +118,7 @@ function splitTableRow(line: string): string[] {
 }
 
 function isBlockStart(line: string): boolean {
-  return (
-    HEADING.test(line) || /^```/.test(line) || LIST_ITEM.test(line)
-  );
+  return HEADING.test(line) || /^```/.test(line) || LIST_ITEM.test(line);
 }
 
 /** Parse a Markdown document into a flat list of block nodes. */
@@ -161,7 +166,11 @@ export function parseMarkdown(md: string): BlockNode[] {
       const header = splitTableRow(line).map(parseInline);
       i += 2;
       const rows: InlineNode[][][] = [];
-      while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') {
+      while (
+        i < lines.length &&
+        lines[i].includes('|') &&
+        lines[i].trim() !== ''
+      ) {
         rows.push(splitTableRow(lines[i]).map(parseInline));
         i++;
       }
@@ -183,7 +192,11 @@ export function parseMarkdown(md: string): BlockNode[] {
 
     const para: string[] = [line];
     i++;
-    while (i < lines.length && lines[i].trim() !== '' && !isBlockStart(lines[i])) {
+    while (
+      i < lines.length &&
+      lines[i].trim() !== '' &&
+      !isBlockStart(lines[i])
+    ) {
       para.push(lines[i]);
       i++;
     }

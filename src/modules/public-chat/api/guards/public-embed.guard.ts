@@ -38,7 +38,9 @@ export class PublicEmbedGuard implements CanActivate {
 
     const key = (request.header(EMBED_KEY_HEADER) ?? '').trim();
     if (!key) {
-      throw new UnauthorizedException('Embed key required');
+      // Same message as unknown/disabled — the guard promises no enumeration
+      // oracle across all key-failure modes (see class doc).
+      throw new UnauthorizedException('Invalid embed key');
     }
 
     const site = await this.embedSites.findByPublicKey(key);
@@ -61,7 +63,7 @@ export class PublicEmbedGuard implements CanActivate {
     // origin receives no permissive CORS headers; credentials stay false). The
     // middleware handles only the keyless preflight. Echo the raw Origin so the
     // browser's exact-match check passes.
-    response.setHeader('Access-Control-Allow-Origin', rawOrigin as string);
+    response.setHeader('Access-Control-Allow-Origin', rawOrigin);
     response.setHeader('Access-Control-Allow-Credentials', 'false');
     response.setHeader('Vary', 'Origin');
 

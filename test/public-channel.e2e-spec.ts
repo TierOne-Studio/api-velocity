@@ -45,7 +45,7 @@ describe('Public web-chat channel (full-app e2e)', () => {
       .set('Origin', 'http://customer.example');
     // Our PublicEmbedGuard, not better-auth's `{"code":"UNAUTHORIZED"}`.
     expect(res.status).toBe(401);
-    expect(res.body.message).toBe('Embed key required');
+    expect(res.body.message).toBe('Invalid embed key');
   });
 
   it('answers the public preflight from a customer origin with an allowlisted-CORS grant', async () => {
@@ -53,10 +53,15 @@ describe('Public web-chat channel (full-app e2e)', () => {
       .options('/api/public/chat/ask/stream')
       .set('Origin', 'http://customer.example')
       .set('Access-Control-Request-Method', 'POST')
-      .set('Access-Control-Request-Headers', 'content-type,x-velocity-embed-key');
+      .set(
+        'Access-Control-Request-Headers',
+        'content-type,x-velocity-embed-key',
+      );
 
     expect(res.status).toBe(204);
-    expect(res.headers['access-control-allow-origin']).toBe('http://customer.example');
+    expect(res.headers['access-control-allow-origin']).toBe(
+      'http://customer.example',
+    );
     expect(res.headers['access-control-allow-credentials']).toBe('false');
   });
 });

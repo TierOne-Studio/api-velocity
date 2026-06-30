@@ -52,6 +52,10 @@ export class PublicChatService {
       scope.organizationId,
     );
     if (!site) {
+      this.logger.warn('public config rejected: embed site not found', {
+        embedSiteId: scope.embedSiteId,
+        organizationId: scope.organizationId,
+      });
       throw new NotFoundException('Embed site not found');
     }
     return { theme: site.theme };

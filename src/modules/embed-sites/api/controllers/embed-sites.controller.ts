@@ -43,7 +43,9 @@ export class EmbedSitesController {
     @Session() session: UserSession,
     @Query('organizationId') organizationId?: string,
   ) {
-    const data = await this.service.list(this.buildScope(session, organizationId));
+    const data = await this.service.list(
+      this.buildScope(session, organizationId),
+    );
     return { data };
   }
 

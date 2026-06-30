@@ -87,7 +87,10 @@ describe('resolveTheme', () => {
   });
 
   it('applies allowlisted server theme values over defaults', () => {
-    const resolved = resolveTheme({ primaryColor: '#ff0000', title: 'Ask us' }, {});
+    const resolved = resolveTheme(
+      { primaryColor: '#ff0000', title: 'Ask us' },
+      {},
+    );
     expect(resolved.primaryColor).toBe('#ff0000');
     expect(resolved.title).toBe('Ask us');
   });
@@ -115,6 +118,11 @@ describe('resolveTheme', () => {
       {},
     );
     expect(resolved.primaryColor).toBe(DEFAULT_THEME.primaryColor);
+  });
+
+  it('allows an empty-string override to clear a value', () => {
+    const resolved = resolveTheme({ title: 'Server title' }, { title: '' });
+    expect(resolved.title).toBe('');
   });
 
   it('falls back to default position when value is not left/right', () => {

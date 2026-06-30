@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-const BASE62 =
-  '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
 /**
  * Generate a publishable embed-site key: `wgt_pub_` + ≥128 bits of CSPRNG

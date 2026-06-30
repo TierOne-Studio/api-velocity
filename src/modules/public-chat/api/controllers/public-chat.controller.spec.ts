@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from '@jest/globals';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import type { Request, Response } from 'express';
 import request from 'supertest';
 import { ConfigService } from '../../../../shared/config';
 import { AdminOrganizationsService } from '../../../admin/organizations/application/services/admin-organizations.service';
@@ -15,6 +16,7 @@ import {
 } from '../../../embed-sites/domain/repositories/embed-site.repository.interface';
 import type { EmbedSite } from '../../../embed-sites/domain/entities/embed-site';
 import { PublicChatService } from '../../application/public-chat.service';
+import type { RequestWithEmbedScope } from '../../application/embed-scope';
 import { PublicEmbedGuard } from '../guards/public-embed.guard';
 import { PublicRateLimitGuard } from '../guards/public-rate-limit.guard';
 import { PublicChatController } from './public-chat.controller';
@@ -179,6 +181,15 @@ describe('PublicChatController (HTTP) — POST /api/public/chat/ask/stream', () 
       .expect(400);
   });
 
+  it('400 for a non-string question (boundary type guard, not a 500)', async () => {
+    app = await makeApp();
+    await post()
+      .set('x-velocity-embed-key', OK_KEY)
+      .set('origin', ORIGIN)
+      .send({ question: { not: 'a string' } })
+      .expect(400);
+  });
+
   it('429 when the org monthly cap is exceeded', async () => {
     app = await makeApp(0); // cap 0 → any usage (1) exceeds it
     await post()
@@ -286,5 +297,89 @@ describe('PublicChatController (HTTP) — GET /api/public/chat/config', () => {
       get().set('x-velocity-embed-key', OK_KEY).set('origin', ORIGIN);
     await fire().expect(200);
     await fire().expect(429);
+  });
+});
+
+// Unit-level: the HTTP harness can't reliably simulate a mid-stream client
+// disconnect, so drive askStream directly against a mock Response that goes
+// destroyed before the stream throws. Without the connection-closed guard the
+// catch path would write an SSE `error` frame (and end()) onto a dead socket.
+describe('PublicChatController — write-after-close guard', () => {
+  it('skips the SSE error write when the client disconnected mid-stream', async () => {
+    const writes: string[] = [];
+    let endCalls = 0;
+    let closeHandler: () => void = () => {};
+    const response: {
+      writableEnded: boolean;
+      destroyed: boolean;
+      headersSent: boolean;
+      on: (event: string, cb: () => void) => void;
+      off: () => void;
+      status: () => unknown;
+      setHeader: () => void;
+      flushHeaders: () => void;
+      write: (chunk: string) => boolean;
+      end: () => void;
+      json: () => unknown;
+    } = {
+      writableEnded: false,
+      destroyed: false,
+      headersSent: false,
+      on: (event: string, cb: () => void) => {
+        if (event === 'close') closeHandler = cb;
+      },
+      off: () => {},
+      status: () => response,
+      setHeader: () => {},
+      flushHeaders: () => {},
+      write: (chunk: string) => {
+        writes.push(chunk);
+        return true;
+      },
+      end: () => {
+        // A real socket throws ERR_STREAM_WRITE_AFTER_END here once destroyed —
+        // the guard must keep us from ever calling end() on a dead connection.
+        endCalls += 1;
+        if (response.destroyed) {
+          throw new Error('write after end');
+        }
+        response.writableEnded = true;
+      },
+      json: () => response,
+    };
+
+    async function* stream(): AsyncGenerator<ChatStreamEvent> {
+      yield { type: 'chunk', content: 'partial' };
+      // Client goes away before the next event throws.
+      closeHandler();
+      response.destroyed = true;
+      throw new Error('internal detail that must never be written');
+    }
+
+    const svc = {
+      prepareStream: async () => stream(),
+    } as unknown as PublicChatService;
+    const cfg = {
+      getEmbedPublicMaxQuestionLength: () => 2000,
+    } as unknown as ConfigService;
+    const controller = new PublicChatController(svc, cfg);
+    const req = {
+      embedScope: {
+        organizationId: 'org-1',
+        projectId: 'proj-1',
+        embedSiteId: 'site-1',
+      },
+    } as unknown as Request & RequestWithEmbedScope;
+
+    await controller.askStream(
+      req,
+      { question: 'hi' },
+      response as unknown as Response,
+    );
+
+    expect(writes.join('')).toContain('event: chunk'); // the partial made it
+    expect(writes.join('')).not.toContain('event: error'); // none after close
+    expect(writes.join('')).not.toContain('internal detail');
+    expect(endCalls).toBe(0); // end() skipped on the destroyed socket
   });
 });

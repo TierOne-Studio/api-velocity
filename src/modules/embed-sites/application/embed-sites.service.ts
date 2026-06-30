@@ -91,7 +91,8 @@ export class EmbedSitesService {
   ): Promise<EmbedSiteSummary> {
     const orgId = this.requireOrg(scope);
     const name = this.requireName(input.name);
-    if (!input.projectId?.trim()) {
+    const projectId = input.projectId?.trim();
+    if (!projectId) {
       throw new BadRequestException('projectId is required');
     }
     const allowedOrigins = this.normalizeOrigins(input.allowedOrigins);
@@ -102,7 +103,7 @@ export class EmbedSitesService {
     // 404 (the project does not exist from this org's view), and it runs BEFORE
     // any uniqueness signal so a 409 can never leak that the project exists in
     // another org.
-    const project = await this.projects.findById(input.projectId);
+    const project = await this.projects.findById(projectId);
     if (!project || project.organization_id !== orgId) {
       throw new NotFoundException('Project not found');
     }
@@ -112,7 +113,7 @@ export class EmbedSitesService {
         this.repository.create({
           id: randomUUID(),
           organizationId: orgId,
-          projectId: input.projectId,
+          projectId,
           name,
           publicKey,
           allowedOrigins,

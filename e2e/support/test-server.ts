@@ -163,4 +163,7 @@ async function main(): Promise<void> {
   console.log(`[widget-e2e] ready: api=${API_PORT} allowed=${ALLOWED_PORT} blocked=${BLOCKED_PORT}`);
 }
 
-void main();
+void main().catch((error: unknown) => {
+  console.error('[widget-e2e] bootstrap failed', error);
+  process.exit(1);
+});

@@ -94,6 +94,30 @@ describe('PublicEmbedGuard', () => {
     );
   });
 
+  it('returns an identical 401 message for missing, unknown, and disabled keys (no enumeration oracle)', async () => {
+    const cases: Array<{ site: EmbedSite | null; key?: string }> = [
+      { site: makeSite() }, // missing key header
+      { site: null, key: 'wgt_pub_nope' }, // unknown key
+      { site: makeSite({ enabled: false }), key: 'wgt_pub_abc' }, // disabled
+    ];
+    const messages: string[] = [];
+    for (const { site, key } of cases) {
+      const { guard } = makeGuard(site);
+      const { context } = buildContext({
+        ...(key ? { 'x-velocity-embed-key': key } : {}),
+        origin: 'https://customer.com',
+      });
+      const error = await guard
+        .canActivate(context)
+        .then(() => null)
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(UnauthorizedException);
+      messages.push((error as Error).message);
+    }
+    // The actual thrown messages — all three must be byte-identical.
+    expect(new Set(messages)).toEqual(new Set(['Invalid embed key']));
+  });
+
   it('throws 403 when the origin is not allowlisted', async () => {
     const { guard } = makeGuard(makeSite());
     const { context } = buildContext({
@@ -157,7 +181,9 @@ describe('PublicEmbedGuard', () => {
   });
 
   it('matches the origin after normalization (case/port/trailing slash)', async () => {
-    const { guard } = makeGuard(makeSite({ allowedOrigins: ['https://customer.com'] }));
+    const { guard } = makeGuard(
+      makeSite({ allowedOrigins: ['https://customer.com'] }),
+    );
     const { context } = buildContext({
       'x-velocity-embed-key': 'wgt_pub_abc',
       origin: 'https://Customer.com:443/',
@@ -175,16 +201,21 @@ describe('PublicEmbedGuard', () => {
     ['substring/prefix host', 'https://evilcustomer.com'],
     ['unlisted subdomain', 'https://app.customer.com'],
     ['scheme downgrade', 'http://customer.com'],
-  ])('throws 403 for a %s that is not an exact allowlist match', async (_label, origin) => {
-    const { guard } = makeGuard(makeSite({ allowedOrigins: ['https://customer.com'] }));
-    const { context, responseHeaders } = buildContext({
-      'x-velocity-embed-key': 'wgt_pub_abc',
-      origin,
-    });
-    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
-    // And no permissive CORS grant leaks to the rejected origin.
-    expect(responseHeaders['Access-Control-Allow-Origin']).toBeUndefined();
-  });
+  ])(
+    'throws 403 for a %s that is not an exact allowlist match',
+    async (_label, origin) => {
+      const { guard } = makeGuard(
+        makeSite({ allowedOrigins: ['https://customer.com'] }),
+      );
+      const { context, responseHeaders } = buildContext({
+        'x-velocity-embed-key': 'wgt_pub_abc',
+        origin,
+      });
+      await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      // And no permissive CORS grant leaks to the rejected origin.
+      expect(responseHeaders['Access-Control-Allow-Origin']).toBeUndefined();
+    },
+  );
 });

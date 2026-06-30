@@ -51,7 +51,7 @@ export interface ThemePalette {
 /**
  * Canonical palette values. The SPA embed-modal preview keeps a byte-identical
  * copy of the four selectable presets in
- * `spa-velocity/src/features/EmbedSites/__fixtures__/widget-theme-presets.json`
+ * `spa-velocity/src/features/EmbedSites/widget-theme-presets.json`
  * — this module is the source of truth; the preview is a cosmetic mirror.
  */
 export const THEME_PRESETS: Record<ThemePreset, ThemePalette> = {
@@ -175,7 +175,14 @@ export const DEFAULT_THEME: ResolvedTheme = {
 // resolved separately (see `resolvePreset`) and is NOT part of this allowlist.
 const STRING_KEYS: ReadonlyArray<
   Exclude<keyof ResolvedTheme, 'position' | 'preset'>
-> = ['primaryColor', 'textColor', 'surfaceColor', 'title', 'greeting', 'launcherLabel'];
+> = [
+  'primaryColor',
+  'textColor',
+  'surfaceColor',
+  'title',
+  'greeting',
+  'launcherLabel',
+];
 
 /**
  * Validate an untrusted preset id against the known set. Returns `default` for
@@ -183,7 +190,10 @@ const STRING_KEYS: ReadonlyArray<
  * `THEME_PRESETS` — never interpolated into markup.
  */
 export function resolvePreset(value: unknown): ThemePreset {
-  if (typeof value === 'string' && Object.prototype.hasOwnProperty.call(THEME_PRESETS, value)) {
+  if (
+    typeof value === 'string' &&
+    Object.prototype.hasOwnProperty.call(THEME_PRESETS, value)
+  ) {
     return value as ThemePreset;
   }
   return 'default';
@@ -196,7 +206,9 @@ function applyOverrides(
   const next: ResolvedTheme = { ...base };
   for (const key of STRING_KEYS) {
     const value = overrides[key];
-    if (typeof value === 'string' && value.length > 0) {
+    // Any string overrides — including '' so an admin can clear a title/greeting
+    // (the contract only requires a string). Non-strings are dropped.
+    if (typeof value === 'string') {
       next[key] = value;
     }
   }

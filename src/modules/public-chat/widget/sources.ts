@@ -13,14 +13,16 @@ export interface WidgetSource {
 }
 
 /**
- * Collapse sources that are identical on `name|sourceName|webUrl` (SPEC-002).
+ * Collapse sources that are identical on `name`/`sourceName`/`webUrl` (SPEC-002).
  * The backend can return the same logical document multiple times across
  * retrieval passes; this keeps the chip row clean. First-seen order preserved.
+ * The key is encoded structurally (JSON tuple) so a field containing the former
+ * `|` delimiter can no longer collapse two distinct sources.
  */
 export function dedupeSources(sources: WidgetSource[]): WidgetSource[] {
   const seen = new Set<string>();
   return sources.filter((source) => {
-    const key = `${source.name}|${source.sourceName}|${source.webUrl}`;
+    const key = JSON.stringify([source.name, source.sourceName, source.webUrl]);
     if (seen.has(key)) {
       return false;
     }

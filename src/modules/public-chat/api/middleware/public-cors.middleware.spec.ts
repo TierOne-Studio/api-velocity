@@ -2,7 +2,11 @@ import { describe, expect, it, jest } from '@jest/globals';
 import type { NextFunction, Request, Response } from 'express';
 import { PublicCorsMiddleware } from './public-cors.middleware';
 
-function makeRes(): Response & { headers: Record<string, string>; statusCode: number; ended: boolean } {
+function makeRes(): Response & {
+  headers: Record<string, string>;
+  statusCode: number;
+  ended: boolean;
+} {
   const headers: Record<string, string> = {};
   const res = {
     headers,

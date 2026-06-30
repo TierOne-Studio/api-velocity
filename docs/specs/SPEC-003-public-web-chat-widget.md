@@ -18,7 +18,7 @@ coordination_doc: ""
 # SPEC-003: Public web chat widget (anonymous, ask-only)
 
 > Drafted alongside `feature/proposals/embeddable-web-chat-widget.md`. All v1
-> design TBDs are resolved (§11 records the decisions). This is a high-risk
+> design decisions are resolved (§11 records them). This is a high-risk
 > surface (public API + new anonymous auth path) — architect review fires early
 > per the high-risk workflow chain. The two structural decisions are recorded as
 > **ADR-018** (anonymous public-channel auth) and **ADR-019** (per-request
@@ -714,3 +714,11 @@ widget bundle (standalone build) ───────────────�
     against a seeded embed site from an allowlisted origin; rejected from a
     non-allowlisted origin.
   - `slice:` separate deliverable from the API; does not gate Slice 1/2 reviews.
+
+## Change Log
+
+- **v1.0 (2026-06-19)** — Initial specification. Defines the anonymous,
+  ask-only public web chat widget: embed-site auth (ADR-018), per-request
+  origin-allowlist CORS (ADR-019), fail-closed source allowlist, monthly cost
+  cap, and the three-slice delivery plan (public ask channel → admin CRUD →
+  widget bundle). Design decisions recorded in §11; deferred items in §12.
